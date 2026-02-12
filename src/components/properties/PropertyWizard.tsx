@@ -74,10 +74,16 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
 
       // 2. Save Property
       const { error } = await supabase.from('immobili').insert([{
-        ...formData,
-        prezzo: parseFloat(formData.prezzo),
-        mq: parseInt(formData.mq),
-        stanze: parseInt(formData.stanze),
+        titolo: formData.titolo,
+        prezzo: parseFloat(formData.prezzo) || 0,
+        mq: parseInt(formData.mq) || 0,
+        citta: formData.citta,
+        descrizione: formData.descrizione,
+        stanze: parseInt(formData.stanze) || 0,
+        classe_energetica: formData.classe_energetica,
+        garage: formData.garage,
+        giardino: formData.giardino,
+        balcone: formData.balcone,
         immagini_urls: imageUrls,
         stato: 'Disponibile'
       }]);
