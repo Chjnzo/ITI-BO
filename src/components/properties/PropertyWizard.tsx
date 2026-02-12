@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Upload, X, Check, ChevronRight, ChevronLeft } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
+import { cn } from '@/lib/utils';
 
 interface PropertyWizardProps {
   onClose: () => void;

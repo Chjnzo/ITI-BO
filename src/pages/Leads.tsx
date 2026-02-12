@@ -7,6 +7,7 @@ import { it } from 'date-fns/locale';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail, Calendar, Home as HomeIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const Leads = () => {
   const [leads, setLeads] = useState<any[]>([]);
