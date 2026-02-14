@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
   Upload, X, Check, ChevronRight, Image as ImageIcon, Plus, 
   Minus, Home, MapPin, Ruler, Euro, Settings, Info, Camera 
@@ -33,7 +34,7 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
     titolo: '',
     prezzo: '',
     mq: '',
-    locali: '', // Tipologia
+    locali: '', 
     citta: '',
     zona: '',
     indirizzo: '',
@@ -140,306 +141,176 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Step Header */}
-      <div className="flex justify-between items-center mb-8 px-4">
-        {[1, 2, 3, 4].map((s) => (
-          <div key={s} className="flex items-center flex-1 last:flex-none">
-            <div className={cn(
-              "w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all duration-300",
-              step >= s ? "bg-[#94b0ab] text-white shadow-lg shadow-[#94b0ab]/20" : "bg-gray-100 text-gray-400"
-            )}>
-              {step > s ? <Check size={20} /> : s}
-            </div>
-            {s < 4 && (
-              <div className={cn(
-                "h-1 flex-1 mx-4 rounded-full transition-all duration-500",
-                step > s ? "bg-[#94b0ab]" : "bg-gray-100"
-              )} />
-            )}
+    <div className="flex flex-col h-full bg-white">
+      {/* 1. STICKY HEADER */}
+      <DialogHeader className="px-8 py-6 border-b shrink-0 bg-white">
+        <div className="flex justify-between items-center">
+          <div>
+            <DialogTitle className="text-2xl font-bold text-[#1a1a1a]">Nuovo Immobile</DialogTitle>
+            <p className="text-sm text-gray-500">Step {step} di 4</p>
           </div>
-        ))}
-      </div>
-
-      {/* Step 1: Identità */}
-      {step === 1 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-[#1a1a1a] flex items-center gap-2">
-              <Home className="text-[#94b0ab]" size={24} /> L'Identità
-            </h2>
-            <p className="text-gray-500">Informazioni essenziali per la card dell'annuncio.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2 col-span-full">
-              <Label className="text-sm font-semibold">Titolo Annuncio *</Label>
-              <Input 
-                placeholder="Es: Trilocale panoramico con terrazzo vivibile" 
-                value={formData.titolo}
-                onChange={(e) => setFormData({...formData, titolo: e.target.value})}
-                className="rounded-xl"
+          <div className="flex items-center gap-3">
+            {[1, 2, 3, 4].map((s) => (
+              <div 
+                key={s} 
+                className={cn(
+                  "w-10 h-1 rounded-full transition-all duration-300",
+                  step >= s ? "bg-[#94b0ab]" : "bg-gray-100"
+                )} 
               />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Prezzo (€) *</Label>
-              <Input 
-                type="number" 
-                placeholder="0" 
-                value={formData.prezzo}
-                onChange={(e) => setFormData({...formData, prezzo: e.target.value})}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Metratura (mq)</Label>
-              <Input 
-                type="number" 
-                placeholder="0" 
-                value={formData.mq}
-                onChange={(e) => setFormData({...formData, mq: e.target.value})}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Tipologia</Label>
-              <Select onValueChange={(v) => setFormData({...formData, locali: v})} value={formData.locali}>
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue placeholder="Seleziona tipologia" />
-                </SelectTrigger>
-                <SelectContent>
-                  {['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico', 'Loft'].map(t => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Città / Zona</Label>
-              <Input 
-                placeholder="Es: Bergamo Centro" 
-                value={formData.citta}
-                onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-2 col-span-full">
-              <Label className="text-sm font-semibold">Indirizzo (Per uso interno)</Label>
-              <Input 
-                placeholder="Via Roma, 12" 
-                value={formData.indirizzo}
-                onChange={(e) => setFormData({...formData, indirizzo: e.target.value})}
-                className="rounded-xl"
-              />
-            </div>
+            ))}
           </div>
         </div>
-      )}
+      </DialogHeader>
 
-      {/* Step 2: Dettagli Tecnici */}
-      {step === 2 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-[#1a1a1a] flex items-center gap-2">
-              <Settings className="text-[#94b0ab]" size={24} /> Dettagli Tecnici
-            </h2>
-            <p className="text-gray-500">Dati per le specifiche tecniche e l'accordion.</p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold">Piano</Label>
-                <Input 
-                  placeholder="Es: Terra, 1, Ultimo" 
-                  value={formData.piano}
-                  onChange={(e) => setFormData({...formData, piano: e.target.value})}
-                  className="rounded-xl"
-                />
+      {/* 2. SCROLLABLE BODY */}
+      <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
+        
+        {/* Step 1: Identità */}
+        {step === 1 && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Home size={20} className="text-[#94b0ab]" /> L'Identità</h2>
+              <p className="text-sm text-gray-500">Dati fondamentali per le card di anteprima.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2 col-span-full">
+                <Label className="text-xs font-bold uppercase text-gray-400">Titolo Annuncio *</Label>
+                <Input placeholder="Es: Trilocale panoramico..." value={formData.titolo} onChange={(e) => setFormData({...formData, titolo: e.target.value})} className="rounded-xl h-12" />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Numero Bagni</Label>
-                <div className="flex items-center gap-4">
-                  <Button 
-                    variant="outline" size="icon" className="rounded-lg"
-                    onClick={() => setFormData({...formData, bagni: Math.max(1, formData.bagni - 1)})}
-                  >
-                    <Minus size={16} />
-                  </Button>
-                  <span className="text-xl font-bold w-8 text-center">{formData.bagni}</span>
-                  <Button 
-                    variant="outline" size="icon" className="rounded-lg"
-                    onClick={() => setFormData({...formData, bagni: formData.bagni + 1})}
-                  >
-                    <Plus size={16} />
-                  </Button>
-                </div>
+                <Label className="text-xs font-bold uppercase text-gray-400">Prezzo (€) *</Label>
+                <Input type="number" placeholder="0" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: e.target.value})} className="rounded-xl h-12" />
               </div>
               <div className="space-y-2">
-                <Label className="text-sm font-semibold">Classe Energetica</Label>
-                <Select onValueChange={(v) => setFormData({...formData, classe_energetica: v})} value={formData.classe_energetica}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
+                <Label className="text-xs font-bold uppercase text-gray-400">Metratura (mq)</Label>
+                <Input type="number" placeholder="0" value={formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} className="rounded-xl h-12" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase text-gray-400">Tipologia</Label>
+                <Select onValueChange={(v) => setFormData({...formData, locali: v})} value={formData.locali}>
+                  <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
                   <SelectContent>
-                    {['A4', 'A', 'B', 'C', 'D', 'E', 'F', 'G'].map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    {['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico', 'Loft'].map(t => (
+                      <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase text-gray-400">Città / Zona</Label>
+                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})} className="rounded-xl h-12" />
+              </div>
             </div>
+          </div>
+        )}
 
-            <div className="space-y-4">
-              <Label className="text-sm font-semibold block mb-2">Dotazioni</Label>
+        {/* Step 2: Tecnici */}
+        {step === 2 && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Settings size={20} className="text-[#94b0ab]" /> Dettagli Tecnici</h2>
+              <p className="text-sm text-gray-500">Specifiche e dotazioni dell'immobile.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div className="space-y-2"><Label className="text-xs font-bold uppercase text-gray-400">Piano</Label><Input placeholder="Es: 1" value={formData.piano} onChange={(e) => setFormData({...formData, piano: e.target.value})} className="rounded-xl h-12" /></div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase text-gray-400">Bagni</Label>
+                  <div className="flex items-center gap-4 bg-gray-50 p-2 rounded-xl w-fit">
+                    <Button variant="ghost" size="icon" onClick={() => setFormData({...formData, bagni: Math.max(1, formData.bagni - 1)})}><Minus size={16} /></Button>
+                    <span className="text-lg font-bold w-6 text-center">{formData.bagni}</span>
+                    <Button variant="ghost" size="icon" onClick={() => setFormData({...formData, bagni: formData.bagni + 1})}><Plus size={16} /></Button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase text-gray-400">Classe Energetica</Label>
+                  <Select onValueChange={(v) => setFormData({...formData, classe_energetica: v})} value={formData.classe_energetica}>
+                    <SelectTrigger className="rounded-xl h-12"><SelectValue /></SelectTrigger>
+                    <SelectContent>{['A4', 'A', 'B', 'C', 'D', 'E', 'F', 'G'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="space-y-3">
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <div className="flex flex-col">
-                    <span className="font-semibold">Box / Garage</span>
-                    <span className="text-xs text-gray-400">Include posto auto</span>
+                <Label className="text-xs font-bold uppercase text-gray-400">Dotazioni</Label>
+                {[{id: 'garage', label: 'Box / Garage'}, {id: 'giardino', label: 'Giardino'}, {id: 'balcone', label: 'Balcone'}].map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
+                    <span className="font-semibold">{item.label}</span>
+                    <Switch checked={(formData as any)[item.id]} onCheckedChange={(c) => setFormData({...formData, [item.id]: c})} />
                   </div>
-                  <Switch 
-                    checked={formData.garage}
-                    onCheckedChange={(c) => setFormData({...formData, garage: c})}
-                  />
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <div className="flex flex-col">
-                    <span className="font-semibold">Giardino</span>
-                    <span className="text-xs text-gray-400">Privato o condominiale</span>
-                  </div>
-                  <Switch 
-                    checked={formData.giardino}
-                    onCheckedChange={(c) => setFormData({...formData, giardino: c})}
-                  />
-                </div>
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                  <div className="flex flex-col">
-                    <span className="font-semibold">Balcone</span>
-                    <span className="text-xs text-gray-400">Terrazzi o balconi</span>
-                  </div>
-                  <Switch 
-                    checked={formData.balcone}
-                    onCheckedChange={(c) => setFormData({...formData, balcone: c})}
-                  />
-                </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Step 3: Storytelling */}
-      {step === 3 && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-[#1a1a1a] flex items-center gap-2">
-              <Info className="text-[#94b0ab]" size={24} /> Storytelling
-            </h2>
-            <p className="text-gray-500">La descrizione che emozionerà il potenziale acquirente.</p>
-          </div>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">Descrizione Estesa</Label>
-              <Textarea 
-                placeholder="Racconta i punti di forza dell'immobile, l'esposizione, le finiture..." 
-                rows={10}
-                value={formData.descrizione}
-                onChange={(e) => setFormData({...formData, descrizione: e.target.value})}
-                className="rounded-2xl border-gray-200 focus:ring-[#94b0ab]"
-              />
+        {/* Step 3: Storytelling */}
+        {step === 3 && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Info size={20} className="text-[#94b0ab]" /> Storytelling</h2>
+              <p className="text-sm text-gray-500">La descrizione emozionale per i potenziali acquirenti.</p>
             </div>
-            <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl text-sm">
-              <strong>Consiglio:</strong> Una descrizione dettagliata aumenta del 40% la probabilità di ricevere lead qualificati.
+            <Textarea placeholder="Racconta i punti di forza..." rows={12} value={formData.descrizione} onChange={(e) => setFormData({...formData, descrizione: e.target.value})} className="rounded-2xl p-4 text-base leading-relaxed" />
+          </div>
+        )}
+
+        {/* Step 4: Media (Refactored Layout) */}
+        {step === 4 && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 pb-10">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold flex items-center gap-2"><Camera size={20} className="text-[#94b0ab]" /> Galleria Media</h2>
+              <p className="text-sm text-gray-500">Carica le foto. La prima è fondamentale.</p>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* Step 4: Media Gallery */}
-      {step === 4 && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="space-y-1">
-            <h2 className="text-2xl font-bold text-[#1a1a1a] flex items-center gap-2">
-              <Camera className="text-[#94b0ab]" size={24} /> Galleria Media
-            </h2>
-            <p className="text-gray-500">Carica le foto. La prima è fondamentale!</p>
-          </div>
-
-          <div className="space-y-8">
-            {/* Zone A: Copertina */}
-            <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-[#94b0ab]">Immagine di Copertina (Hero)</Label>
-              <div 
-                className={cn(
-                  "relative h-72 border-2 border-dashed rounded-3xl overflow-hidden transition-all group",
-                  coverPreview ? "border-transparent" : "border-gray-200 hover:border-[#94b0ab] bg-gray-50/50"
-                )}
-              >
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleCoverChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                />
-                
+            {/* Zone A: Copertina Compatta */}
+            <div className="space-y-3">
+              <Label className="text-xs font-bold uppercase text-[#94b0ab] tracking-wider">Immagine di Copertina (Hero) *</Label>
+              <div className={cn(
+                "relative min-h-[150px] aspect-video h-48 border-2 border-dashed rounded-2xl overflow-hidden transition-all group",
+                coverPreview ? "border-transparent" : "border-gray-200 hover:border-[#94b0ab] bg-gray-50/50"
+              )}>
+                <input type="file" accept="image/*" onChange={handleCoverChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
                 {coverPreview ? (
-                  <div className="relative w-full h-full">
-                    <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div className="bg-white text-black px-4 py-2 rounded-full font-bold text-sm">Cambia Copertina</div>
-                    </div>
-                  </div>
+                  <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-4">
-                    <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                      <ImageIcon size={32} className="text-[#94b0ab]" />
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[#1a1a1a] font-bold">Carica Immagine Hero</p>
-                      <p className="text-xs">Usa una foto luminosa dell'esterno o del living</p>
-                    </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-2">
+                    <ImageIcon size={24} className="text-[#94b0ab]" />
+                    <p className="text-xs font-bold">Carica Foto Hero</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Zone B: Galleria */}
-            <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Galleria Fotografica (Il Tour)</Label>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {/* Zone B: Galleria Griglia Densa */}
+            <div className="space-y-3">
+              <Label className="text-xs font-bold uppercase text-gray-400 tracking-wider">Galleria Fotografica</Label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
                 {galleryPreviews.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-2xl overflow-hidden group shadow-sm">
-                    <img src={url} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
-                    <button 
-                      onClick={() => removeGalleryImage(i)}
-                      className="absolute top-2 right-2 w-8 h-8 bg-white/90 backdrop-blur-sm text-red-500 rounded-xl shadow-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X size={16} />
+                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden group shadow-sm bg-gray-100">
+                    <img src={url} alt="Gallery" className="w-full h-full object-cover" />
+                    <button onClick={() => removeGalleryImage(i)} className="absolute top-1 right-1 w-6 h-6 bg-white/90 text-red-500 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <X size={14} />
                     </button>
                   </div>
                 ))}
-                <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-2xl hover:border-[#94b0ab] hover:bg-gray-50 transition-all flex flex-col items-center justify-center text-gray-400 gap-2 cursor-pointer">
-                  <input 
-                    type="file" 
-                    multiple 
-                    accept="image/*" 
-                    onChange={handleGalleryChange}
-                    className="absolute inset-0 opacity-0 cursor-pointer"
-                  />
-                  <Plus size={24} />
-                  <span className="text-xs font-bold">Aggiungi</span>
+                <div className="relative aspect-square min-h-[100px] border-2 border-dashed border-gray-200 rounded-xl hover:border-[#94b0ab] hover:bg-gray-50 transition-all flex flex-col items-center justify-center text-gray-400 gap-1 cursor-pointer">
+                  <input type="file" multiple accept="image/*" onChange={handleGalleryChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                  <Plus size={20} />
+                  <span className="text-[10px] font-bold">Aggiungi</span>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Navigation Footer */}
-      <div className="flex justify-between pt-8 border-t border-gray-100">
+      {/* 3. STICKY FOOTER */}
+      <DialogFooter className="px-8 py-5 border-t bg-gray-50/80 backdrop-blur-sm shrink-0 sm:justify-between items-center">
         <Button 
           variant="ghost" 
           onClick={() => step > 1 ? setStep(step - 1) : onClose()}
-          className="rounded-xl px-8 h-12 text-gray-500 font-semibold"
+          className="rounded-xl h-11 px-6 text-gray-500 font-semibold hover:bg-white"
         >
           {step === 1 ? "Annulla" : "Indietro"}
         </Button>
@@ -447,7 +318,7 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
         {step < 4 ? (
           <Button 
             onClick={() => setStep(step + 1)}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-10 h-12 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95"
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-8 h-11 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95"
           >
             Continua <ChevronRight className="ml-2" size={18} />
           </Button>
@@ -455,22 +326,12 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
           <Button 
             onClick={handleSubmit}
             disabled={loading || !coverImage}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-14 h-12 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95 disabled:opacity-50"
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-12 h-11 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95 disabled:opacity-50"
           >
-            {loading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                <span>Pubblicazione...</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Check size={20} />
-                <span>Pubblica Immobile</span>
-              </div>
-            )}
+            {loading ? "Pubblicazione..." : "Pubblica Immobile"}
           </Button>
         )}
-      </div>
+      </DialogFooter>
     </div>
   );
 };

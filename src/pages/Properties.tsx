@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Plus, Edit2, Trash2, Search, Home } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import PropertyWizard from '@/components/properties/PropertyWizard';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -67,10 +67,11 @@ const Properties = () => {
               <Plus className="mr-2" size={20} /> Nuovo Immobile
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-3xl rounded-3xl">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold">Aggiungi Immobile</DialogTitle>
-            </DialogHeader>
+          <DialogContent 
+            className="max-w-5xl max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border-none shadow-2xl"
+            onPointerDownOutside={(e) => e.preventDefault()}
+            onInteractOutside={(e) => e.preventDefault()}
+          >
             <PropertyWizard 
               onClose={() => setIsWizardOpen(false)} 
               onSuccess={fetchProperties} 
@@ -79,7 +80,6 @@ const Properties = () => {
         </Dialog>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -100,8 +100,8 @@ const Properties = () => {
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 flex-shrink-0">
-                      {prop.immagini_urls?.[0] ? (
-                        <img src={prop.immagini_urls[0]} alt="" className="w-full h-full object-cover" />
+                      {prop.copertina_url ? (
+                        <img src={prop.copertina_url} alt="" className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-gray-300">
                           <Home size={24} />
