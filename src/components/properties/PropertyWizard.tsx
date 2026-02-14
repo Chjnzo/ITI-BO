@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+"use client";
+
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -6,8 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
-  Upload, X, Check, ChevronRight, Image as ImageIcon, Plus, 
-  Minus, Home, MapPin, Ruler, Euro, Settings, Info, Camera 
+  X, Check, ChevronRight, Image as ImageIcon, Plus, 
+  Minus, Home, Settings, Info, Camera, ChevronLeft
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -21,11 +23,12 @@ import {
 } from "@/components/ui/select";
 
 interface PropertyWizardProps {
+  initialData?: any;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
+const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   
@@ -34,7 +37,7 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
     titolo: '',
     prezzo: '',
     mq: '',
-    locali: '', 
+    locali: 'Trilocale', 
     citta: '',
     zona: '',
     indirizzo: '',
@@ -54,6 +57,31 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
   const [galleryImages, setGalleryImages] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
+  // Pre-fill data if editing
+  useEffect(() => {
+    if (initialData) {
+      setFormData({
+        titolo: initialData.titolo || '',
+        prezzo: initialData.prezzo?.toString() || '',
+        mq: initialData.mq?.toString() || '',
+        locali: initialData.locali || 'Trilocale',
+        citta: initialData.citta || '',
+        zona: initialData.zona || '',
+        indirizzo: initialData.indirizzo || '',
+        piano: initialData.piano || '',
+        bagni: initialData.bagni || 1,
+        classe_energetica: initialData.classe_energetica || 'A',
+        garage: initialData.garage || false,
+        giardino: initialData.giardino || false,
+        balcone: initialData.balcone || false,
+        descrizione: initialData.descrizione || '',
+        stato: initialData.stato || 'Disponibile'
+      });
+      if (initialData.copertina_url) setCoverPreview(initialData.copertina_url);
+      if (initialData.immagini_urls) setGalleryPreviews(initialData.immagini_urls);
+    }
+  }, [initialData]);
+
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
@@ -72,7 +100,9 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
   };
 
   const removeGalleryImage = (index: number) => {
+    // If it's a new file
     setGalleryImages(prev => prev.filter((_, i) => i !== index));
+    // Remove preview
     setGalleryPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -93,21 +123,25 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
   };
 
   const handleSubmit = async () => {
-    if (!formData.titolo || !formData.prezzo || !coverImage) {
-      showError("Titolo, Prezzo e Copertina sono obbligatori");
+    if (!formData.titolo || !formData.prezzo || (!coverPreview && !coverImage)) {
+      showError("Titolo, Prezzo e Foto di Copertina sono obbligatori");
       return;
     }
 
     setLoading(true);
     try {
-      const copertinaUrl = await uploadFile(coverImage);
-      const galleriaUrls = [];
+      let copertinaUrl = coverPreview;
+      if (coverImage) {
+        copertinaUrl = await uploadFile(coverImage);
+      }
+
+      const galleriaUrls = [...galleryPreviews.filter(p => p.startsWith('http'))];
       for (const file of galleryImages) {
         const url = await uploadFile(file);
         galleriaUrls.push(url);
       }
 
-      const { error } = await supabase.from('immobili').insert([{
+      const propertyPayload = {
         titolo: formData.titolo,
         prezzo: parseFloat(formData.prezzo) || 0,
         mq: parseInt(formData.mq) || 0,
@@ -125,12 +159,19 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
         copertina_url: copertinaUrl,
         immagini_urls: galleriaUrls,
         stato: formData.stato,
-        slug: formData.titolo.toLowerCase().replace(/ /g, '-')
-      }]);
+        slug: formData.titolo.toLowerCase().trim().replace(/ /g, '-')
+      };
 
-      if (error) throw error;
+      if (initialData) {
+        const { error } = await supabase.from('immobili').update(propertyPayload).eq('id', initialData.id);
+        if (error) throw error;
+        showSuccess("Immobile aggiornato con successo!");
+      } else {
+        const { error } = await supabase.from('immobili').insert([propertyPayload]);
+        if (error) throw error;
+        showSuccess("Immobile pubblicato con successo!");
+      }
 
-      showSuccess("Immobile pubblicato con successo!");
       onSuccess();
       onClose();
     } catch (error: any) {
@@ -141,21 +182,23 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-white overflow-hidden">
       {/* 1. STICKY HEADER */}
-      <DialogHeader className="px-8 py-6 border-b shrink-0 bg-white">
+      <DialogHeader className="px-10 py-8 border-b shrink-0 bg-white">
         <div className="flex justify-between items-center">
           <div>
-            <DialogTitle className="text-2xl font-bold text-[#1a1a1a]">Nuovo Immobile</DialogTitle>
-            <p className="text-sm text-gray-500">Step {step} di 4</p>
+            <DialogTitle className="text-3xl font-bold text-[#1a1a1a]">
+              {initialData ? "Modifica Immobile" : "Nuovo Immobile"}
+            </DialogTitle>
+            <p className="text-sm text-gray-500 mt-1">Stai compilando lo step {step} di 4</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {[1, 2, 3, 4].map((s) => (
               <div 
                 key={s} 
                 className={cn(
-                  "w-10 h-1 rounded-full transition-all duration-300",
-                  step >= s ? "bg-[#94b0ab]" : "bg-gray-100"
+                  "h-1.5 rounded-full transition-all duration-500",
+                  step === s ? "w-10 bg-[#94b0ab]" : step > s ? "w-6 bg-[#94b0ab]/40" : "w-6 bg-gray-100"
                 )} 
               />
             ))}
@@ -164,42 +207,44 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
       </DialogHeader>
 
       {/* 2. SCROLLABLE BODY */}
-      <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8">
+      <div className="flex-1 overflow-y-auto px-10 py-10 space-y-10">
         
         {/* Step 1: Identità */}
         {step === 1 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold flex items-center gap-2"><Home size={20} className="text-[#94b0ab]" /> L'Identità</h2>
-              <p className="text-sm text-gray-500">Dati fondamentali per le card di anteprima.</p>
+              <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                <Home size={22} className="text-[#94b0ab]" /> Dati Principali
+              </h2>
+              <p className="text-sm text-gray-400">Le informazioni che appariranno in cima all'annuncio.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2 col-span-full">
-                <Label className="text-xs font-bold uppercase text-gray-400">Titolo Annuncio *</Label>
-                <Input placeholder="Es: Trilocale panoramico..." value={formData.titolo} onChange={(e) => setFormData({...formData, titolo: e.target.value})} className="rounded-xl h-12" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-3 col-span-full">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Titolo dell'annuncio *</Label>
+                <Input placeholder="Es: Trilocale panoramico..." value={formData.titolo} onChange={(e) => setFormData({...formData, titolo: e.target.value})} className="rounded-2xl h-14 border-gray-100 focus:ring-[#94b0ab]" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-gray-400">Prezzo (€) *</Label>
-                <Input type="number" placeholder="0" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: e.target.value})} className="rounded-xl h-12" />
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Prezzo di Vendita (€) *</Label>
+                <Input type="number" placeholder="0" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-gray-400">Metratura (mq)</Label>
-                <Input type="number" placeholder="0" value={formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} className="rounded-xl h-12" />
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Superficie (mq)</Label>
+                <Input type="number" placeholder="0" value={formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-gray-400">Tipologia</Label>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia Locali</Label>
                 <Select onValueChange={(v) => setFormData({...formData, locali: v})} value={formData.locali}>
-                  <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent className="rounded-2xl">
                     {['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico', 'Loft'].map(t => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase text-gray-400">Città / Zona</Label>
-                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})} className="rounded-xl h-12" />
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città / Comune</Label>
+                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
             </div>
           </div>
@@ -207,35 +252,46 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
 
         {/* Step 2: Tecnici */}
         {step === 2 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold flex items-center gap-2"><Settings size={20} className="text-[#94b0ab]" /> Dettagli Tecnici</h2>
-              <p className="text-sm text-gray-500">Specifiche e dotazioni dell'immobile.</p>
+              <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                <Settings size={22} className="text-[#94b0ab]" /> Specifiche Tecniche
+              </h2>
+              <p className="text-sm text-gray-400">Dettagli costruttivi e dotazioni dell'immobile.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div className="space-y-2"><Label className="text-xs font-bold uppercase text-gray-400">Piano</Label><Input placeholder="Es: 1" value={formData.piano} onChange={(e) => setFormData({...formData, piano: e.target.value})} className="rounded-xl h-12" /></div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase text-gray-400">Bagni</Label>
-                  <div className="flex items-center gap-4 bg-gray-50 p-2 rounded-xl w-fit">
-                    <Button variant="ghost" size="icon" onClick={() => setFormData({...formData, bagni: Math.max(1, formData.bagni - 1)})}><Minus size={16} /></Button>
-                    <span className="text-lg font-bold w-6 text-center">{formData.bagni}</span>
-                    <Button variant="ghost" size="icon" onClick={() => setFormData({...formData, bagni: formData.bagni + 1})}><Plus size={16} /></Button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+              <div className="space-y-8">
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano / Livello</Label>
+                  <Input placeholder="Es: 1, Ultimo, Terra" value={formData.piano} onChange={(e) => setFormData({...formData, piano: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Numero Bagni</Label>
+                  <div className="flex items-center gap-6 bg-gray-50/50 p-2.5 rounded-2xl w-fit border border-gray-100">
+                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10" onClick={() => setFormData({...formData, bagni: Math.max(1, formData.bagni - 1)})}><Minus size={18} /></Button>
+                    <span className="text-xl font-bold w-6 text-center">{formData.bagni}</span>
+                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10" onClick={() => setFormData({...formData, bagni: formData.bagni + 1})}><Plus size={18} /></Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase text-gray-400">Classe Energetica</Label>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Classe Energetica</Label>
                   <Select onValueChange={(v) => setFormData({...formData, classe_energetica: v})} value={formData.classe_energetica}>
-                    <SelectTrigger className="rounded-xl h-12"><SelectValue /></SelectTrigger>
-                    <SelectContent>{['A4', 'A', 'B', 'C', 'D', 'E', 'F', 'G'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      {['A4', 'A', 'B', 'C', 'D', 'E', 'F', 'G'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase text-gray-400">Dotazioni</Label>
-                {[{id: 'garage', label: 'Box / Garage'}, {id: 'giardino', label: 'Giardino'}, {id: 'balcone', label: 'Balcone'}].map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl">
-                    <span className="font-semibold">{item.label}</span>
+              <div className="space-y-4">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 block mb-2">Dotazioni Incluse</Label>
+                {[
+                  {id: 'garage', label: 'Box / Posto Auto'}, 
+                  {id: 'giardino', label: 'Giardino Privato'}, 
+                  {id: 'balcone', label: 'Balcone / Terrazzo'}
+                ].map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-5 bg-gray-50/30 border border-gray-100 rounded-[1.5rem] transition-colors hover:bg-white hover:shadow-sm">
+                    <span className="font-bold text-gray-700">{item.label}</span>
                     <Switch checked={(formData as any)[item.id]} onCheckedChange={(c) => setFormData({...formData, [item.id]: c})} />
                   </div>
                 ))}
@@ -244,60 +300,80 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
           </div>
         )}
 
-        {/* Step 3: Storytelling */}
+        {/* Step 3: Descrizione */}
         {step === 3 && (
-          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold flex items-center gap-2"><Info size={20} className="text-[#94b0ab]" /> Storytelling</h2>
-              <p className="text-sm text-gray-500">La descrizione emozionale per i potenziali acquirenti.</p>
+              <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                <Info size={22} className="text-[#94b0ab]" /> Storytelling
+              </h2>
+              <p className="text-sm text-gray-400">Descrivi i punti di forza e lo stile di vita che offre la casa.</p>
             </div>
-            <Textarea placeholder="Racconta i punti di forza..." rows={12} value={formData.descrizione} onChange={(e) => setFormData({...formData, descrizione: e.target.value})} className="rounded-2xl p-4 text-base leading-relaxed" />
+            <Textarea 
+              placeholder="Racconta la casa: l'esposizione al sole, la zona tranquilla, le finiture di pregio..." 
+              rows={14} 
+              value={formData.descrizione} 
+              onChange={(e) => setFormData({...formData, descrizione: e.target.value})} 
+              className="rounded-[2rem] p-6 text-lg leading-relaxed border-gray-100 focus:ring-[#94b0ab]" 
+            />
           </div>
         )}
 
-        {/* Step 4: Media (Refactored Layout) */}
+        {/* Step 4: Media */}
         {step === 4 && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 pb-10">
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold flex items-center gap-2"><Camera size={20} className="text-[#94b0ab]" /> Galleria Media</h2>
-              <p className="text-sm text-gray-500">Carica le foto. La prima è fondamentale.</p>
+              <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                <Camera size={22} className="text-[#94b0ab]" /> Materiale Fotografico
+              </h2>
+              <p className="text-sm text-gray-400">Le foto caricate qui andranno a comporre la galleria pubblica.</p>
             </div>
 
-            {/* Zone A: Copertina Compatta */}
-            <div className="space-y-3">
-              <Label className="text-xs font-bold uppercase text-[#94b0ab] tracking-wider">Immagine di Copertina (Hero) *</Label>
+            {/* Zone A: Copertina */}
+            <div className="space-y-4">
+              <Label className="text-xs font-bold uppercase tracking-widest text-[#94b0ab]">Immagine Principale (Copertina) *</Label>
               <div className={cn(
-                "relative min-h-[150px] aspect-video h-48 border-2 border-dashed rounded-2xl overflow-hidden transition-all group",
-                coverPreview ? "border-transparent" : "border-gray-200 hover:border-[#94b0ab] bg-gray-50/50"
+                "relative h-56 border-2 border-dashed rounded-[2rem] overflow-hidden transition-all group",
+                coverPreview ? "border-transparent" : "border-gray-200 hover:border-[#94b0ab] bg-gray-50/30"
               )}>
-                <input type="file" accept="image/*" onChange={handleCoverChange} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                <input type="file" accept="image/*" onChange={handleCoverChange} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
                 {coverPreview ? (
-                  <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
+                  <div className="relative w-full h-full">
+                    <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
+                      <p className="text-white font-bold bg-black/20 px-4 py-2 rounded-full backdrop-blur-md">Cambia Copertina</p>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-2">
-                    <ImageIcon size={24} className="text-[#94b0ab]" />
-                    <p className="text-xs font-bold">Carica Foto Hero</p>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-3">
+                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
+                      <ImageIcon size={24} className="text-[#94b0ab]" />
+                    </div>
+                    <p className="text-xs font-bold uppercase tracking-tighter">Carica Hero Image</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Zone B: Galleria Griglia Densa */}
-            <div className="space-y-3">
-              <Label className="text-xs font-bold uppercase text-gray-400 tracking-wider">Galleria Fotografica</Label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+            {/* Zone B: Galleria */}
+            <div className="space-y-4">
+              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Galleria del Tour Virtuale</Label>
+              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-4">
                 {galleryPreviews.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-xl overflow-hidden group shadow-sm bg-gray-100">
-                    <img src={url} alt="Gallery" className="w-full h-full object-cover" />
-                    <button onClick={() => removeGalleryImage(i)} className="absolute top-1 right-1 w-6 h-6 bg-white/90 text-red-500 rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <X size={14} />
+                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group shadow-sm bg-gray-100 border border-gray-100">
+                    <img src={url} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
+                    <button 
+                      onClick={() => removeGalleryImage(i)} 
+                      className="absolute top-2 right-2 w-8 h-8 bg-white/90 backdrop-blur-sm text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg active:scale-90"
+                    >
+                      <X size={16} />
                     </button>
                   </div>
                 ))}
-                <div className="relative aspect-square min-h-[100px] border-2 border-dashed border-gray-200 rounded-xl hover:border-[#94b0ab] hover:bg-gray-50 transition-all flex flex-col items-center justify-center text-gray-400 gap-1 cursor-pointer">
+                <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-[1.5rem] hover:border-[#94b0ab] hover:bg-gray-50/50 transition-all flex flex-col items-center justify-center text-gray-400 gap-2 cursor-pointer group">
                   <input type="file" multiple accept="image/*" onChange={handleGalleryChange} className="absolute inset-0 opacity-0 cursor-pointer" />
-                  <Plus size={20} />
-                  <span className="text-[10px] font-bold">Aggiungi</span>
+                  <Plus size={24} className="group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-bold uppercase">Aggiungi</span>
                 </div>
               </div>
             </div>
@@ -306,29 +382,29 @@ const PropertyWizard = ({ onClose, onSuccess }: PropertyWizardProps) => {
       </div>
 
       {/* 3. STICKY FOOTER */}
-      <DialogFooter className="px-8 py-5 border-t bg-gray-50/80 backdrop-blur-sm shrink-0 sm:justify-between items-center">
+      <DialogFooter className="px-10 py-6 border-t bg-white shrink-0 flex items-center justify-between sm:justify-between z-20">
         <Button 
           variant="ghost" 
           onClick={() => step > 1 ? setStep(step - 1) : onClose()}
-          className="rounded-xl h-11 px-6 text-gray-500 font-semibold hover:bg-white"
+          className="rounded-2xl h-14 px-8 text-gray-500 font-bold hover:bg-gray-50"
         >
-          {step === 1 ? "Annulla" : "Indietro"}
+          {step === 1 ? <><X className="mr-2" size={18} /> Chiudi</> : <><ChevronLeft className="mr-2" size={18} /> Indietro</>}
         </Button>
         
         {step < 4 ? (
           <Button 
             onClick={() => setStep(step + 1)}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-8 h-11 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95"
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95"
           >
-            Continua <ChevronRight className="ml-2" size={18} />
+            Avanti <ChevronRight className="ml-2" size={18} />
           </Button>
         ) : (
           <Button 
             onClick={handleSubmit}
-            disabled={loading || !coverImage}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-12 h-11 shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-95 disabled:opacity-50"
+            disabled={loading || (!coverPreview && !coverImage)}
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95 disabled:opacity-50"
           >
-            {loading ? "Pubblicazione..." : "Pubblica Immobile"}
+            {loading ? "Salvataggio..." : initialData ? "Salva Modifiche" : "Pubblica Immobile"}
           </Button>
         )}
       </DialogFooter>
