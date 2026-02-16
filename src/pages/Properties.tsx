@@ -64,54 +64,88 @@ const Properties = () => {
     fetchProperties();
   }, []);
 
+  // --- OPTIMISTIC ACTIONS ---
+
   const handleDelete = async () => {
     if (!propertyToDelete) return;
     
-    const { error } = await supabase.from('immobili').delete().eq('id', propertyToDelete.id);
-    if (error) showError("Errore durante l'eliminazione");
-    else {
-      showSuccess("Immobile eliminato correttamente");
-      fetchProperties();
-    }
+    // Save original state for rollback
+    const previousProperties = [...properties];
+    const targetId = propertyToDelete.id;
+
+    // 1. Instant UI Update
+    setProperties(prev => prev.filter(p => p.id !== targetId));
     setPropertyToDelete(null);
+
+    // 2. Background Sync
+    const { error } = await supabase.from('immobili').delete().eq('id', targetId);
+    
+    if (error) {
+      // 3. Rollback on Error
+      setProperties(previousProperties);
+      showError("Connessione fallita. Impossibile eliminare l'immobile.");
+    } else {
+      showSuccess("Immobile rimosso con successo.");
+    }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
+    const previousProperties = [...properties];
     const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
-    
+
+    // 1. Instant UI Update
+    setProperties(prev => prev.map(p => 
+      p.id === id ? { ...p, stato: newStatus } : p
+    ));
+
+    // 2. Background Sync
     const { error } = await supabase
       .from('immobili')
       .update({ stato: newStatus })
       .eq('id', id);
     
-    if (error) showError("Errore nell'aggiornamento");
-    else {
-      showSuccess(`Immobile segnato come ${newStatus}`);
-      fetchProperties();
+    if (error) {
+      // 3. Rollback
+      setProperties(previousProperties);
+      showError("Errore di sincronizzazione. Lo stato non è stato aggiornato.");
+    } else {
+      showSuccess(`Stato aggiornato: ${newStatus}`);
     }
   };
 
   const toggleFeatured = async (id: string, currentFeatured: boolean) => {
-    // Controllo limite massimo (3)
+    // Business Logic Check (before optimistic update)
     if (!currentFeatured) {
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
-        showError("Puoi avere al massimo 3 immobili in evidenza simultaneamente");
+        showError("Limite raggiunto: massimo 3 immobili in evidenza.");
         return;
       }
     }
 
+    const previousProperties = [...properties];
+
+    // 1. Instant UI Update
+    setProperties(prev => prev.map(p => 
+      p.id === id ? { ...p, in_evidenza: !currentFeatured } : p
+    ));
+
+    // 2. Background Sync
     const { error } = await supabase
       .from('immobili')
       .update({ in_evidenza: !currentFeatured })
       .eq('id', id);
     
-    if (error) showError("Errore durante l'operazione");
-    else {
-      showSuccess(!currentFeatured ? "Immobile messo in evidenza" : "Immobile rimosso dall'evidenza");
-      fetchProperties();
+    if (error) {
+      // 3. Rollback
+      setProperties(previousProperties);
+      showError("Impossibile aggiornare l'evidenza. Riprova tra poco.");
+    } else {
+      showSuccess(!currentFeatured ? "Messo in evidenza" : "Rimosso dall'evidenza");
     }
   };
+
+  // --- HELPERS ---
 
   const getStatusBadge = (status: string) => {
     const styles: any = {
@@ -138,7 +172,7 @@ const Properties = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-[#1a1a1a]">I Tuoi Immobili</h1>
-          <p className="text-gray-500 mt-1">Gestisci il catalogo e monitora lo stato delle vendite.</p>
+          <p className="text-gray-500 mt-1">Gestisci il catalogo con risposte istantanee.</p>
         </div>
         
         <Button 
@@ -201,7 +235,7 @@ const Properties = () => {
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-bold">Sei assolutamente sicuro?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-500">
-              L'azione è irreversibile. L'immobile "{propertyToDelete?.titolo}" verrà rimosso permanentemente dal database e dal sito pubblico.
+              L'azione è irreversibile. L'immobile "{propertyToDelete?.titolo}" verrà rimosso istantaneamente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
@@ -210,7 +244,7 @@ const Properties = () => {
               onClick={handleDelete}
               className="bg-red-500 hover:bg-red-600 text-white rounded-xl"
             >
-              Sì, Elimina Immobile
+              Sì, Elimina Ora
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -229,10 +263,10 @@ const Properties = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Caricamento in corso...</td></tr>
+              {loading && properties.length === 0 ? (
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Sincronizzazione...</td></tr>
               ) : filteredProperties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Nessun immobile trovato in questa categoria.</td></tr>
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Nessun immobile trovato.</td></tr>
               ) : filteredProperties.map((prop) => (
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
