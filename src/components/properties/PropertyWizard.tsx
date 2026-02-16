@@ -8,8 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
-  X, Check, ChevronRight, Image as ImageIcon, Plus, 
-  Minus, Home, Settings, Info, Camera, ChevronLeft, Link as LinkIcon
+  X, ChevronRight, Image as ImageIcon, Plus, 
+  Minus, Home, Settings, Info, Camera, ChevronLeft, Link as LinkIcon, Save
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -123,8 +123,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
   };
 
   const handleSubmit = async () => {
-    if (!formData.titolo || !formData.prezzo || (!coverPreview && !coverImage)) {
-      showError("Titolo, Prezzo e Foto di Copertina sono obbligatori");
+    if (!formData.titolo || !formData.prezzo) {
+      showError("Titolo e Prezzo sono obbligatori");
+      setStep(1);
       return;
     }
 
@@ -184,7 +185,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
-      {/* 1. STICKY HEADER */}
+      {/* 1. FIXED HEADER */}
       <DialogHeader className="px-10 py-8 border-b shrink-0 bg-white">
         <div className="flex justify-between items-center">
           <div>
@@ -195,13 +196,18 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
           </div>
           <div className="flex items-center gap-2">
             {[1, 2, 3, 4].map((s) => (
-              <div 
+              <button 
                 key={s} 
+                onClick={() => setStep(s)}
                 className={cn(
-                  "h-1.5 rounded-full transition-all duration-500",
-                  step === s ? "w-10 bg-[#94b0ab]" : step > s ? "w-6 bg-[#94b0ab]/40" : "w-6 bg-gray-100"
-                )} 
-              />
+                  "h-2 rounded-full transition-all duration-300 relative group",
+                  step === s ? "w-12 bg-[#94b0ab]" : "w-8 bg-gray-100 hover:bg-gray-200"
+                )}
+              >
+                 <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-black text-[#94b0ab] opacity-0 group-hover:opacity-100 transition-opacity">
+                   {s}
+                 </span>
+              </button>
             ))}
           </div>
         </div>
@@ -217,7 +223,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
                 <Home size={22} className="text-[#94b0ab]" /> Dati Principali
               </h2>
-              <p className="text-sm text-gray-400">Le informazioni che appariranno in cima all'annuncio.</p>
+              <p className="text-sm text-gray-400">Le informazioni fondamentali dell'annuncio.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-3 col-span-full">
@@ -244,15 +250,15 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
                 </Select>
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città / Comune</Label>
-                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>
+                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
               <div className="space-y-3 col-span-full">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                  <LinkIcon size={14} className="text-[#94b0ab]" /> Link Immobiliare.it (Opzionale)
+                  <LinkIcon size={14} className="text-[#94b0ab]" /> Link Immobiliare.it
                 </Label>
                 <Input 
-                  placeholder="https://www.immobiliare.it/annunci/..." 
+                  placeholder="Incolla il link dell'annuncio..." 
                   value={formData.link_immobiliare} 
                   onChange={(e) => setFormData({...formData, link_immobiliare: e.target.value})} 
                   className="rounded-2xl h-14 border-gray-100 focus:ring-[#94b0ab]" 
@@ -274,7 +280,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
               <div className="space-y-8">
                 <div className="space-y-3">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano / Livello</Label>
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
                   <Input placeholder="Es: 1, Ultimo, Terra" value={formData.piano} onChange={(e) => setFormData({...formData, piano: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
                 </div>
                 <div className="space-y-3">
@@ -317,12 +323,12 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                <Info size={22} className="text-[#94b0ab]" /> Storytelling
+                <Info size={22} className="text-[#94b0ab]" /> Descrizione Annuncio
               </h2>
-              <p className="text-sm text-gray-400">Descrivi i punti di forza e lo stile di vita che offre la casa.</p>
+              <p className="text-sm text-gray-400">Racconta l'immobile per catturare l'interesse.</p>
             </div>
             <Textarea 
-              placeholder="Racconta la casa: l'esposizione al sole, la zona tranquilla, le finiture di pregio..." 
+              placeholder="Inserisci qui la descrizione completa..." 
               rows={14} 
               value={formData.descrizione} 
               onChange={(e) => setFormData({...formData, descrizione: e.target.value})} 
@@ -336,53 +342,41 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                <Camera size={22} className="text-[#94b0ab]" /> Materiale Fotografico
+                <Camera size={22} className="text-[#94b0ab]" /> Foto e Galleria
               </h2>
-              <p className="text-sm text-gray-400">Le foto caricate qui andranno a comporre la galleria pubblica.</p>
+              <p className="text-sm text-gray-400">La copertina è l'immagine che attira i clienti.</p>
             </div>
 
-            {/* Zone A: Copertina */}
             <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-[#94b0ab]">Immagine Principale (Copertina) *</Label>
+              <Label className="text-xs font-bold uppercase tracking-widest text-[#94b0ab]">Copertina *</Label>
               <div className={cn(
                 "relative h-56 border-2 border-dashed rounded-[2rem] overflow-hidden transition-all group",
                 coverPreview ? "border-transparent" : "border-gray-200 hover:border-[#94b0ab] bg-gray-50/30"
               )}>
                 <input type="file" accept="image/*" onChange={handleCoverChange} className="absolute inset-0 opacity-0 cursor-pointer z-20" />
                 {coverPreview ? (
-                  <div className="relative w-full h-full">
-                    <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-10">
-                      <p className="text-white font-bold bg-black/20 px-4 py-2 rounded-full backdrop-blur-md">Cambia Copertina</p>
-                    </div>
-                  </div>
+                  <img src={coverPreview} alt="Cover" className="w-full h-full object-cover" />
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-3">
-                    <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm">
-                      <ImageIcon size={24} className="text-[#94b0ab]" />
-                    </div>
-                    <p className="text-xs font-bold uppercase tracking-tighter">Carica Hero Image</p>
+                    <ImageIcon size={24} />
+                    <p className="text-xs font-bold uppercase">Carica Copertina</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Zone B: Galleria */}
             <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Galleria del Tour Virtuale</Label>
+              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Altre Foto</Label>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-4">
                 {galleryPreviews.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group shadow-sm bg-gray-100 border border-gray-100">
+                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group border border-gray-100">
                     <img src={url} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
-                    <button 
-                      onClick={() => removeGalleryImage(i)} 
-                      className="absolute top-2 right-2 w-8 h-8 bg-white/90 backdrop-blur-sm text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg active:scale-90"
-                    >
+                    <button onClick={() => removeGalleryImage(i)} className="absolute top-2 right-2 w-8 h-8 bg-white/90 text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg">
                       <X size={16} />
                     </button>
                   </div>
                 ))}
-                <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-[1.5rem] hover:border-[#94b0ab] hover:bg-gray-50/50 transition-all flex flex-col items-center justify-center text-gray-400 gap-2 cursor-pointer group">
+                <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-[1.5rem] hover:border-[#94b0ab] transition-all flex flex-col items-center justify-center text-gray-400 cursor-pointer group">
                   <input type="file" multiple accept="image/*" onChange={handleGalleryChange} className="absolute inset-0 opacity-0 cursor-pointer" />
                   <Plus size={24} className="group-hover:scale-110 transition-transform" />
                   <span className="text-[10px] font-bold uppercase">Aggiungi</span>
@@ -393,32 +387,46 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         )}
       </div>
 
-      {/* 3. STICKY FOOTER */}
+      {/* 3. FIXED FOOTER */}
       <DialogFooter className="px-10 py-6 border-t bg-white shrink-0 flex items-center justify-between sm:justify-between z-20">
         <Button 
           variant="ghost" 
           onClick={() => step > 1 ? setStep(step - 1) : onClose()}
           className="rounded-2xl h-14 px-8 text-gray-500 font-bold hover:bg-gray-50"
         >
-          {step === 1 ? <><X className="mr-2" size={18} /> Chiudi</> : <><ChevronLeft className="mr-2" size={18} /> Indietro</>}
+          {step === 1 ? "Annulla" : <><ChevronLeft className="mr-2" size={18} /> Indietro</>}
         </Button>
         
-        {step < 4 ? (
-          <Button 
-            onClick={() => setStep(step + 1)}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95"
-          >
-            Avanti <ChevronRight className="ml-2" size={18} />
-          </Button>
-        ) : (
-          <Button 
-            onClick={handleSubmit}
-            disabled={loading || (!coverPreview && !coverImage)}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95 disabled:opacity-50"
-          >
-            {loading ? "Salvataggio..." : initialData ? "Salva Modifiche" : "Pubblica Immobile"}
-          </Button>
-        )}
+        <div className="flex gap-3">
+          {/* Conditional Save Button for Edit Mode */}
+          {initialData && (
+            <Button 
+              variant="outline"
+              onClick={handleSubmit}
+              disabled={loading}
+              className="border-2 border-[#94b0ab] text-[#94b0ab] hover:bg-[#94b0ab]/5 rounded-2xl px-8 h-14 font-bold transition-all flex items-center gap-2"
+            >
+              <Save size={18} /> {loading ? "Salvataggio..." : "Salva Modifiche"}
+            </Button>
+          )}
+
+          {step < 4 ? (
+            <Button 
+              onClick={() => setStep(step + 1)}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95"
+            >
+              Avanti <ChevronRight className="ml-2" size={18} />
+            </Button>
+          ) : !initialData ? (
+            <Button 
+              onClick={handleSubmit}
+              disabled={loading || (!coverPreview && !coverImage)}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95 disabled:opacity-50"
+            >
+              {loading ? "Pubblicazione..." : "Pubblica Immobile"}
+            </Button>
+          ) : null}
+        </div>
       </DialogFooter>
     </div>
   );
