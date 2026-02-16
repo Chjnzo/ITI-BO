@@ -5,8 +5,9 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { 
   Plus, Edit2, Trash2, Home, CheckCircle2, 
-  MoreHorizontal, RotateCcw, Filter, Star 
+  MoreHorizontal, RotateCcw, Search, Star 
 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
@@ -39,13 +40,12 @@ import { cn } from '@/lib/utils';
 const Properties = () => {
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState("active"); // Default: In Vendita
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<any>(null);
-  
-  // Delete Dialog State
   const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
 
   const fetchProperties = async () => {
@@ -64,241 +64,171 @@ const Properties = () => {
     fetchProperties();
   }, []);
 
-  // --- OPTIMISTIC ACTIONS ---
+  // --- FORMATTERS ---
+  const formatPrice = (price: number) => {
+    if (!price) return 'N/D';
+    return new Intl.NumberFormat('it-IT', { 
+      style: 'currency', 
+      currency: 'EUR',
+      maximumFractionDigits: 0 
+    }).format(price);
+  };
 
+  // --- OPTIMISTIC ACTIONS ---
   const handleDelete = async () => {
     if (!propertyToDelete) return;
-    
-    // Save original state for rollback
     const previousProperties = [...properties];
     const targetId = propertyToDelete.id;
-
-    // 1. Instant UI Update
     setProperties(prev => prev.filter(p => p.id !== targetId));
     setPropertyToDelete(null);
 
-    // 2. Background Sync
     const { error } = await supabase.from('immobili').delete().eq('id', targetId);
-    
     if (error) {
-      // 3. Rollback on Error
       setProperties(previousProperties);
-      showError("Connessione fallita. Impossibile eliminare l'immobile.");
+      showError("Connessione fallita. Modifica annullata.");
     } else {
-      showSuccess("Immobile rimosso con successo.");
+      showSuccess("Immobile rimosso.");
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const previousProperties = [...properties];
     const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
+    setProperties(prev => prev.map(p => p.id === id ? { ...p, stato: newStatus } : p));
 
-    // 1. Instant UI Update
-    setProperties(prev => prev.map(p => 
-      p.id === id ? { ...p, stato: newStatus } : p
-    ));
-
-    // 2. Background Sync
-    const { error } = await supabase
-      .from('immobili')
-      .update({ stato: newStatus })
-      .eq('id', id);
-    
+    const { error } = await supabase.from('immobili').update({ stato: newStatus }).eq('id', id);
     if (error) {
-      // 3. Rollback
       setProperties(previousProperties);
-      showError("Errore di sincronizzazione. Lo stato non è stato aggiornato.");
+      showError("Sincronizzazione fallita.");
     } else {
-      showSuccess(`Stato aggiornato: ${newStatus}`);
+      showSuccess(`Stato: ${newStatus}`);
     }
   };
 
   const toggleFeatured = async (id: string, currentFeatured: boolean) => {
-    // Business Logic Check (before optimistic update)
     if (!currentFeatured) {
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
-        showError("Limite raggiunto: massimo 3 immobili in evidenza.");
+        showError("Massimo 3 immobili in evidenza.");
         return;
       }
     }
-
     const previousProperties = [...properties];
+    setProperties(prev => prev.map(p => p.id === id ? { ...p, in_evidenza: !currentFeatured } : p));
 
-    // 1. Instant UI Update
-    setProperties(prev => prev.map(p => 
-      p.id === id ? { ...p, in_evidenza: !currentFeatured } : p
-    ));
-
-    // 2. Background Sync
-    const { error } = await supabase
-      .from('immobili')
-      .update({ in_evidenza: !currentFeatured })
-      .eq('id', id);
-    
+    const { error } = await supabase.from('immobili').update({ in_evidenza: !currentFeatured }).eq('id', id);
     if (error) {
-      // 3. Rollback
       setProperties(previousProperties);
-      showError("Impossibile aggiornare l'evidenza. Riprova tra poco.");
-    } else {
-      showSuccess(!currentFeatured ? "Messo in evidenza" : "Rimosso dall'evidenza");
+      showError("Errore evidenza.");
     }
   };
 
-  // --- HELPERS ---
-
-  const getStatusBadge = (status: string) => {
-    const styles: any = {
-      'Disponibile': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-      'Trattativa': 'bg-amber-100 text-amber-700 border-amber-200',
-      'Venduto': 'bg-slate-100 text-slate-700 border-slate-200'
-    };
-    return (
-      <span className={cn("px-3 py-1 rounded-full text-xs font-bold border", styles[status] || 'bg-gray-100')}>
-        {status}
-      </span>
-    );
-  };
-
+  // --- FILTERING LOGIC ---
   const filteredProperties = properties.filter(p => {
-    if (filter === "all") return true;
-    if (filter === "active") return p.stato === 'Disponibile' || p.stato === 'Trattativa';
-    if (filter === "sold") return p.stato === 'Venduto';
-    return true;
+    const matchesTab = filter === "active" ? p.stato !== 'Venduto' : p.stato === 'Venduto';
+    const matchesSearch = 
+      p.titolo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.zona?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.indirizzo?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    return matchesTab && matchesSearch;
   });
 
   return (
     <AdminLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-[#1a1a1a]">I Tuoi Immobili</h1>
-          <p className="text-gray-500 mt-1">Gestisci il catalogo con risposte istantanee.</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
+          <p className="text-gray-500 mt-1 font-medium">Gestione rapida del portafoglio immobiliare.</p>
         </div>
         
         <Button 
           onClick={() => { setEditingProperty(null); setIsWizardOpen(true); }}
-          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95"
+          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
         >
           <Plus className="mr-2" size={20} /> Nuovo Immobile
         </Button>
       </div>
 
-      {/* Filters & Navigation */}
-      <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
-        <Tabs defaultValue="all" className="w-full md:w-auto" onValueChange={setFilter}>
-          <TabsList className="bg-transparent gap-2 p-1">
-            <TabsTrigger 
-              value="all" 
-              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
-            >
-              Tutti ({properties.length})
-            </TabsTrigger>
+      {/* FILTER BAR: TABS + SEARCH */}
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-8 gap-4">
+        <Tabs value={filter} onValueChange={setFilter} className="w-full xl:w-auto">
+          <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 w-full xl:w-auto flex justify-start gap-1">
             <TabsTrigger 
               value="active" 
-              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
+              className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all flex-1 xl:flex-none"
             >
-              Attivi ({properties.filter(p => p.stato !== 'Venduto').length})
+              In Vendita ({properties.filter(p => p.stato !== 'Venduto').length})
             </TabsTrigger>
             <TabsTrigger 
               value="sold" 
-              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
+              className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all flex-1 xl:flex-none"
             >
               Venduti ({properties.filter(p => p.stato === 'Venduto').length})
             </TabsTrigger>
           </TabsList>
         </Tabs>
         
-        <div className="flex items-center gap-2 px-4 text-gray-400 text-sm">
-          <Filter size={16} />
-          <span>Filtro Attivo: <span className="text-[#1a1a1a] font-bold uppercase">{filter}</span></span>
+        <div className="relative flex-1 max-w-xl group">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={20} />
+          <Input 
+            placeholder="Cerca per titolo, zona o indirizzo..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-14 pl-14 pr-6 rounded-2xl border-gray-100 bg-white shadow-sm focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
+          />
         </div>
       </div>
 
-      {/* Main Content Modal */}
-      <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
-        <DialogContent 
-          className="max-w-4xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2rem]"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-        >
-          <PropertyWizard 
-            initialData={editingProperty}
-            onClose={() => setIsWizardOpen(false)} 
-            onSuccess={fetchProperties} 
-          />
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
-        <AlertDialogContent className="rounded-3xl border-none">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-bold">Sei assolutamente sicuro?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-500">
-              L'azione è irreversibile. L'immobile "{propertyToDelete?.titolo}" verrà rimosso istantaneamente.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel className="rounded-xl border-gray-200">Annulla</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDelete}
-              className="bg-red-500 hover:bg-red-600 text-white rounded-xl"
-            >
-              Sì, Elimina Ora
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Table Container */}
-      <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+      {/* FIXED TABLE CONTAINER */}
+      <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+        <div className="w-full overflow-hidden">
+          <table className="w-full table-fixed text-left">
             <thead>
               <tr className="bg-gray-50/50 border-b border-gray-100">
-                <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile</th>
-                <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Prezzo / MQ</th>
-                <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
-                <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni Rapide</th>
+                <th className="w-[45%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile</th>
+                <th className="w-[20%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Prezzo</th>
+                <th className="w-[15%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-center">Stato</th>
+                <th className="w-[20%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading && properties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Sincronizzazione...</td></tr>
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium">Sincronizzazione...</td></tr>
               ) : filteredProperties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Nessun immobile trovato.</td></tr>
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium italic">Nessun risultato trovato.</td></tr>
               ) : filteredProperties.map((prop) => (
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
-                    <div className="flex items-center gap-5">
-                      <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 flex-shrink-0 shadow-sm">
+                    <div className="flex items-center gap-5 min-w-0">
+                      <div className="relative w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 flex-shrink-0 shadow-sm">
                         {prop.copertina_url ? (
-                          <img src={prop.copertina_url} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                          <img src={prop.copertina_url} alt="" className="w-full h-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-300"><Home size={32} /></div>
+                          <div className="w-full h-full flex items-center justify-center text-gray-300"><Home size={24} /></div>
                         )}
                         {prop.in_evidenza && (
-                          <div className="absolute top-1 left-1 bg-yellow-400 p-1 rounded-lg shadow-md border border-white">
-                            <Star size={10} className="fill-white text-white" />
+                          <div className="absolute top-1 left-1 bg-yellow-400 p-0.5 rounded-md shadow-sm border border-white">
+                            <Star size={8} className="fill-white text-white" />
                           </div>
                         )}
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-[#1a1a1a] text-lg truncate">{prop.titolo}</div>
-                        <div className="text-sm text-gray-500 flex items-center gap-1.5 mt-0.5">
-                          <span className="font-medium text-gray-600">{prop.citta}</span>
-                          <span className="text-gray-300">•</span>
-                          <span>{prop.mq} mq</span>
-                        </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-gray-900 text-[1.05rem] truncate">{prop.titolo}</div>
+                        <div className="text-sm text-gray-400 truncate mt-0.5 font-medium">{prop.citta}, {prop.zona || prop.indirizzo}</div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-8 py-5">
-                    <div className="font-bold text-gray-900 text-lg">€ {prop.prezzo.toLocaleString()}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{prop.mq > 0 ? Math.round(prop.prezzo / prop.mq).toLocaleString() : 0} €/mq</div>
+                  <td className="px-8 py-5 text-right">
+                    <div className="font-bold text-gray-900 text-lg">{formatPrice(prop.prezzo)}</div>
                   </td>
-                  <td className="px-8 py-5">
-                    {getStatusBadge(prop.stato)}
+                  <td className="px-8 py-5 text-center">
+                    <span className={cn(
+                      "inline-flex px-3 py-1 rounded-full text-[0.7rem] font-black uppercase tracking-tighter border whitespace-nowrap",
+                      prop.stato === 'Venduto' ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                    )}>
+                      {prop.stato}
+                    </span>
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end items-center gap-2">
@@ -310,18 +240,14 @@ const Properties = () => {
                               size="icon" 
                               onClick={() => toggleFeatured(prop.id, prop.in_evidenza)}
                               className={cn(
-                                "rounded-xl h-9 w-9 transition-all",
-                                prop.in_evidenza 
-                                  ? "text-yellow-500 bg-yellow-50 hover:bg-yellow-100" 
-                                  : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                                "rounded-xl h-10 w-10 transition-all",
+                                prop.in_evidenza ? "text-yellow-500 bg-yellow-50" : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
                               )}
                             >
                               <Star size={20} className={cn(prop.in_evidenza && "fill-yellow-500")} />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent className="rounded-xl">
-                            <p>{prop.in_evidenza ? "Rimuovi da Evidenza" : "Metti in Evidenza"}</p>
-                          </TooltipContent>
+                          <TooltipContent><p>Evidenza</p></TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
 
@@ -330,37 +256,25 @@ const Properties = () => {
                         size="sm" 
                         onClick={() => toggleStatus(prop.id, prop.stato)}
                         className={cn(
-                          "rounded-xl h-9 font-bold px-4 transition-all",
-                          prop.stato === 'Venduto' 
-                            ? "border-blue-100 text-blue-600 hover:bg-blue-50" 
-                            : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
+                          "rounded-xl h-10 font-bold px-4 transition-all border-2",
+                          prop.stato === 'Venduto' ? "border-blue-100 text-blue-600 hover:bg-blue-50" : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
                         )}
                       >
-                        {prop.stato === 'Venduto' ? (
-                          <><RotateCcw size={16} className="mr-1.5" /> Ripristina</>
-                        ) : (
-                          <><CheckCircle2 size={16} className="mr-1.5" /> Venduto</>
-                        )}
+                        {prop.stato === 'Venduto' ? <RotateCcw size={18} /> : <CheckCircle2 size={18} />}
                       </Button>
                       
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="rounded-xl h-9 w-9 text-gray-400">
+                          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-gray-400">
                             <MoreHorizontal size={20} />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="rounded-2xl border-gray-100 shadow-xl p-2 min-w-[160px]">
-                          <DropdownMenuItem 
-                            onClick={() => { setEditingProperty(prop); setIsWizardOpen(true); }}
-                            className="rounded-xl px-4 py-2.5 cursor-pointer font-medium"
-                          >
-                            <Edit2 size={16} className="mr-2.5 text-[#94b0ab]" /> Modifica Dati
+                          <DropdownMenuItem onClick={() => { setEditingProperty(prop); setIsWizardOpen(true); }} className="rounded-xl px-4 py-3 cursor-pointer font-bold">
+                            <Edit2 size={16} className="mr-3 text-[#94b0ab]" /> Modifica
                           </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            onClick={() => setPropertyToDelete(prop)}
-                            className="rounded-xl px-4 py-2.5 cursor-pointer font-medium text-red-600 focus:text-red-600 focus:bg-red-50"
-                          >
-                            <Trash2 size={16} className="mr-2.5" /> Elimina
+                          <DropdownMenuItem onClick={() => setPropertyToDelete(prop)} className="rounded-xl px-4 py-3 cursor-pointer font-bold text-red-600 focus:text-red-600 focus:bg-red-50">
+                            <Trash2 size={16} className="mr-3" /> Elimina
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -372,6 +286,26 @@ const Properties = () => {
           </table>
         </div>
       </div>
+
+      {/* Modals & Dialogs */}
+      <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
+          <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={fetchProperties} />
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-bold">Eliminare l'immobile?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-500 font-medium">Rimuoverai "{propertyToDelete?.titolo}" istantaneamente.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 };
