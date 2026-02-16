@@ -4,8 +4,8 @@ import React, { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { 
-  Plus, Edit2, Trash2, Home, CheckCircle2, 
-  MoreHorizontal, RotateCcw, Search, Star 
+  Plus, Pencil, Trash2, Home, CheckCircle2, 
+  RotateCcw, Search, Star 
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -21,12 +21,6 @@ import {
   AlertDialogTitle 
 } from "@/components/ui/alert-dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -40,10 +34,9 @@ import { cn } from '@/lib/utils';
 const Properties = () => {
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("active"); // Default: In Vendita
+  const [filter, setFilter] = useState("active");
   const [searchQuery, setSearchQuery] = useState("");
   
-  // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<any>(null);
   const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
@@ -64,7 +57,6 @@ const Properties = () => {
     fetchProperties();
   }, []);
 
-  // --- FORMATTERS ---
   const formatPrice = (price: number) => {
     if (!price) return 'N/D';
     return new Intl.NumberFormat('it-IT', { 
@@ -74,7 +66,6 @@ const Properties = () => {
     }).format(price);
   };
 
-  // --- OPTIMISTIC ACTIONS ---
   const handleDelete = async () => {
     if (!propertyToDelete) return;
     const previousProperties = [...properties];
@@ -85,7 +76,7 @@ const Properties = () => {
     const { error } = await supabase.from('immobili').delete().eq('id', targetId);
     if (error) {
       setProperties(previousProperties);
-      showError("Connessione fallita. Modifica annullata.");
+      showError("Errore nell'eliminazione.");
     } else {
       showSuccess("Immobile rimosso.");
     }
@@ -123,7 +114,6 @@ const Properties = () => {
     }
   };
 
-  // --- FILTERING LOGIC ---
   const filteredProperties = properties.filter(p => {
     const matchesTab = filter === "active" ? p.stato !== 'Venduto' : p.stato === 'Venduto';
     const matchesSearch = 
@@ -139,7 +129,7 @@ const Properties = () => {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
-          <p className="text-gray-500 mt-1 font-medium">Gestione rapida del portafoglio immobiliare.</p>
+          <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
         </div>
         
         <Button 
@@ -150,20 +140,13 @@ const Properties = () => {
         </Button>
       </div>
 
-      {/* FILTER BAR: TABS + SEARCH */}
       <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-8 gap-4">
         <Tabs value={filter} onValueChange={setFilter} className="w-full xl:w-auto">
           <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 w-full xl:w-auto flex justify-start gap-1">
-            <TabsTrigger 
-              value="active" 
-              className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all flex-1 xl:flex-none"
-            >
+            <TabsTrigger value="active" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
               In Vendita ({properties.filter(p => p.stato !== 'Venduto').length})
             </TabsTrigger>
-            <TabsTrigger 
-              value="sold" 
-              className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all flex-1 xl:flex-none"
-            >
+            <TabsTrigger value="sold" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
               Venduti ({properties.filter(p => p.stato === 'Venduto').length})
             </TabsTrigger>
           </TabsList>
@@ -180,7 +163,6 @@ const Properties = () => {
         </div>
       </div>
 
-      {/* FIXED TABLE CONTAINER */}
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
         <div className="w-full overflow-hidden">
           <table className="w-full table-fixed text-left">
@@ -188,15 +170,15 @@ const Properties = () => {
               <tr className="bg-gray-50/50 border-b border-gray-100">
                 <th className="w-[45%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile</th>
                 <th className="w-[20%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Prezzo</th>
-                <th className="w-[15%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-center">Stato</th>
-                <th className="w-[20%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
+                <th className="w-[12%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-center">Stato</th>
+                <th className="w-[23%] px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading && properties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium">Sincronizzazione...</td></tr>
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium">Caricamento...</td></tr>
               ) : filteredProperties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium italic">Nessun risultato trovato.</td></tr>
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium italic">Nessun immobile trovato.</td></tr>
               ) : filteredProperties.map((prop) => (
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
@@ -206,11 +188,6 @@ const Properties = () => {
                           <img src={prop.copertina_url} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-300"><Home size={24} /></div>
-                        )}
-                        {prop.in_evidenza && (
-                          <div className="absolute top-1 left-1 bg-yellow-400 p-0.5 rounded-md shadow-sm border border-white">
-                            <Star size={8} className="fill-white text-white" />
-                          </div>
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -224,60 +201,75 @@ const Properties = () => {
                   </td>
                   <td className="px-8 py-5 text-center">
                     <span className={cn(
-                      "inline-flex px-3 py-1 rounded-full text-[0.7rem] font-black uppercase tracking-tighter border whitespace-nowrap",
+                      "inline-flex px-3 py-1 rounded-full text-[0.65rem] font-black uppercase tracking-tighter border",
                       prop.stato === 'Venduto' ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-emerald-50 text-emerald-700 border-emerald-100"
                     )}>
                       {prop.stato}
                     </span>
                   </td>
                   <td className="px-8 py-5 text-right">
-                    <div className="flex justify-end items-center gap-2">
+                    <div className="flex items-center justify-end gap-3">
                       <TooltipProvider>
+                        {/* FEATURED TOGGLE */}
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
+                            <button 
                               onClick={() => toggleFeatured(prop.id, prop.in_evidenza)}
-                              className={cn(
-                                "rounded-xl h-10 w-10 transition-all",
-                                prop.in_evidenza ? "text-yellow-500 bg-yellow-50" : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
-                              )}
+                              className="transition-all active:scale-90"
                             >
-                              <Star size={20} className={cn(prop.in_evidenza && "fill-yellow-500")} />
-                            </Button>
+                              <Star 
+                                size={18} 
+                                className={cn(
+                                  "transition-colors",
+                                  prop.in_evidenza ? "fill-[#facc15] text-[#facc15]" : "text-gray-300 hover:text-gray-500"
+                                )} 
+                              />
+                            </button>
                           </TooltipTrigger>
-                          <TooltipContent><p>Evidenza</p></TooltipContent>
+                          <TooltipContent className="rounded-xl font-bold">In Evidenza</TooltipContent>
+                        </Tooltip>
+
+                        {/* STATUS TOGGLE */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button 
+                              onClick={() => toggleStatus(prop.id, prop.stato)}
+                              className="text-gray-300 hover:text-emerald-600 transition-all active:scale-90"
+                            >
+                              {prop.stato === 'Venduto' ? <RotateCcw size={18} /> : <CheckCircle2 size={18} />}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="rounded-xl font-bold">
+                            {prop.stato === 'Venduto' ? "Rimetti in Vendita" : "Segna come Venduto"}
+                          </TooltipContent>
+                        </Tooltip>
+
+                        {/* EDIT BUTTON */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button 
+                              onClick={() => { setEditingProperty(prop); setIsWizardOpen(true); }}
+                              className="text-gray-300 hover:text-blue-600 transition-all active:scale-90"
+                            >
+                              <Pencil size={18} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="rounded-xl font-bold">Modifica Immobile</TooltipContent>
+                        </Tooltip>
+
+                        {/* DELETE BUTTON */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button 
+                              onClick={() => setPropertyToDelete(prop)}
+                              className="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded-lg transition-all active:scale-90"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="rounded-xl font-bold">Elimina Immobile</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
-
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        onClick={() => toggleStatus(prop.id, prop.stato)}
-                        className={cn(
-                          "rounded-xl h-10 font-bold px-4 transition-all border-2",
-                          prop.stato === 'Venduto' ? "border-blue-100 text-blue-600 hover:bg-blue-50" : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
-                        )}
-                      >
-                        {prop.stato === 'Venduto' ? <RotateCcw size={18} /> : <CheckCircle2 size={18} />}
-                      </Button>
-                      
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-gray-400">
-                            <MoreHorizontal size={20} />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="rounded-2xl border-gray-100 shadow-xl p-2 min-w-[160px]">
-                          <DropdownMenuItem onClick={() => { setEditingProperty(prop); setIsWizardOpen(true); }} className="rounded-xl px-4 py-3 cursor-pointer font-bold">
-                            <Edit2 size={16} className="mr-3 text-[#94b0ab]" /> Modifica
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setPropertyToDelete(prop)} className="rounded-xl px-4 py-3 cursor-pointer font-bold text-red-600 focus:text-red-600 focus:bg-red-50">
-                            <Trash2 size={16} className="mr-3" /> Elimina
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
                   </td>
                 </tr>
@@ -287,7 +279,7 @@ const Properties = () => {
         </div>
       </div>
 
-      {/* Modals & Dialogs */}
+      {/* Modals */}
       <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
         <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
           <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={fetchProperties} />
@@ -297,8 +289,8 @@ const Properties = () => {
       <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
         <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-2xl font-bold">Eliminare l'immobile?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-500 font-medium">Rimuoverai "{propertyToDelete?.titolo}" istantaneamente.</AlertDialogDescription>
+            <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-500 font-medium">L'operazione è immediata e irreversibile.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
