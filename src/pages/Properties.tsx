@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit2, Trash2, Home, CheckCircle2, MoreHorizontal } from 'lucide-react';
+import { Plus, Edit2, Trash2, Home, CheckCircle2, MoreHorizontal, RotateCcw, Filter } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   AlertDialog, 
   AlertDialogAction, 
@@ -27,6 +28,7 @@ import { cn } from '@/lib/utils';
 const Properties = () => {
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
   
   // Modal State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -63,15 +65,17 @@ const Properties = () => {
     setPropertyToDelete(null);
   };
 
-  const markAsSold = async (id: string) => {
+  const toggleStatus = async (id: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
+    
     const { error } = await supabase
       .from('immobili')
-      .update({ stato: 'Venduto' })
+      .update({ stato: newStatus })
       .eq('id', id);
     
     if (error) showError("Errore nell'aggiornamento");
     else {
-      showSuccess("Immobile segnato come Venduto");
+      showSuccess(`Immobile segnato come ${newStatus}`);
       fetchProperties();
     }
   };
@@ -89,9 +93,16 @@ const Properties = () => {
     );
   };
 
+  const filteredProperties = properties.filter(p => {
+    if (filter === "all") return true;
+    if (filter === "active") return p.stato === 'Disponibile' || p.stato === 'Trattativa';
+    if (filter === "sold") return p.stato === 'Venduto';
+    return true;
+  });
+
   return (
     <AdminLayout>
-      <div className="flex justify-between items-end mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
         <div>
           <h1 className="text-4xl font-bold tracking-tight text-[#1a1a1a]">I Tuoi Immobili</h1>
           <p className="text-gray-500 mt-1">Gestisci il catalogo e monitora lo stato delle vendite.</p>
@@ -103,6 +114,37 @@ const Properties = () => {
         >
           <Plus className="mr-2" size={20} /> Nuovo Immobile
         </Button>
+      </div>
+
+      {/* Filters & Navigation */}
+      <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
+        <Tabs defaultValue="all" className="w-full md:w-auto" onValueChange={setFilter}>
+          <TabsList className="bg-transparent gap-2 p-1">
+            <TabsTrigger 
+              value="all" 
+              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
+            >
+              Tutti ({properties.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="active" 
+              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
+            >
+              Attivi ({properties.filter(p => p.stato !== 'Venduto').length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="sold" 
+              className="rounded-xl px-6 py-2 data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all"
+            >
+              Venduti ({properties.filter(p => p.stato === 'Venduto').length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        
+        <div className="flex items-center gap-2 px-4 text-gray-400 text-sm">
+          <Filter size={16} />
+          <span>Filtro Attivo: <span className="text-[#1a1a1a] font-bold uppercase">{filter}</span></span>
+        </div>
       </div>
 
       {/* Main Content Modal */}
@@ -156,9 +198,9 @@ const Properties = () => {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Caricamento in corso...</td></tr>
-              ) : properties.length === 0 ? (
-                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Nessun immobile in catalogo.</td></tr>
-              ) : properties.map((prop) => (
+              ) : filteredProperties.length === 0 ? (
+                <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400">Nessun immobile trovato in questa categoria.</td></tr>
+              ) : filteredProperties.map((prop) => (
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-5">
@@ -171,9 +213,9 @@ const Properties = () => {
                       </div>
                       <div className="min-w-0">
                         <div className="font-bold text-[#1a1a1a] text-lg truncate">{prop.titolo}</div>
-                        <div className="text-sm text-gray-400 flex items-center gap-1.5 mt-0.5">
-                          <span className="font-medium text-gray-500">{prop.citta}</span>
-                          <span>•</span>
+                        <div className="text-sm text-gray-500 flex items-center gap-1.5 mt-0.5">
+                          <span className="font-medium text-gray-600">{prop.citta}</span>
+                          <span className="text-gray-300">•</span>
                           <span>{prop.mq} mq</span>
                         </div>
                       </div>
@@ -181,23 +223,30 @@ const Properties = () => {
                   </td>
                   <td className="px-8 py-5">
                     <div className="font-bold text-gray-900 text-lg">€ {prop.prezzo.toLocaleString()}</div>
-                    <div className="text-xs text-gray-400 mt-0.5">{Math.round(prop.prezzo / prop.mq).toLocaleString()} €/mq</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{prop.mq > 0 ? Math.round(prop.prezzo / prop.mq).toLocaleString() : 0} €/mq</div>
                   </td>
                   <td className="px-8 py-5">
                     {getStatusBadge(prop.stato)}
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end items-center gap-2">
-                      {prop.stato !== 'Venduto' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => markAsSold(prop.id)}
-                          className="rounded-xl border-emerald-100 text-emerald-600 hover:bg-emerald-50 h-9 font-bold px-4"
-                        >
-                          <CheckCircle2 size={16} className="mr-1.5" /> Venduto
-                        </Button>
-                      )}
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => toggleStatus(prop.id, prop.stato)}
+                        className={cn(
+                          "rounded-xl h-9 font-bold px-4 transition-all",
+                          prop.stato === 'Venduto' 
+                            ? "border-blue-100 text-blue-600 hover:bg-blue-50" 
+                            : "border-emerald-100 text-emerald-600 hover:bg-emerald-50"
+                        )}
+                      >
+                        {prop.stato === 'Venduto' ? (
+                          <><RotateCcw size={16} className="mr-1.5" /> Ripristina</>
+                        ) : (
+                          <><CheckCircle2 size={16} className="mr-1.5" /> Venduto</>
+                        )}
+                      </Button>
                       
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
