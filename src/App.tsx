@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import Properties from "./pages/Properties";
 import Leads from "./pages/Leads";
 import Login from "./pages/Login";
+import PropertyDetail from "./pages/PropertyDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><Properties /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+          <Route path="/immobili/:slug" element={<PropertyDetail />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
