@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
   X, Check, ChevronRight, Image as ImageIcon, Plus, 
-  Minus, Home, Settings, Info, Camera, ChevronLeft
+  Minus, Home, Settings, Info, Camera, ChevronLeft, Link as LinkIcon
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -48,7 +48,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
     giardino: false,
     balcone: false,
     descrizione: '',
-    stato: 'Disponibile'
+    stato: 'Disponibile',
+    link_immobiliare: ''
   });
 
   // Media State
@@ -75,7 +76,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         giardino: initialData.giardino || false,
         balcone: initialData.balcone || false,
         descrizione: initialData.descrizione || '',
-        stato: initialData.stato || 'Disponibile'
+        stato: initialData.stato || 'Disponibile',
+        link_immobiliare: initialData.link_immobiliare || ''
       });
       if (initialData.copertina_url) setCoverPreview(initialData.copertina_url);
       if (initialData.immagini_urls) setGalleryPreviews(initialData.immagini_urls);
@@ -100,9 +102,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
   };
 
   const removeGalleryImage = (index: number) => {
-    // If it's a new file
     setGalleryImages(prev => prev.filter((_, i) => i !== index));
-    // Remove preview
     setGalleryPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
@@ -159,6 +159,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         copertina_url: copertinaUrl,
         immagini_urls: galleriaUrls,
         stato: formData.stato,
+        link_immobiliare: formData.link_immobiliare,
         slug: formData.titolo.toLowerCase().trim().replace(/ /g, '-')
       };
 
@@ -245,6 +246,17 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città / Comune</Label>
                 <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value, zona: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+              </div>
+              <div className="space-y-3 col-span-full">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                  <LinkIcon size={14} className="text-[#94b0ab]" /> Link Immobiliare.it (Opzionale)
+                </Label>
+                <Input 
+                  placeholder="https://www.immobiliare.it/annunci/..." 
+                  value={formData.link_immobiliare} 
+                  onChange={(e) => setFormData({...formData, link_immobiliare: e.target.value})} 
+                  className="rounded-2xl h-14 border-gray-100 focus:ring-[#94b0ab]" 
+                />
               </div>
             </div>
           </div>
