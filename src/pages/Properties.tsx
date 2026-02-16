@@ -1,7 +1,12 @@
+"use client";
+
 import React, { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit2, Trash2, Home, CheckCircle2, MoreHorizontal, RotateCcw, Filter } from 'lucide-react';
+import { 
+  Plus, Edit2, Trash2, Home, CheckCircle2, 
+  MoreHorizontal, RotateCcw, Filter, Star 
+} from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
@@ -20,6 +25,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import PropertyWizard from '@/components/properties/PropertyWizard';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -76,6 +87,28 @@ const Properties = () => {
     if (error) showError("Errore nell'aggiornamento");
     else {
       showSuccess(`Immobile segnato come ${newStatus}`);
+      fetchProperties();
+    }
+  };
+
+  const toggleFeatured = async (id: string, currentFeatured: boolean) => {
+    // Controllo limite massimo (3)
+    if (!currentFeatured) {
+      const featuredCount = properties.filter(p => p.in_evidenza).length;
+      if (featuredCount >= 3) {
+        showError("Puoi avere al massimo 3 immobili in evidenza simultaneamente");
+        return;
+      }
+    }
+
+    const { error } = await supabase
+      .from('immobili')
+      .update({ in_evidenza: !currentFeatured })
+      .eq('id', id);
+    
+    if (error) showError("Errore durante l'operazione");
+    else {
+      showSuccess(!currentFeatured ? "Immobile messo in evidenza" : "Immobile rimosso dall'evidenza");
       fetchProperties();
     }
   };
@@ -204,11 +237,16 @@ const Properties = () => {
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-5">
-                      <div className="w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 flex-shrink-0 shadow-sm">
+                      <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-gray-100 border border-gray-100 flex-shrink-0 shadow-sm">
                         {prop.copertina_url ? (
                           <img src={prop.copertina_url} alt="" className="w-full h-full object-cover transition-transform group-hover:scale-110" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-gray-300"><Home size={32} /></div>
+                        )}
+                        {prop.in_evidenza && (
+                          <div className="absolute top-1 left-1 bg-yellow-400 p-1 rounded-lg shadow-md border border-white">
+                            <Star size={10} className="fill-white text-white" />
+                          </div>
                         )}
                       </div>
                       <div className="min-w-0">
@@ -230,6 +268,29 @@ const Properties = () => {
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex justify-end items-center gap-2">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              onClick={() => toggleFeatured(prop.id, prop.in_evidenza)}
+                              className={cn(
+                                "rounded-xl h-9 w-9 transition-all",
+                                prop.in_evidenza 
+                                  ? "text-yellow-500 bg-yellow-50 hover:bg-yellow-100" 
+                                  : "text-gray-300 hover:text-yellow-500 hover:bg-yellow-50"
+                              )}
+                            >
+                              <Star size={20} className={cn(prop.in_evidenza && "fill-yellow-500")} />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent className="rounded-xl">
+                            <p>{prop.in_evidenza ? "Rimuovi da Evidenza" : "Metti in Evidenza"}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+
                       <Button 
                         variant="outline" 
                         size="sm" 
