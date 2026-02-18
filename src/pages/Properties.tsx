@@ -5,7 +5,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { 
   Plus, Pencil, Trash2, Home, CheckCircle2, 
-  RotateCcw, Search, Star, ChevronLeft, ChevronRight 
+  RotateCcw, Search, Star, ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import PropertyWizard from '@/components/properties/PropertyWizard';
+import OpenHouseManager from '@/components/properties/OpenHouseManager';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -45,6 +46,9 @@ const Properties = () => {
   const [editingProperty, setEditingProperty] = useState<any>(null);
   const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
 
+  // Open House State
+  const [ohProperty, setOhProperty] = useState<any>(null);
+
   const fetchProperties = useCallback(async () => {
     setLoading(true);
     const from = (currentPage - 1) * PAGE_SIZE;
@@ -54,14 +58,12 @@ const Properties = () => {
       .from('immobili')
       .select('*', { count: 'exact' });
 
-    // Filter by status
     if (filter === "active") {
       query = query.neq('stato', 'Venduto');
     } else {
       query = query.eq('stato', 'Venduto');
     }
 
-    // Filter by search query
     if (searchQuery) {
       query = query.or(`titolo.ilike.%${searchQuery}%,zona.ilike.%${searchQuery}%,indirizzo.ilike.%${searchQuery}%,citta.ilike.%${searchQuery}%`);
     }
@@ -83,7 +85,6 @@ const Properties = () => {
     fetchProperties();
   }, [fetchProperties]);
 
-  // Reset page when filter or search changes
   useEffect(() => {
     setCurrentPage(1);
   }, [filter, searchQuery]);
@@ -101,7 +102,6 @@ const Properties = () => {
     if (!propertyToDelete) return;
     const targetId = propertyToDelete.id;
     
-    // Optimistic delete
     setProperties(prev => prev.filter(p => p.id !== targetId));
     setTotalCount(prev => prev - 1);
     setPropertyToDelete(null);
@@ -109,7 +109,7 @@ const Properties = () => {
     const { error } = await supabase.from('immobili').delete().eq('id', targetId);
     if (error) {
       showError("Errore nell'eliminazione.");
-      fetchProperties(); // Re-fetch on error
+      fetchProperties();
     } else {
       showSuccess("Immobile rimosso.");
     }
@@ -117,8 +117,6 @@ const Properties = () => {
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
-    
-    // Optimistic update
     setProperties(prev => prev.map(p => p.id === id ? { ...p, stato: newStatus } : p));
 
     const { error } = await supabase.from('immobili').update({ stato: newStatus }).eq('id', id);
@@ -127,7 +125,6 @@ const Properties = () => {
       fetchProperties();
     } else {
       showSuccess(`Stato: ${newStatus}`);
-      // If the status change moves the property out of the current filter view, re-fetch
       if ((filter === "active" && newStatus === 'Venduto') || (filter === "sold" && newStatus !== 'Venduto')) {
         fetchProperties();
       }
@@ -136,17 +133,13 @@ const Properties = () => {
 
   const toggleFeatured = async (id: string, currentFeatured: boolean) => {
     if (!currentFeatured) {
-      // Note: This check only works for the current page. For a strict rule, 
-      // you'd need a separate count query or handle it on the server.
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
         showError("Massimo 3 immobili in evidenza su questa vista.");
       }
     }
     
-    // Optimistic update
     setProperties(prev => prev.map(p => p.id === id ? { ...p, in_evidenza: !currentFeatured } : p));
-
     const { error } = await supabase.from('immobili').update({ in_evidenza: !currentFeatured }).eq('id', id);
     if (error) {
       showError("Errore evidenza.");
@@ -249,6 +242,18 @@ const Properties = () => {
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button 
+                              onClick={() => setOhProperty(prop)}
+                              className="text-gray-300 hover:text-[#94b0ab] transition-all active:scale-90"
+                            >
+                              <Calendar size={18} />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="rounded-xl font-bold">Gestisci Open House</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button 
                               onClick={() => toggleFeatured(prop.id, prop.in_evidenza)}
                               className="transition-all active:scale-90"
                             >
@@ -348,6 +353,12 @@ const Properties = () => {
       <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
         <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
           <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={fetchProperties} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!ohProperty} onOpenChange={(open) => !open && setOhProperty(null)}>
+        <DialogContent className="max-w-3xl h-[80vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
+          {ohProperty && <OpenHouseManager property={ohProperty} onClose={() => setOhProperty(null)} />}
         </DialogContent>
       </Dialog>
 
