@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, LogOut, User } from 'lucide-react';
+import { Home, MessageSquare, LogOut, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 
@@ -19,6 +19,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   const navItems = [
     { icon: Home, label: 'Immobili', path: '/' },
+    { icon: CalendarDays, label: 'Open House', path: '/open-houses' },
     { icon: MessageSquare, label: 'Messaggi', path: '/leads' },
   ];
 

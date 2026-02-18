@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Properties from "./pages/Properties";
+import OpenHouses from "./pages/OpenHouses";
 import Leads from "./pages/Leads";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -44,6 +45,7 @@ const App = () => (
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/" element={<ProtectedRoute><Properties /></ProtectedRoute>} />
+          <Route path="/open-houses" element={<ProtectedRoute><OpenHouses /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
