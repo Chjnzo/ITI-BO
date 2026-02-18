@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { 
   Plus, Pencil, Trash2, Home, CheckCircle2, 
-  RotateCcw, Search, Star 
+  RotateCcw, Search, Star, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -31,31 +31,62 @@ import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 
+const PAGE_SIZE = 10;
+
 const Properties = () => {
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("active");
+  const [filter, setFilter] = useState("active"); // "active" | "sold"
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<any>(null);
   const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
 
-  const fetchProperties = async () => {
+  const fetchProperties = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const from = (currentPage - 1) * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let query = supabase
       .from('immobili')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact' });
+
+    // Filter by status
+    if (filter === "active") {
+      query = query.neq('stato', 'Venduto');
+    } else {
+      query = query.eq('stato', 'Venduto');
+    }
+
+    // Filter by search query
+    if (searchQuery) {
+      query = query.or(`titolo.ilike.%${searchQuery}%,zona.ilike.%${searchQuery}%,indirizzo.ilike.%${searchQuery}%,citta.ilike.%${searchQuery}%`);
+    }
+
+    const { data, count, error } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
     
-    if (error) showError("Errore nel caricamento immobili");
-    else setProperties(data || []);
+    if (error) {
+      showError("Errore nel caricamento immobili");
+    } else {
+      setProperties(data || []);
+      setTotalCount(count || 0);
+    }
     setLoading(false);
-  };
+  }, [currentPage, filter, searchQuery]);
 
   useEffect(() => {
     fetchProperties();
-  }, []);
+  }, [fetchProperties]);
+
+  // Reset page when filter or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filter, searchQuery]);
 
   const formatPrice = (price: number) => {
     if (!price) return 'N/D';
@@ -68,61 +99,66 @@ const Properties = () => {
 
   const handleDelete = async () => {
     if (!propertyToDelete) return;
-    const previousProperties = [...properties];
     const targetId = propertyToDelete.id;
+    
+    // Optimistic delete
     setProperties(prev => prev.filter(p => p.id !== targetId));
+    setTotalCount(prev => prev - 1);
     setPropertyToDelete(null);
 
     const { error } = await supabase.from('immobili').delete().eq('id', targetId);
     if (error) {
-      setProperties(previousProperties);
       showError("Errore nell'eliminazione.");
+      fetchProperties(); // Re-fetch on error
     } else {
       showSuccess("Immobile rimosso.");
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
-    const previousProperties = [...properties];
     const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
+    
+    // Optimistic update
     setProperties(prev => prev.map(p => p.id === id ? { ...p, stato: newStatus } : p));
 
     const { error } = await supabase.from('immobili').update({ stato: newStatus }).eq('id', id);
     if (error) {
-      setProperties(previousProperties);
       showError("Sincronizzazione fallita.");
+      fetchProperties();
     } else {
       showSuccess(`Stato: ${newStatus}`);
+      // If the status change moves the property out of the current filter view, re-fetch
+      if ((filter === "active" && newStatus === 'Venduto') || (filter === "sold" && newStatus !== 'Venduto')) {
+        fetchProperties();
+      }
     }
   };
 
   const toggleFeatured = async (id: string, currentFeatured: boolean) => {
     if (!currentFeatured) {
+      // Note: This check only works for the current page. For a strict rule, 
+      // you'd need a separate count query or handle it on the server.
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
-        showError("Massimo 3 immobili in evidenza.");
-        return;
+        showError("Massimo 3 immobili in evidenza su questa vista.");
       }
     }
-    const previousProperties = [...properties];
+    
+    // Optimistic update
     setProperties(prev => prev.map(p => p.id === id ? { ...p, in_evidenza: !currentFeatured } : p));
 
     const { error } = await supabase.from('immobili').update({ in_evidenza: !currentFeatured }).eq('id', id);
     if (error) {
-      setProperties(previousProperties);
       showError("Errore evidenza.");
+      fetchProperties();
     }
   };
 
-  const filteredProperties = properties.filter(p => {
-    const matchesTab = filter === "active" ? p.stato !== 'Venduto' : p.stato === 'Venduto';
-    const matchesSearch = 
-      p.titolo?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.zona?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.indirizzo?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return matchesTab && matchesSearch;
-  });
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= Math.ceil(totalCount / PAGE_SIZE)) {
+      setCurrentPage(newPage);
+    }
+  };
 
   return (
     <AdminLayout>
@@ -144,10 +180,10 @@ const Properties = () => {
         <Tabs value={filter} onValueChange={setFilter} className="w-full xl:w-auto">
           <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 w-full xl:w-auto flex justify-start gap-1">
             <TabsTrigger value="active" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
-              In Vendita ({properties.filter(p => p.stato !== 'Venduto').length})
+              In Vendita
             </TabsTrigger>
             <TabsTrigger value="sold" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
-              Venduti ({properties.filter(p => p.stato === 'Venduto').length})
+              Venduti
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -175,11 +211,11 @@ const Properties = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {loading && properties.length === 0 ? (
+              {loading ? (
                 <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium">Caricamento...</td></tr>
-              ) : filteredProperties.length === 0 ? (
+              ) : properties.length === 0 ? (
                 <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium italic">Nessun immobile trovato.</td></tr>
-              ) : filteredProperties.map((prop) => (
+              ) : properties.map((prop) => (
                 <tr key={prop.id} className="hover:bg-gray-50/30 transition-colors group">
                   <td className="px-8 py-5">
                     <div className="flex items-center gap-5 min-w-0">
@@ -210,7 +246,6 @@ const Properties = () => {
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <TooltipProvider>
-                        {/* FEATURED TOGGLE */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button 
@@ -229,7 +264,6 @@ const Properties = () => {
                           <TooltipContent className="rounded-xl font-bold">In Evidenza</TooltipContent>
                         </Tooltip>
 
-                        {/* STATUS TOGGLE */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button 
@@ -244,7 +278,6 @@ const Properties = () => {
                           </TooltipContent>
                         </Tooltip>
 
-                        {/* EDIT BUTTON */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button 
@@ -257,7 +290,6 @@ const Properties = () => {
                           <TooltipContent className="rounded-xl font-bold">Modifica Immobile</TooltipContent>
                         </Tooltip>
 
-                        {/* DELETE BUTTON */}
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <button 
@@ -276,6 +308,39 @@ const Properties = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        
+        {/* Pagination Footer */}
+        <div className="px-8 py-5 bg-gray-50/30 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
+          <div className="text-sm text-gray-400 font-medium">
+            Visualizzando <span className="text-gray-900 font-bold">{Math.min((currentPage - 1) * PAGE_SIZE + 1, totalCount)}</span>-
+            <span className="text-gray-900 font-bold">{Math.min(currentPage * PAGE_SIZE, totalCount)}</span> di 
+            <span className="text-gray-900 font-bold"> {totalCount}</span> immobili
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 1 || loading}
+              onClick={() => handlePageChange(currentPage - 1)}
+              className="rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-white"
+            >
+              <ChevronLeft size={16} className="mr-1" /> Precedente
+            </Button>
+            <div className="flex items-center px-4 text-sm font-bold text-gray-900">
+              Pagina {currentPage}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= Math.ceil(totalCount / PAGE_SIZE) || loading}
+              onClick={() => handlePageChange(currentPage + 1)}
+              className="rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-white"
+            >
+              Successivo <ChevronRight size={16} className="ml-1" />
+            </Button>
+          </div>
         </div>
       </div>
 
