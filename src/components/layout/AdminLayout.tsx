@@ -23,15 +23,15 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   ];
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fa] text-[#1a1a1a]">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col">
+    <div className="flex h-screen bg-[#f8f9fa] text-[#1a1a1a] overflow-hidden">
+      {/* Sidebar - FIXED HEIGHT */}
+      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full shrink-0">
         <div className="p-8">
           <h1 className="text-xl font-bold tracking-tight text-[#94b0ab]">Admin OS</h1>
           <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Il Tuo Immobiliare</p>
         </div>
 
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
           {navItems.map((item) => (
             <Link
               key={item.path}
@@ -52,7 +52,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-4 border-t border-gray-100 bg-white">
           <button 
             onClick={handleLogout}
             className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
@@ -63,9 +63,9 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-8">
-        <div className="max-w-6xl mx-auto">
+      {/* Main Content - INDEPENDENT SCROLL */}
+      <main className="flex-1 overflow-y-auto p-8 scroll-smooth">
+        <div className="max-w-6xl mx-auto pb-12">
           {children}
         </div>
       </main>
