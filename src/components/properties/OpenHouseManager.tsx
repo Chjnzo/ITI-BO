@@ -35,7 +35,6 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch Open House
       const { data: ohData, error: ohError } = await supabase
         .from('open_houses')
         .select('*')
@@ -53,7 +52,6 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
         setEndTime(ohData.ora_fine.slice(0, 5));
         setTotalSpots(ohData.posti_totali);
 
-        // Fetch Attendees
         const { data: attData, error: attError } = await supabase
           .from('prenotazioni_oh')
           .select('*')
@@ -64,15 +62,15 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
         setAttendees(attData || []);
       }
     } catch (error: any) {
-      showError("Errore nel caricamento dati");
+      console.error("Errore fetch OH:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [property.id]);
+    if (property?.id) fetchData();
+  }, [property?.id]);
 
   const handleSave = async () => {
     if (!date) {
@@ -81,12 +79,13 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
     }
 
     setSaving(true);
+    // Formattazione rigorosa per Postgres time field
     const payload = {
       immobile_id: property.id,
       data_evento: format(date, 'yyyy-MM-dd'),
-      ora_inizio: startTime,
-      ora_fine: endTime,
-      posti_totali: totalSpots
+      ora_inizio: startTime.length === 5 ? `${startTime}:00` : startTime,
+      ora_fine: endTime.length === 5 ? `${endTime}:00` : endTime,
+      posti_totali: parseInt(totalSpots.toString())
     };
 
     try {
@@ -106,7 +105,8 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
       }
       fetchData();
     } catch (error: any) {
-      showError("Errore durante il salvataggio");
+      showError("Errore salvataggio: " + error.message);
+      console.error("Errore salvataggio OH:", error);
     } finally {
       setSaving(false);
     }
@@ -128,7 +128,7 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
       setDate(undefined);
       setAttendees([]);
     } catch (error: any) {
-      showError("Errore nell'eliminazione");
+      showError("Errore eliminazione: " + error.message);
     } finally {
       setSaving(false);
     }

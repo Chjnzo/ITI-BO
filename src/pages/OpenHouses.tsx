@@ -45,7 +45,6 @@ const OpenHouses = () => {
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
-    // Utilizzo rigoroso dell'SDK per includere gli header apikey
     const { data, error } = await supabase
       .from('open_houses')
       .select(`
@@ -61,7 +60,7 @@ const OpenHouses = () => {
       .order('data_evento', { ascending: true });
 
     if (error) {
-      showError("Errore nel caricamento eventi");
+      showError("Errore nel caricamento eventi: " + error.message);
     } else {
       setEvents(data || []);
     }
@@ -69,11 +68,13 @@ const OpenHouses = () => {
   }, []);
 
   const fetchAvailableProperties = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('immobili')
       .select('id, titolo')
       .neq('stato', 'Venduto')
       .order('titolo');
+    
+    if (error) console.error("Errore fetch immobili:", error);
     setProperties(data || []);
   };
 
@@ -84,17 +85,24 @@ const OpenHouses = () => {
 
   const handleCreate = async () => {
     if (!form.immobile_id || !newDate) {
-      showError("Compila tutti i campi obbligatori");
+      showError("Seleziona un immobile e una data validi");
       return;
     }
 
-    const { error } = await supabase.from('open_houses').insert([{
-      ...form,
-      data_evento: format(newDate, 'yyyy-MM-dd')
-    }]);
+    // Assicuriamoci che l'orario sia nel formato corretto
+    const payload = {
+      immobile_id: form.immobile_id,
+      data_evento: format(newDate, 'yyyy-MM-dd'),
+      ora_inizio: form.ora_inizio.length === 5 ? `${form.ora_inizio}:00` : form.ora_inizio,
+      ora_fine: form.ora_fine.length === 5 ? `${form.ora_fine}:00` : form.ora_fine,
+      posti_totali: parseInt(form.posti_totali.toString())
+    };
+
+    const { error } = await supabase.from('open_houses').insert([payload]);
 
     if (error) {
-      showError("Errore durante la creazione");
+      showError("Errore database: " + error.message);
+      console.error("Errore creazione OH:", error);
     } else {
       showSuccess("Evento creato correttamente");
       setIsCreateOpen(false);
@@ -111,7 +119,7 @@ const OpenHouses = () => {
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('open_houses').delete().eq('id', id);
-    if (error) showError("Errore nell'eliminazione");
+    if (error) showError("Errore eliminazione: " + error.message);
     else {
       showSuccess("Evento rimosso");
       fetchEvents();
