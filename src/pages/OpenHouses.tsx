@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { 
-  Plus, CalendarDays, Users, Clock, Trash2, 
+  Plus, Users, Clock, Trash2, 
   MapPin, Calendar as CalendarIcon
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,7 +31,6 @@ const OpenHouses = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("upcoming");
   
-  // Create Event Modal State
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [properties, setProperties] = useState<any[]>([]);
   const [newDate, setNewDate] = useState<Date | undefined>(undefined);
@@ -42,11 +41,11 @@ const OpenHouses = () => {
     posti_totali: 15
   });
 
-  // Attendees View State
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
+    // Utilizzo rigoroso dell'SDK per includere gli header apikey
     const { data, error } = await supabase
       .from('open_houses')
       .select(`
