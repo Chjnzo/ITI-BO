@@ -4,12 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { 
   X, ChevronRight, Image as ImageIcon, Plus, 
-  Minus, Home, Settings, Info, Camera, ChevronLeft, Link as LinkIcon, Save
+  Home, Settings, Info, Camera, ChevronLeft, 
+  Link as LinkIcon, Save, Sparkles, Euro, History, LayoutGrid, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -21,12 +21,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 
 interface PropertyWizardProps {
   initialData?: any;
   onClose: () => void;
   onSuccess: () => void;
 }
+
+const PREDEFINED_FEATURES = [
+  "Aria Condizionata", "Ascensore", "Balcone", "Terrazzo", 
+  "Box Auto", "Posto Auto", "Cantina", "Giardino Privato", 
+  "Domotica", "Allarme", "Piscina", "Pannelli Solari"
+];
 
 const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps) => {
   const [step, setStep] = useState(1);
@@ -43,10 +50,13 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
     indirizzo: '',
     piano: '',
     bagni: 1,
-    classe_energetica: 'A',
-    garage: false,
-    giardino: false,
-    balcone: false,
+    // New Fields
+    classe_energetica: 'A1',
+    stato_immobile: 'Ottimo/Ristrutturato',
+    spese_condominiali: '',
+    anno_costruzione: '',
+    caratteristiche: [] as string[],
+    // Legacy/Basic
     descrizione: '',
     stato: 'Disponibile',
     link_immobiliare: ''
@@ -58,7 +68,6 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
   const [galleryImages, setGalleryImages] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
-  // Pre-fill data if editing
   useEffect(() => {
     if (initialData) {
       setFormData({
@@ -71,10 +80,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         indirizzo: initialData.indirizzo || '',
         piano: initialData.piano || '',
         bagni: initialData.bagni || 1,
-        classe_energetica: initialData.classe_energetica || 'A',
-        garage: initialData.garage || false,
-        giardino: initialData.giardino || false,
-        balcone: initialData.balcone || false,
+        classe_energetica: initialData.classe_energetica || 'A1',
+        stato_immobile: initialData.stato_immobile || 'Ottimo/Ristrutturato',
+        spese_condominiali: initialData.spese_condominiali?.toString() || '',
+        anno_costruzione: initialData.anno_costruzione?.toString() || '',
+        caratteristiche: initialData.caratteristiche || [],
         descrizione: initialData.descrizione || '',
         stato: initialData.stato || 'Disponibile',
         link_immobiliare: initialData.link_immobiliare || ''
@@ -83,6 +93,15 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
       if (initialData.immagini_urls) setGalleryPreviews(initialData.immagini_urls);
     }
   }, [initialData]);
+
+  const toggleFeature = (feature: string) => {
+    setFormData(prev => ({
+      ...prev,
+      caratteristiche: prev.caratteristiche.includes(feature)
+        ? prev.caratteristiche.filter(f => f !== feature)
+        : [...prev.caratteristiche, feature]
+    }));
+  };
 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -99,11 +118,6 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
       const newPreviews = newFiles.map(file => URL.createObjectURL(file));
       setGalleryPreviews(prev => [...prev, ...newPreviews]);
     }
-  };
-
-  const removeGalleryImage = (index: number) => {
-    setGalleryImages(prev => prev.filter((_, i) => i !== index));
-    setGalleryPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
   const uploadFile = async (file: File) => {
@@ -152,26 +166,29 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         indirizzo: formData.indirizzo,
         piano: formData.piano,
         bagni: formData.bagni,
+        // New Fields
         classe_energetica: formData.classe_energetica,
-        garage: formData.garage,
-        giardino: formData.giardino,
-        balcone: formData.balcone,
+        stato_immobile: formData.stato_immobile,
+        spese_condominiali: parseFloat(formData.spese_condominiali) || 0,
+        anno_costruzione: parseInt(formData.anno_costruzione) || null,
+        caratteristiche: formData.caratteristiche,
+        // Others
         descrizione: formData.descrizione,
         copertina_url: copertinaUrl,
         immagini_urls: galleriaUrls,
         stato: formData.stato,
         link_immobiliare: formData.link_immobiliare,
-        slug: formData.titolo.toLowerCase().trim().replace(/ /g, '-')
+        slug: formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '')
       };
 
       if (initialData) {
         const { error } = await supabase.from('immobili').update(propertyPayload).eq('id', initialData.id);
         if (error) throw error;
-        showSuccess("Immobile aggiornato con successo!");
+        showSuccess("Immobile aggiornato correttamente");
       } else {
         const { error } = await supabase.from('immobili').insert([propertyPayload]);
         if (error) throw error;
-        showSuccess("Immobile pubblicato con successo!");
+        showSuccess("Immobile pubblicato con successo");
       }
 
       onSuccess();
@@ -185,35 +202,29 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
 
   return (
     <div className="flex flex-col h-full bg-white overflow-hidden">
-      {/* 1. FIXED HEADER */}
       <DialogHeader className="px-10 py-8 border-b shrink-0 bg-white">
         <div className="flex justify-between items-center">
           <div>
             <DialogTitle className="text-3xl font-bold text-[#1a1a1a]">
               {initialData ? "Modifica Immobile" : "Nuovo Immobile"}
             </DialogTitle>
-            <p className="text-sm text-gray-500 mt-1">Stai compilando lo step {step} di 4</p>
+            <p className="text-sm text-gray-500 mt-1">Stai compilando lo step {step} di 5</p>
           </div>
           <div className="flex items-center gap-2">
-            {[1, 2, 3, 4].map((s) => (
+            {[1, 2, 3, 4, 5].map((s) => (
               <button 
                 key={s} 
                 onClick={() => setStep(s)}
                 className={cn(
                   "h-2 rounded-full transition-all duration-300 relative group",
-                  step === s ? "w-12 bg-[#94b0ab]" : "w-8 bg-gray-100 hover:bg-gray-200"
+                  step === s ? "w-12 bg-[#94b0ab]" : "w-6 bg-gray-100 hover:bg-gray-200"
                 )}
-              >
-                 <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-black text-[#94b0ab] opacity-0 group-hover:opacity-100 transition-opacity">
-                   {s}
-                 </span>
-              </button>
+              />
             ))}
           </div>
         </div>
       </DialogHeader>
 
-      {/* 2. SCROLLABLE BODY */}
       <div className="flex-1 overflow-y-auto px-10 py-10 space-y-10">
         
         {/* Step 1: Identità */}
@@ -223,25 +234,28 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
                 <Home size={22} className="text-[#94b0ab]" /> Dati Principali
               </h2>
-              <p className="text-sm text-gray-400">Le informazioni fondamentali dell'annuncio.</p>
+              <p className="text-sm text-gray-400">Inserisci le informazioni di base dell'annuncio.</p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-3 col-span-full">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Titolo dell'annuncio *</Label>
-                <Input placeholder="Es: Trilocale panoramico..." value={formData.titolo} onChange={(e) => setFormData({...formData, titolo: e.target.value})} className="rounded-2xl h-14 border-gray-100 focus:ring-[#94b0ab]" />
+                <Input placeholder="Es: Trilocale con vista parco..." value={formData.titolo} onChange={(e) => setFormData({...formData, titolo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Prezzo di Vendita (€) *</Label>
-                <Input type="number" placeholder="0" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Prezzo (€) *</Label>
+                <div className="relative">
+                  <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                  <Input type="number" placeholder="0" value={formData.prezzo} onChange={(e) => setFormData({...formData, prezzo: e.target.value})} className="rounded-2xl h-14 pl-12 border-gray-100" />
+                </div>
               </div>
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Superficie (mq)</Label>
                 <Input type="number" placeholder="0" value={formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia Locali</Label>
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
                 <Select onValueChange={(v) => setFormData({...formData, locali: v})} value={formData.locali}>
-                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
                   <SelectContent className="rounded-2xl">
                     {['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico', 'Loft'].map(t => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
@@ -251,100 +265,133 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
               </div>
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>
-                <Input placeholder="Es: Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
-              </div>
-              <div className="space-y-3 col-span-full">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2">
-                  <LinkIcon size={14} className="text-[#94b0ab]" /> Link Immobiliare.it
-                </Label>
-                <Input 
-                  placeholder="Incolla il link dell'annuncio..." 
-                  value={formData.link_immobiliare} 
-                  onChange={(e) => setFormData({...formData, link_immobiliare: e.target.value})} 
-                  className="rounded-2xl h-14 border-gray-100 focus:ring-[#94b0ab]" 
-                />
+                <Input placeholder="Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
             </div>
           </div>
         )}
 
-        {/* Step 2: Tecnici */}
+        {/* Step 2: Dati Tecnici */}
         {step === 2 && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                <Settings size={22} className="text-[#94b0ab]" /> Specifiche Tecniche
+                <Settings size={22} className="text-[#94b0ab]" /> Dettagli Tecnici
               </h2>
-              <p className="text-sm text-gray-400">Dettagli costruttivi e dotazioni dell'immobile.</p>
+              <p className="text-sm text-gray-400">Specifiche costruttive e costi di gestione.</p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-              <div className="space-y-8">
-                <div className="space-y-3">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
-                  <Input placeholder="Es: 1, Ultimo, Terra" value={formData.piano} onChange={(e) => setFormData({...formData, piano: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
-                </div>
-                <div className="space-y-3">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Numero Bagni</Label>
-                  <div className="flex items-center gap-6 bg-gray-50/50 p-2.5 rounded-2xl w-fit border border-gray-100">
-                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10" onClick={() => setFormData({...formData, bagni: Math.max(1, formData.bagni - 1)})}><Minus size={18} /></Button>
-                    <span className="text-xl font-bold w-6 text-center">{formData.bagni}</span>
-                    <Button variant="ghost" size="icon" className="rounded-xl h-10 w-10" onClick={() => setFormData({...formData, bagni: formData.bagni + 1})}><Plus size={18} /></Button>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Classe Energetica</Label>
-                  <Select onValueChange={(v) => setFormData({...formData, classe_energetica: v})} value={formData.classe_energetica}>
-                    <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
-                    <SelectContent className="rounded-2xl">
-                      {['A4', 'A', 'B', 'C', 'D', 'E', 'F', 'G'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stato Immobile</Label>
+                <Select onValueChange={(v) => setFormData({...formData, stato_immobile: v})} value={formData.stato_immobile}>
+                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    {["Nuovo", "Ottimo/Ristrutturato", "Buono", "Da ristrutturare"].map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Classe Energetica</Label>
+                <Select onValueChange={(v) => setFormData({...formData, classe_energetica: v})} value={formData.classe_energetica}>
+                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    {["A4", "A3", "A2", "A1", "B", "C", "D", "E", "F", "G", "Esente"].map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Spese Condominiali (€/mese)</Label>
+                <div className="relative">
+                  <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                  <Input type="number" placeholder="Es: 120" value={formData.spese_condominiali} onChange={(e) => setFormData({...formData, spese_condominiali: e.target.value})} className="rounded-2xl h-14 pl-12 border-gray-100" />
                 </div>
               </div>
-              <div className="space-y-4">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 block mb-2">Dotazioni Incluse</Label>
-                {[
-                  {id: 'garage', label: 'Box / Posto Auto'}, 
-                  {id: 'giardino', label: 'Giardino Privato'}, 
-                  {id: 'balcone', label: 'Balcone / Terrazzo'}
-                ].map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-5 bg-gray-50/30 border border-gray-100 rounded-[1.5rem] transition-colors hover:bg-white hover:shadow-sm">
-                    <span className="font-bold text-gray-700">{item.label}</span>
-                    <Switch checked={(formData as any)[item.id]} onCheckedChange={(c) => setFormData({...formData, [item.id]: c})} />
-                  </div>
-                ))}
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Anno di Costruzione</Label>
+                <div className="relative">
+                  <History className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                  <Input type="number" placeholder="Es: 2015" value={formData.anno_costruzione} onChange={(e) => setFormData({...formData, anno_costruzione: e.target.value})} className="rounded-2xl h-14 pl-12 border-gray-100" />
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Step 3: Descrizione */}
+        {/* Step 3: Comfort & Dotazioni */}
         {step === 3 && (
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                <Info size={22} className="text-[#94b0ab]" /> Descrizione Annuncio
+                <Sparkles size={22} className="text-[#94b0ab]" /> Comfort e Dotazioni
               </h2>
-              <p className="text-sm text-gray-400">Racconta l'immobile per catturare l'interesse.</p>
+              <p className="text-sm text-gray-400">Seleziona i servizi e le caratteristiche aggiuntive.</p>
             </div>
-            <Textarea 
-              placeholder="Inserisci qui la descrizione completa..." 
-              rows={14} 
-              value={formData.descrizione} 
-              onChange={(e) => setFormData({...formData, descrizione: e.target.value})} 
-              className="rounded-[2rem] p-6 text-lg leading-relaxed border-gray-100 focus:ring-[#94b0ab]" 
-            />
+            
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {PREDEFINED_FEATURES.map((feature) => {
+                const isActive = formData.caratteristiche.includes(feature);
+                return (
+                  <button
+                    key={feature}
+                    onClick={() => toggleFeature(feature)}
+                    className={cn(
+                      "flex items-center justify-between p-4 rounded-2xl border text-sm font-semibold transition-all text-left",
+                      isActive 
+                        ? "bg-[#94b0ab]/10 border-[#94b0ab] text-[#94b0ab]" 
+                        : "bg-white border-gray-100 text-gray-500 hover:bg-gray-50"
+                    )}
+                  >
+                    {feature}
+                    {isActive && <Check size={16} />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
-        {/* Step 4: Media */}
+        {/* Step 4: Descrizione */}
         {step === 4 && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                <Info size={22} className="text-[#94b0ab]" /> Testi e Link
+              </h2>
+              <p className="text-sm text-gray-400">Dettagli descrittivi per il marketing.</p>
+            </div>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Descrizione dell'annuncio</Label>
+                <Textarea 
+                  placeholder="Inserisci la descrizione completa..." 
+                  rows={10} 
+                  value={formData.descrizione} 
+                  onChange={(e) => setFormData({...formData, descrizione: e.target.value})} 
+                  className="rounded-3xl p-6 border-gray-100" 
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500 flex items-center gap-2">
+                  <LinkIcon size={14} /> Link Immobiliare.it (opzionale)
+                </Label>
+                <Input placeholder="Incolla l'URL..." value={formData.link_immobiliare} onChange={(e) => setFormData({...formData, link_immobiliare: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: Media */}
+        {step === 5 && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-2 duration-300 pb-10">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
                 <Camera size={22} className="text-[#94b0ab]" /> Foto e Galleria
               </h2>
-              <p className="text-sm text-gray-400">La copertina è l'immagine che attira i clienti.</p>
+              <p className="text-sm text-gray-400">Le immagini sono fondamentali per convertire i lead.</p>
             </div>
 
             <div className="space-y-4">
@@ -359,19 +406,22 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400 gap-3">
                     <ImageIcon size={24} />
-                    <p className="text-xs font-bold uppercase">Carica Copertina</p>
+                    <p className="text-xs font-bold uppercase">Scegli Copertina</p>
                   </div>
                 )}
               </div>
             </div>
 
             <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Altre Foto</Label>
+              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Galleria Fotografica</Label>
               <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-4">
                 {galleryPreviews.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group border border-gray-100">
+                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group">
                     <img src={url} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
-                    <button onClick={() => removeGalleryImage(i)} className="absolute top-2 right-2 w-8 h-8 bg-white/90 text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-lg">
+                    <button onClick={() => {
+                      setGalleryImages(prev => prev.filter((_, idx) => idx !== i));
+                      setGalleryPreviews(prev => prev.filter((_, idx) => idx !== i));
+                    }} className="absolute top-2 right-2 w-8 h-8 bg-white/90 text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                       <X size={16} />
                     </button>
                   </div>
@@ -387,7 +437,6 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         )}
       </div>
 
-      {/* 3. FIXED FOOTER */}
       <DialogFooter className="px-10 py-6 border-t bg-white shrink-0 flex items-center justify-between sm:justify-between z-20">
         <Button 
           variant="ghost" 
@@ -398,32 +447,31 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         </Button>
         
         <div className="flex gap-3">
-          {/* Conditional Save Button for Edit Mode */}
           {initialData && (
             <Button 
               variant="outline"
               onClick={handleSubmit}
               disabled={loading}
-              className="border-2 border-[#94b0ab] text-[#94b0ab] hover:bg-[#94b0ab]/5 rounded-2xl px-8 h-14 font-bold transition-all flex items-center gap-2"
+              className="border-2 border-[#94b0ab] text-[#94b0ab] hover:bg-[#94b0ab]/5 rounded-2xl px-8 h-14 font-bold"
             >
-              <Save size={18} /> {loading ? "Salvataggio..." : "Salva Modifiche"}
+              <Save size={18} className="mr-2" /> {loading ? "Salvataggio..." : "Salva"}
             </Button>
           )}
 
-          {step < 4 ? (
+          {step < 5 ? (
             <Button 
               onClick={() => setStep(step + 1)}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95"
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold"
             >
               Avanti <ChevronRight className="ml-2" size={18} />
             </Button>
           ) : !initialData ? (
             <Button 
               onClick={handleSubmit}
-              disabled={loading || (!coverPreview && !coverImage)}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-xl shadow-[#94b0ab]/20 font-bold transition-all active:scale-95 disabled:opacity-50"
+              disabled={loading || !coverPreview}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold"
             >
-              {loading ? "Pubblicazione..." : "Pubblica Immobile"}
+              {loading ? "Pubblicazione..." : "Pubblica Annuncio"}
             </Button>
           ) : null}
         </div>
