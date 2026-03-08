@@ -9,7 +9,7 @@ import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { 
   X, ChevronRight, Image as ImageIcon, Plus, 
   Home, Settings, Info, Camera, ChevronLeft, 
-  Link as LinkIcon, Save, Sparkles, Euro, History, LayoutGrid, Check
+  Link as LinkIcon, Save, Sparkles, Euro, History, Check
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -21,7 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 interface PropertyWizardProps {
   initialData?: any;
@@ -120,20 +119,36 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
     }
   };
 
+  /**
+   * Refactored upload function to use Cloudinary API
+   */
   const uploadFile = async (file: File) => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Math.random()}.${fileExt}`;
-    const { error: uploadError } = await supabase.storage
-      .from('immobili-images')
-      .upload(fileName, file);
-    
-    if (uploadError) throw uploadError;
-    
-    const { data: { publicUrl } } = supabase.storage
-      .from('immobili-images')
-      .getPublicUrl(fileName);
-    
-    return publicUrl;
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+    if (!cloudName || !uploadPreset) {
+      throw new Error("Configurazione Cloudinary mancante (VITE_CLOUDINARY_CLOUD_NAME o VITE_CLOUDINARY_UPLOAD_PRESET)");
+    }
+
+    const formDataCloudinary = new FormData();
+    formDataCloudinary.append('file', file);
+    formDataCloudinary.append('upload_preset', uploadPreset);
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+      {
+        method: 'POST',
+        body: formDataCloudinary,
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "Errore durante l'upload su Cloudinary");
+    }
+
+    const data = await response.json();
+    return data.secure_url;
   };
 
   const handleSubmit = async () => {
@@ -166,13 +181,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         indirizzo: formData.indirizzo,
         piano: formData.piano,
         bagni: formData.bagni,
-        // New Fields
         classe_energetica: formData.classe_energetica,
         stato_immobile: formData.stato_immobile,
         spese_condominiali: parseFloat(formData.spese_condominiali) || 0,
         anno_costruzione: parseInt(formData.anno_costruzione) || null,
         caratteristiche: formData.caratteristiche,
-        // Others
         descrizione: formData.descrizione,
         copertina_url: copertinaUrl,
         immagini_urls: galleriaUrls,
