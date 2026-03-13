@@ -73,11 +73,10 @@ const Leads = () => {
     if (error) {
       showError("Errore nel caricamento CRM");
     } else {
-      // Sanitize data: ensure 'stato' is one of the valid Kanban columns
-      const validStatuses = COLUMNS.map(c => c.id);
+      // Sanitize data: ensure 'stato' is capitalized and defaults to 'Nuovo'
       const sanitizedData = (data || []).map(lead => ({
         ...lead,
-        stato: validStatuses.includes(lead.stato) ? lead.stato : 'Nuovo'
+        stato: lead.stato === 'nuovo' ? 'Nuovo' : (lead.stato || 'Nuovo')
       }));
       setLeads(sanitizedData);
     }
@@ -113,15 +112,20 @@ const Leads = () => {
     }
 
     setIsSaving(true);
-    const { error } = await supabase.from('leads').insert([{
-      ...newLead,
-      stato: 'Nuovo' // Explicitly set default status
-    }]);
+    // Use RPC to handle upsert and prevent duplicates
+    const { error } = await supabase.rpc('upsert_lead', {
+      p_nome: `${newLead.nome} ${newLead.cognome}`.trim(),
+      p_email: newLead.email,
+      p_telefono: newLead.telefono || '',
+      p_messaggio: 'Contatto inserito manualmente.',
+      p_immobile_id: null,
+      p_immobile_interesse: 'Generico (Manuale)'
+    });
 
     if (error) {
       showError("Errore nella creazione: " + error.message);
     } else {
-      showSuccess("Nuovo contatto creato");
+      showSuccess("Contatto gestito correttamente");
       setIsCreateModalOpen(false);
       setNewLead({ nome: '', cognome: '', email: '', telefono: '', messaggio: 'Inserito manualmente dal backoffice' });
       fetchLeads();
