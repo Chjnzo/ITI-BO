@@ -29,7 +29,7 @@ import {
   Phone, Mail, Home as HomeIcon, 
   User, Euro, Search, MessageSquare, Save,
   Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink,
-  UserCheck, Filter
+  Filter
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -60,7 +60,6 @@ const Leads = () => {
     cognome: '',
     email: '',
     telefono: '',
-    messaggio: 'Inserito manualmente dal backoffice'
   });
 
   const fetchLeads = useCallback(async () => {
@@ -127,7 +126,7 @@ const Leads = () => {
     } else {
       showSuccess("Contatto gestito correttamente");
       setIsCreateModalOpen(false);
-      setNewLead({ nome: '', cognome: '', email: '', telefono: '', messaggio: 'Inserito manualmente dal backoffice' });
+      setNewLead({ nome: '', cognome: '', email: '', telefono: '' });
       fetchLeads();
     }
     setIsSaving(false);
