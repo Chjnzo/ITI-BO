@@ -18,10 +18,14 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter 
+} from '@/components/ui/dialog';
 import { 
   Phone, Mail, Home as HomeIcon, 
   User, Euro, Search, MessageSquare, Save,
-  Calendar, GripVertical
+  Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -38,6 +42,16 @@ const Leads = () => {
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  
+  // New Lead Form State
+  const [newLead, setNewLead] = useState({
+    nome: '',
+    cognome: '',
+    email: '',
+    telefono: '',
+    messaggio: 'Inserito manualmente dal backoffice'
+  });
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -46,14 +60,46 @@ const Leads = () => {
       .select('*, immobili(titolo)')
       .order('created_at', { ascending: false });
     
-    if (error) showError("Errore nel caricamento CRM");
-    else setLeads(data || []);
+    if (error) {
+      showError("Errore nel caricamento CRM");
+    } else {
+      // Fix Ghost Leads: default to 'Nuovo' if status is null/empty
+      const sanitizedData = (data || []).map(lead => ({
+        ...lead,
+        stato: lead.stato && lead.stato.trim() !== "" ? lead.stato : 'Nuovo'
+      }));
+      setLeads(sanitizedData);
+    }
     setLoading(false);
   }, []);
 
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
+
+  const handleCreateLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLead.nome || !newLead.cognome) {
+      showError("Nome e Cognome sono obbligatori");
+      return;
+    }
+
+    setIsSaving(true);
+    const { error } = await supabase.from('leads').insert([{
+      ...newLead,
+      stato: 'Nuovo'
+    }]);
+
+    if (error) {
+      showError("Errore nella creazione: " + error.message);
+    } else {
+      showSuccess("Nuovo contatto creato");
+      setIsCreateModalOpen(false);
+      setNewLead({ nome: '', cognome: '', email: '', telefono: '', messaggio: 'Inserito manualmente dal backoffice' });
+      fetchLeads();
+    }
+    setIsSaving(false);
+  };
 
   const onDragEnd = async (result: DropResult) => {
     const { destination, source, draggableId } = result;
@@ -63,7 +109,7 @@ const Leads = () => {
 
     const newStatus = destination.droppableId;
     
-    // Update local state immediately for snappy UI
+    // Update local state immediately
     const updatedLeads = Array.from(leads);
     const leadIndex = updatedLeads.findIndex(l => l.id === draggableId);
     if (leadIndex !== -1) {
@@ -71,7 +117,6 @@ const Leads = () => {
       setLeads(updatedLeads);
     }
 
-    // Update Supabase
     const { error } = await supabase
       .from('leads')
       .update({ stato: newStatus })
@@ -79,7 +124,7 @@ const Leads = () => {
     
     if (error) {
       showError("Errore nell'aggiornamento stato");
-      fetchLeads(); // Revert on error
+      fetchLeads();
     } else {
       showSuccess(`Lead spostato in ${newStatus}`);
     }
@@ -119,93 +164,236 @@ const Leads = () => {
 
   return (
     <AdminLayout>
-      <div className="mb-10">
-        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
-        <p className="text-gray-500 mt-1 font-medium">Trascina i lead per gestire il funnel di vendita.</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+        <div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
+          <p className="text-gray-500 mt-1 font-medium">Gestione centralizzata dei contatti e delle trattative.</p>
+        </div>
+        
+        <Button 
+          onClick={() => setIsCreateModalOpen(true)}
+          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+        >
+          <Plus className="mr-2" size={20} /> Nuovo Contatto
+        </Button>
       </div>
 
-      <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-250px)] min-h-[600px]">
-          {COLUMNS.map((col) => (
-            <div key={col.id} className="flex flex-col h-full">
-              <div className={cn(
-                "flex items-center justify-between px-5 py-4 rounded-2xl border mb-4",
-                col.color
-              )}>
-                <h2 className="font-black uppercase tracking-widest text-xs">{col.label}</h2>
-                <Badge variant="outline" className="bg-white/50 border-none font-bold">
-                  {getLeadsByStatus(col.id).length}
-                </Badge>
-              </div>
+      <Tabs defaultValue="kanban" className="w-full">
+        <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 mb-8 flex justify-start gap-1 w-fit">
+          <TabsTrigger value="kanban" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all gap-2">
+            <LayoutDashboard size={18} /> Vista Board
+          </TabsTrigger>
+          <TabsTrigger value="list" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all gap-2">
+            <List size={18} /> Vista Lista
+          </TabsTrigger>
+        </TabsList>
 
-              <Droppable droppableId={col.id}>
-                {(provided, snapshot) => (
-                  <div 
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    className={cn(
-                      "flex-1 bg-gray-50/50 rounded-[2rem] p-4 border border-gray-100 overflow-y-auto space-y-4 scrollbar-hide transition-colors",
-                      snapshot.isDraggingOver && "bg-[#94b0ab]/5 border-[#94b0ab]/20"
-                    )}
-                  >
-                    {loading ? (
-                      <div className="py-10 text-center text-gray-300 animate-pulse font-medium">Caricamento...</div>
-                    ) : getLeadsByStatus(col.id).length === 0 ? (
-                      <div className="py-10 text-center text-gray-300 italic text-sm">Nessun lead</div>
-                    ) : getLeadsByStatus(col.id).map((lead, index) => (
-                      <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                        {(provided, snapshot) => (
-                          <div 
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                            onClick={() => setSelectedLead(lead)}
-                            className={cn(
-                              "bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#94b0ab]/30 transition-all cursor-pointer group relative",
-                              snapshot.isDragging && "shadow-2xl border-[#94b0ab] rotate-2 scale-105 z-50"
-                            )}
-                          >
-                            <div className="absolute top-5 right-4 text-gray-200 group-hover:text-gray-400 transition-colors">
-                              <GripVertical size={16} />
-                            </div>
-
-                            <div className="flex justify-between items-start mb-3 pr-6">
-                              <div className="font-bold text-gray-900 group-hover:text-[#94b0ab] transition-colors">
-                                {lead.nome} {lead.cognome}
-                              </div>
-                            </div>
-
-                            <div className="space-y-2 mb-4">
-                              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase">
-                                <Calendar size={12} />
-                                {format(new Date(lead.created_at), 'dd MMM yyyy', { locale: it })}
-                              </div>
-                              {lead.immobili && (
-                                <div className="flex items-center gap-2 text-[10px] font-bold text-[#94b0ab] bg-[#94b0ab]/5 px-2 py-1 rounded-lg truncate">
-                                  <HomeIcon size={10} />
-                                  {lead.immobili.titolo}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
-                              <Phone size={12} className="text-gray-300" />
-                              {lead.telefono || 'N/D'}
-                            </div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
+        <TabsContent value="kanban" className="mt-0">
+          <DragDropContext onDragEnd={onDragEnd}>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-320px)] min-h-[600px]">
+              {COLUMNS.map((col) => (
+                <div key={col.id} className="flex flex-col h-full">
+                  <div className={cn(
+                    "flex items-center justify-between px-5 py-4 rounded-2xl border mb-4",
+                    col.color
+                  )}>
+                    <h2 className="font-black uppercase tracking-widest text-xs">{col.label}</h2>
+                    <Badge variant="outline" className="bg-white/50 border-none font-bold">
+                      {getLeadsByStatus(col.id).length}
+                    </Badge>
                   </div>
-                )}
-              </Droppable>
-            </div>
-          ))}
-        </div>
-      </DragDropContext>
 
-      {/* Lead Detail Sheet (Scheda Cliente) */}
+                  <Droppable droppableId={col.id}>
+                    {(provided, snapshot) => (
+                      <div 
+                        {...provided.droppableProps}
+                        ref={provided.innerRef}
+                        className={cn(
+                          "flex-1 bg-gray-50/50 rounded-[2rem] p-4 border border-gray-100 overflow-y-auto space-y-4 scrollbar-hide transition-colors",
+                          snapshot.isDraggingOver && "bg-[#94b0ab]/5 border-[#94b0ab]/20"
+                        )}
+                      >
+                        {loading ? (
+                          <div className="py-10 text-center text-gray-300 animate-pulse font-medium">Caricamento...</div>
+                        ) : getLeadsByStatus(col.id).length === 0 ? (
+                          <div className="py-10 text-center text-gray-300 italic text-sm">Nessun lead</div>
+                        ) : getLeadsByStatus(col.id).map((lead, index) => (
+                          <Draggable key={lead.id} draggableId={lead.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div 
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                className={cn(
+                                  "bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#94b0ab]/30 transition-all group relative",
+                                  snapshot.isDragging && "shadow-2xl border-[#94b0ab] rotate-2 scale-105 z-50"
+                                )}
+                              >
+                                <div className="absolute top-5 right-4 flex items-center gap-2">
+                                  <button 
+                                    onPointerDown={(e) => { e.stopPropagation(); setSelectedLead(lead); }}
+                                    className="text-gray-300 hover:text-[#94b0ab] transition-colors p-1"
+                                  >
+                                    <ExternalLink size={16} />
+                                  </button>
+                                  <div className="text-gray-200 group-hover:text-gray-400 transition-colors">
+                                    <GripVertical size={16} />
+                                  </div>
+                                </div>
+
+                                <div className="font-bold text-gray-900 mb-3 pr-12">
+                                  {lead.nome} {lead.cognome}
+                                </div>
+
+                                <div className="space-y-2 mb-4">
+                                  <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase">
+                                    <Calendar size={12} />
+                                    {format(new Date(lead.created_at), 'dd MMM yyyy', { locale: it })}
+                                  </div>
+                                  {lead.immobili && (
+                                    <div className="flex items-center gap-2 text-[10px] font-bold text-[#94b0ab] bg-[#94b0ab]/5 px-2 py-1 rounded-lg truncate">
+                                      <HomeIcon size={10} />
+                                      {lead.immobili.titolo}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
+                                  <Phone size={12} className="text-gray-300" />
+                                  {lead.telefono || 'N/D'}
+                                </div>
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </div>
+              ))}
+            </div>
+          </DragDropContext>
+        </TabsContent>
+
+        <TabsContent value="list" className="mt-0">
+          <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-gray-50/50 border-b border-gray-100">
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile</th>
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Data</th>
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {leads.map((lead) => (
+                    <tr key={lead.id} className="hover:bg-gray-50/30 transition-colors group">
+                      <td className="px-8 py-5">
+                        <div className="font-bold text-gray-900">{lead.nome} {lead.cognome}</div>
+                        <div className="text-xs text-gray-400 font-medium">{lead.email}</div>
+                      </td>
+                      <td className="px-8 py-5">
+                        <Badge className={cn(
+                          "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] border-none",
+                          COLUMNS.find(c => c.id === lead.stato)?.color || "bg-gray-100 text-gray-600"
+                        )}>
+                          {lead.stato}
+                        </Badge>
+                      </td>
+                      <td className="px-8 py-5">
+                        <div className="text-sm font-bold text-gray-600 truncate max-w-[200px]">
+                          {lead.immobili?.titolo || '-'}
+                        </div>
+                      </td>
+                      <td className="px-8 py-5 text-sm text-gray-400 font-medium">
+                        {format(new Date(lead.created_at), 'dd/MM/yyyy')}
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => setSelectedLead(lead)}
+                          className="rounded-xl font-bold text-[#94b0ab] hover:bg-[#94b0ab]/5"
+                        >
+                          Vedi Scheda
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* Manual Creation Dialog */}
+      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-8 pt-8 pb-4">
+            <DialogTitle className="text-2xl font-bold">Nuovo Contatto</DialogTitle>
+          </DialogHeader>
+          
+          <form onSubmit={handleCreateLead}>
+            <div className="p-8 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Nome</Label>
+                  <Input 
+                    required
+                    value={newLead.nome}
+                    onChange={(e) => setNewLead({...newLead, nome: e.target.value})}
+                    className="h-12 rounded-xl border-gray-100"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Cognome</Label>
+                  <Input 
+                    required
+                    value={newLead.cognome}
+                    onChange={(e) => setNewLead({...newLead, cognome: e.target.value})}
+                    className="h-12 rounded-xl border-gray-100"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Email</Label>
+                <Input 
+                  type="email"
+                  value={newLead.email}
+                  onChange={(e) => setNewLead({...newLead, email: e.target.value})}
+                  className="h-12 rounded-xl border-gray-100"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Telefono</Label>
+                <Input 
+                  value={newLead.telefono}
+                  onChange={(e) => setNewLead({...newLead, telefono: e.target.value})}
+                  className="h-12 rounded-xl border-gray-100"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="p-8 bg-gray-50/50">
+              <Button type="button" variant="ghost" onClick={() => setIsCreateModalOpen(false)} className="rounded-xl font-bold">Annulla</Button>
+              <Button 
+                type="submit"
+                disabled={isSaving}
+                className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-10 h-12 font-bold transition-all"
+              >
+                {isSaving ? "Creazione..." : "Crea Contatto"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lead Detail Sheet */}
       <Sheet open={!!selectedLead} onOpenChange={(open) => !open && setSelectedLead(null)}>
         <SheetContent className="w-full sm:max-w-xl border-none shadow-2xl p-0 overflow-hidden flex flex-col">
           {selectedLead && (
@@ -233,7 +421,6 @@ const Leads = () => {
               </SheetHeader>
               
               <div className="flex-1 overflow-y-auto p-8 space-y-10">
-                {/* Contact Info */}
                 <section className="space-y-4">
                   <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Contatti e Riferimenti</h3>
                   <div className="grid grid-cols-1 gap-4">
@@ -262,7 +449,6 @@ const Leads = () => {
                   </div>
                 </section>
 
-                {/* Property Info */}
                 {selectedLead.immobili && (
                   <section className="p-5 bg-gray-50 rounded-2xl border border-gray-100">
                     <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Immobile di Interesse</h3>
@@ -273,7 +459,6 @@ const Leads = () => {
                   </section>
                 )}
 
-                {/* CRM Fields */}
                 <section className="space-y-6">
                   <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Dati CRM</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -295,7 +480,7 @@ const Leads = () => {
                       <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
                         <Input 
-                          value={selectedLead.tipologia_ricerca || ''} 
+                          value={selectedLead.tipology_ricerca || ''} 
                           onChange={(e) => setSelectedLead({...selectedLead, tipologia_ricerca: e.target.value})}
                           placeholder="Es: Trilocale"
                           className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
@@ -317,7 +502,6 @@ const Leads = () => {
                   </div>
                 </section>
 
-                {/* Original Message */}
                 <section className="p-5 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Messaggio Originale</Label>
                   <p className="text-sm text-gray-500 leading-relaxed italic">
