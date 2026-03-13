@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -23,9 +23,13 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter 
 } from '@/components/ui/dialog';
 import { 
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
+} from "@/components/ui/select";
+import { 
   Phone, Mail, Home as HomeIcon, 
   User, Euro, Search, MessageSquare, Save,
-  Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink
+  Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink,
+  UserCheck, Filter
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -37,6 +41,8 @@ const COLUMNS = [
   { id: 'Chiuso', label: 'Chiusi', color: 'bg-emerald-50/50 border-emerald-100 text-emerald-700' }
 ];
 
+const AGENTS = ["Matteo", "Gabriele"];
+
 const Leads = () => {
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +50,10 @@ const Leads = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
+  // Filter State
+  const [searchQuery, setSearchQuery] = useState("");
+  const [agentFilter, setAgentFilter] = useState("Tutti");
+
   // New Lead Form State
   const [newLead, setNewLead] = useState({
     nome: '',
@@ -63,7 +73,6 @@ const Leads = () => {
     if (error) {
       showError("Errore nel caricamento CRM");
     } else {
-      // Fix Ghost Leads: default to 'Nuovo' if status is null/empty
       const sanitizedData = (data || []).map(lead => ({
         ...lead,
         stato: lead.stato && lead.stato.trim() !== "" ? lead.stato : 'Nuovo'
@@ -76,6 +85,23 @@ const Leads = () => {
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
+
+  // Filtering Logic
+  const filteredLeads = useMemo(() => {
+    return leads.filter(lead => {
+      const matchesSearch = 
+        `${lead.nome} ${lead.cognome}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        lead.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        lead.telefono?.includes(searchQuery);
+      
+      const matchesAgent = 
+        agentFilter === "Tutti" || 
+        (agentFilter === "Non assegnati" && !lead.assegnato_a) ||
+        lead.assegnato_a === agentFilter;
+
+      return matchesSearch && matchesAgent;
+    });
+  }, [leads, searchQuery, agentFilter]);
 
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,7 +135,6 @@ const Leads = () => {
 
     const newStatus = destination.droppableId;
     
-    // Update local state immediately
     const updatedLeads = Array.from(leads);
     const leadIndex = updatedLeads.findIndex(l => l.id === draggableId);
     if (leadIndex !== -1) {
@@ -144,7 +169,8 @@ const Leads = () => {
         nome: selectedLead.nome,
         cognome: selectedLead.cognome,
         telefono: selectedLead.telefono,
-        email: selectedLead.email
+        email: selectedLead.email,
+        assegnato_a: selectedLead.assegnato_a === "Nessuno" ? null : selectedLead.assegnato_a
       })
       .eq('id', selectedLead.id);
 
@@ -159,7 +185,7 @@ const Leads = () => {
   };
 
   const getLeadsByStatus = (status: string) => {
-    return leads.filter(l => l.stato === status);
+    return filteredLeads.filter(l => l.stato === status);
   };
 
   return (
@@ -178,6 +204,34 @@ const Leads = () => {
         </Button>
       </div>
 
+      {/* Filter Bar */}
+      <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-8 flex flex-col md:flex-row gap-4 items-center">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <Input 
+            placeholder="Cerca per nome, email o telefono..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
+          />
+        </div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <Filter className="text-gray-400 shrink-0" size={18} />
+          <Select value={agentFilter} onValueChange={setAgentFilter}>
+            <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
+              <SelectValue placeholder="Filtra per agente" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
+              <SelectItem value="Non assegnati">Non assegnati</SelectItem>
+              {AGENTS.map(agent => (
+                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <Tabs defaultValue="kanban" className="w-full">
         <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 mb-8 flex justify-start gap-1 w-fit">
           <TabsTrigger value="kanban" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all gap-2">
@@ -190,7 +244,7 @@ const Leads = () => {
 
         <TabsContent value="kanban" className="mt-0">
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-320px)] min-h-[600px]">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-420px)] min-h-[600px]">
               {COLUMNS.map((col) => (
                 <div key={col.id} className="flex flex-col h-full">
                   <div className={cn(
@@ -225,42 +279,49 @@ const Leads = () => {
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
                                 className={cn(
-                                  "bg-white p-5 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#94b0ab]/30 transition-all group relative",
+                                  "bg-white p-4 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#94b0ab]/30 transition-all group relative",
                                   snapshot.isDragging && "shadow-2xl border-[#94b0ab] rotate-2 scale-105 z-50"
                                 )}
                               >
-                                <div className="absolute top-5 right-4 flex items-center gap-2">
+                                <div className="absolute top-4 right-4 flex items-center gap-2">
                                   <button 
                                     onPointerDown={(e) => { e.stopPropagation(); setSelectedLead(lead); }}
                                     className="text-gray-300 hover:text-[#94b0ab] transition-colors p-1"
                                   >
-                                    <ExternalLink size={16} />
+                                    <ExternalLink size={14} />
                                   </button>
                                   <div className="text-gray-200 group-hover:text-gray-400 transition-colors">
-                                    <GripVertical size={16} />
+                                    <GripVertical size={14} />
                                   </div>
                                 </div>
 
-                                <div className="font-bold text-gray-900 mb-3 pr-12">
+                                <div className="font-bold text-gray-900 mb-2 pr-10 text-sm">
                                   {lead.nome} {lead.cognome}
                                 </div>
 
-                                <div className="space-y-2 mb-4">
-                                  <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase">
-                                    <Calendar size={12} />
+                                <div className="space-y-1.5 mb-3">
+                                  <div className="flex items-center gap-2 text-[9px] font-bold text-gray-400 uppercase">
+                                    <Calendar size={10} />
                                     {format(new Date(lead.created_at), 'dd MMM yyyy', { locale: it })}
                                   </div>
                                   {lead.immobili && (
-                                    <div className="flex items-center gap-2 text-[10px] font-bold text-[#94b0ab] bg-[#94b0ab]/5 px-2 py-1 rounded-lg truncate">
-                                      <HomeIcon size={10} />
+                                    <div className="flex items-center gap-2 text-[9px] font-bold text-[#94b0ab] bg-[#94b0ab]/5 px-2 py-0.5 rounded-lg truncate">
+                                      <HomeIcon size={9} />
                                       {lead.immobili.titolo}
                                     </div>
                                   )}
                                 </div>
 
-                                <div className="flex items-center gap-2 text-xs text-gray-500 pt-3 border-t border-gray-50">
-                                  <Phone size={12} className="text-gray-300" />
-                                  {lead.telefono || 'N/D'}
+                                <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                  <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                                    <Phone size={10} className="text-gray-300" />
+                                    {lead.telefono || 'N/D'}
+                                  </div>
+                                  {lead.assegnato_a && (
+                                    <div className="w-5 h-5 rounded-full bg-[#94b0ab] text-white flex items-center justify-center text-[8px] font-black shadow-sm" title={`Assegnato a ${lead.assegnato_a}`}>
+                                      {lead.assegnato_a.charAt(0)}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
@@ -284,13 +345,14 @@ const Leads = () => {
                   <tr className="bg-gray-50/50 border-b border-gray-100">
                     <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
                     <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
+                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Assegnato a</th>
                     <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile</th>
                     <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Data</th>
                     <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {leads.map((lead) => (
+                  {filteredLeads.map((lead) => (
                     <tr key={lead.id} className="hover:bg-gray-50/30 transition-colors group">
                       <td className="px-8 py-5">
                         <div className="font-bold text-gray-900">{lead.nome} {lead.cognome}</div>
@@ -303,6 +365,18 @@ const Leads = () => {
                         )}>
                           {lead.stato}
                         </Badge>
+                      </td>
+                      <td className="px-8 py-5">
+                        {lead.assegnato_a ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-bold">
+                              {lead.assegnato_a.charAt(0)}
+                            </div>
+                            <span className="text-sm font-medium text-gray-600">{lead.assegnato_a}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300 italic">Non assegnato</span>
+                        )}
                       </td>
                       <td className="px-8 py-5">
                         <div className="text-sm font-bold text-gray-600 truncate max-w-[200px]">
@@ -463,6 +537,23 @@ const Leads = () => {
                   <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Dati CRM</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
+                      <Label className="text-xs font-bold text-gray-500">Assegnato a</Label>
+                      <Select 
+                        value={selectedLead.assegnato_a || "Nessuno"} 
+                        onValueChange={(v) => setSelectedLead({...selectedLead, assegnato_a: v})}
+                      >
+                        <SelectTrigger className="h-12 rounded-xl border-gray-100">
+                          <SelectValue placeholder="Seleziona agente" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="Nessuno">Nessuno</SelectItem>
+                          {AGENTS.map(agent => (
+                            <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
                       <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
                       <div className="relative">
                         <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
@@ -480,7 +571,7 @@ const Leads = () => {
                       <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
                         <Input 
-                          value={selectedLead.tipology_ricerca || ''} 
+                          value={selectedLead.tipologia_ricerca || ''} 
                           onChange={(e) => setSelectedLead({...selectedLead, tipologia_ricerca: e.target.value})}
                           placeholder="Es: Trilocale"
                           className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
