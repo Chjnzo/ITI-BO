@@ -3,11 +3,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
-import format from 'date-fns/format';
-import parse from 'date-fns/parse';
-import startOfWeek from 'date-fns/startOfWeek';
-import getDay from 'date-fns/getDay';
-import itIT from 'date-fns/locale/it';
+import { format, parse, startOfWeek, getDay } from 'date-fns';
+import { it } from 'date-fns/locale';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -23,7 +20,7 @@ import {
 } from "@/components/ui/select";
 
 const locales = {
-  'it': itIT,
+  'it': it,
 };
 
 const localizer = dateFnsLocalizer({
