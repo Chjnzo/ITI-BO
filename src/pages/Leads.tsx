@@ -73,9 +73,11 @@ const Leads = () => {
     if (error) {
       showError("Errore nel caricamento CRM");
     } else {
+      // Sanitize data: ensure 'stato' is one of the valid Kanban columns
+      const validStatuses = COLUMNS.map(c => c.id);
       const sanitizedData = (data || []).map(lead => ({
         ...lead,
-        stato: lead.stato && lead.stato.trim() !== "" ? lead.stato : 'Nuovo'
+        stato: validStatuses.includes(lead.stato) ? lead.stato : 'Nuovo'
       }));
       setLeads(sanitizedData);
     }
@@ -113,7 +115,7 @@ const Leads = () => {
     setIsSaving(true);
     const { error } = await supabase.from('leads').insert([{
       ...newLead,
-      stato: 'Nuovo'
+      stato: 'Nuovo' // Explicitly set default status
     }]);
 
     if (error) {
