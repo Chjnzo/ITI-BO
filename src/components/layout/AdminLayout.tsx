@@ -21,8 +21,8 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Home, label: 'Immobili', path: '/immobili' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
-    { icon: CalendarDays, label: 'Open House', path: '/open-houses' },
-    { icon: MessageSquare, label: 'Messaggi', path: '/leads' },
+    { icon: MessageSquare, label: 'Lead', path: '/leads' },
+     { icon: CalendarDays, label: 'Open House', path: '/open-houses' },
   ];
 
   return (
