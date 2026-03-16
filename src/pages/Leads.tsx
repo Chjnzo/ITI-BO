@@ -22,7 +22,7 @@ import {
   Phone, Home as HomeIcon,
   User, Search, MessageSquare, Save,
   Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink,
-  Filter, TrendingUp, History, Heart, UserCheck, Briefcase
+  Filter, TrendingUp, History, Heart, UserCheck, Briefcase, Send
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -47,6 +47,18 @@ const Leads = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [agentFilter, setAgentFilter] = useState("Tutti");
 
+  // Property Picker State
+  const [isPropertyPickerOpen, setIsPropertyPickerOpen] = useState(false);
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [propertySearch, setPropertySearch] = useState('');
+  const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+
+  // Notes / Storico State
+  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [newNoteAutore, setNewNoteAutore] = useState(AGENTS[0]);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
   // New Lead Form State
   const [newLead, setNewLead] = useState({
     nome: '',
@@ -61,12 +73,13 @@ const Leads = () => {
       .from('leads')
       .select(`
         *,
+        immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url, zona, citta),
         lead_immobili(
           id,
           stato_interesse,
           note,
           created_at,
-          immobili(id, titolo)
+          immobili(id, titolo, prezzo, copertina_url, zona, citta)
         )
       `)
       .order('created_at', { ascending: false });
@@ -186,6 +199,102 @@ const Leads = () => {
     }
     setIsSaving(false);
   };
+
+  const formatPrice = (price: number) => {
+    if (!price) return 'N/D';
+    return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(price);
+  };
+
+  const fetchAllProperties = useCallback(async () => {
+    setIsLoadingProperties(true);
+    const { data, error } = await supabase
+      .from('immobili')
+      .select('id, titolo, prezzo, copertina_url, zona, citta, stato')
+      .neq('stato', 'Venduto')
+      .order('created_at', { ascending: false });
+    if (!error) setAllProperties(data || []);
+    setIsLoadingProperties(false);
+  }, []);
+
+  const openPropertyPicker = async () => {
+    setIsPropertyPickerOpen(true);
+    if (allProperties.length === 0) await fetchAllProperties();
+  };
+
+  const handleAssociateProperty = async (immobile: any) => {
+    if (!selectedLead) return;
+    const { error } = await supabase
+      .from('lead_immobili')
+      .insert({ lead_id: selectedLead.id, immobile_id: immobile.id, stato_interesse: 'Interessato' });
+
+    if (error) {
+      showError("Errore nell'associazione: " + error.message);
+      return;
+    }
+
+    showSuccess(`"${immobile.titolo}" aggiunto alla wishlist`);
+    setIsPropertyPickerOpen(false);
+    setPropertySearch('');
+
+    // Refresh selected lead without closing modal
+    const { data } = await supabase
+      .from('leads')
+      .select(`*, immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url, zona, citta), lead_immobili(id, stato_interesse, note, created_at, immobili(id, titolo, prezzo, copertina_url, zona, citta))`)
+      .eq('id', selectedLead.id)
+      .single();
+    if (data) {
+      const fresh = { ...data, stato: data.stato === 'nuovo' ? 'Nuovo' : (data.stato || 'Nuovo') };
+      setSelectedLead(fresh);
+      setLeads(prev => prev.map(l => l.id === fresh.id ? fresh : l));
+    }
+  };
+
+  // Fetch notes whenever a different lead is opened
+  useEffect(() => {
+    if (!selectedLead?.id) {
+      setLeadNotes([]);
+      setNewNoteText('');
+      return;
+    }
+    (async () => {
+      const { data, error } = await supabase
+        .from('lead_notes')
+        .select('*')
+        .eq('lead_id', selectedLead.id)
+        .order('created_at', { ascending: true });
+      if (!error) setLeadNotes(data || []);
+    })();
+  }, [selectedLead?.id]);
+
+  const handleAddNote = async () => {
+    if (!newNoteText.trim() || !selectedLead) return;
+    setIsSavingNote(true);
+    const { error } = await supabase
+      .from('lead_notes')
+      .insert({ lead_id: selectedLead.id, testo: newNoteText.trim(), autore: newNoteAutore });
+    if (error) {
+      showError("Errore nel salvataggio della nota");
+    } else {
+      setNewNoteText('');
+      const { data } = await supabase
+        .from('lead_notes')
+        .select('*')
+        .eq('lead_id', selectedLead.id)
+        .order('created_at', { ascending: true });
+      if (data) setLeadNotes(data);
+    }
+    setIsSavingNote(false);
+  };
+
+  const filteredPickerProperties = useMemo(() => {
+    const q = propertySearch.toLowerCase();
+    if (!q) return allProperties;
+    return allProperties.filter(p =>
+      p.titolo?.toLowerCase().includes(q) ||
+      p.zona?.toLowerCase().includes(q) ||
+      p.citta?.toLowerCase().includes(q)
+    );
+  }, [allProperties, propertySearch]);
 
   const getClientTypeBadge = (type: string) => {
     switch(type) {
@@ -489,279 +598,495 @@ const Leads = () => {
         <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl rounded-[2rem]">
           {selectedLead && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
-              {/* Fixed Header */}
-              <DialogHeader className="px-8 pt-8 pb-6 border-b bg-white shrink-0">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-16 h-16 rounded-2xl bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center shrink-0">
-                    <User size={32} />
+
+              {/* Compact Header */}
+              <DialogHeader className="px-7 pt-5 pb-4 border-b bg-white shrink-0">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center shrink-0">
+                    <User size={22} />
                   </div>
-                  <div className="min-w-0">
-                    <DialogTitle className="text-2xl font-bold text-gray-900">
-                      {selectedLead.nome} {selectedLead.cognome}
-                    </DialogTitle>
-                    <DialogDescription className="text-sm text-gray-400 font-medium mt-0.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <DialogTitle className="text-xl font-bold text-gray-900 leading-none">
+                        {selectedLead.nome} {selectedLead.cognome}
+                      </DialogTitle>
+                      <Badge className={cn(
+                        "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px]",
+                        COLUMNS.find(c => c.id === selectedLead.stato)?.color
+                      )}>
+                        {selectedLead.stato}
+                      </Badge>
+                      <Badge className={cn(
+                        "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border",
+                        getClientTypeBadge(selectedLead.tipo_cliente)
+                      )}>
+                        {selectedLead.tipo_cliente || 'Acquirente'}
+                      </Badge>
+                    </div>
+                    <DialogDescription className="text-xs text-gray-400 font-medium mt-1">
                       Lead acquisito il {format(new Date(selectedLead.created_at), 'PPP', { locale: it })}
                     </DialogDescription>
                   </div>
                 </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Badge className={cn(
-                    "px-4 py-1.5 rounded-full font-bold uppercase tracking-widest text-[10px]",
-                    COLUMNS.find(c => c.id === selectedLead.stato)?.color
-                  )}>
-                    {selectedLead.stato}
-                  </Badge>
-                  <Badge className={cn(
-                    "px-4 py-1.5 rounded-full font-bold uppercase tracking-widest text-[10px] border",
-                    getClientTypeBadge(selectedLead.tipo_cliente)
-                  )}>
-                    {selectedLead.tipo_cliente || 'Acquirente'}
-                  </Badge>
-                </div>
               </DialogHeader>
 
-              {/* Tabs Navigation */}
-              <div className="px-8 pt-4 pb-0 border-b bg-gray-50/30 shrink-0">
-                <Tabs defaultValue="profilo" className="w-full">
+              {/* Tabs — flex-1 so it fills remaining height, footer is always visible */}
+              <Tabs defaultValue="profilo" className="flex flex-col flex-1 min-h-0">
+                {/* Tab bar */}
+                <div className="px-7 border-b bg-white shrink-0">
                   <TabsList className="bg-transparent p-0 h-12 gap-8 w-full justify-start">
                     <TabsTrigger value="profilo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2">
-                      <User size={16} /> Profilo
+                      <User size={15} /> Profilo
                     </TabsTrigger>
                     <TabsTrigger value="immobili" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2">
-                      <Heart size={16} /> Wishlist
+                      <Heart size={15} /> Immobili
                     </TabsTrigger>
                     <TabsTrigger value="storico" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2">
-                      <History size={16} /> Storico
+                      <History size={15} /> Storico
                     </TabsTrigger>
                   </TabsList>
+                </div>
 
-                  {/* Scrollable Tab Content */}
-                  <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 300px)' }}>
-                    <TabsContent value="profilo" className="mt-0 p-8 space-y-10 animate-in fade-in slide-in-from-bottom-2">
-                      {/* Anagrafica */}
-                      <section className="space-y-6">
-                        <div className="flex items-center gap-2 text-[#94b0ab]">
-                          <UserCheck size={18} />
-                          <h3 className="text-xs font-black uppercase tracking-widest">Anagrafica e Contatti</h3>
+                {/* Scrollable content area */}
+                <div className="flex-1 overflow-y-auto bg-slate-50">
+
+                  {/* ── PROFILO TAB ── */}
+                  <TabsContent value="profilo" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+
+                    {/* Card: Anagrafica e Contatti */}
+                    <div className="bg-white border rounded-xl shadow-sm p-5 space-y-5">
+                      <div className="flex items-center gap-2">
+                        <UserCheck size={15} className="text-[#94b0ab]" />
+                        <h3 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">Anagrafica e Contatti</h3>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Email</Label>
+                          <Input
+                            value={selectedLead.email || ''}
+                            onChange={(e) => setSelectedLead({...selectedLead, email: e.target.value})}
+                            className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                          />
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Telefono</Label>
+                          <Input
+                            value={selectedLead.telefono || ''}
+                            onChange={(e) => setSelectedLead({...selectedLead, telefono: e.target.value})}
+                            className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Assegnato a</Label>
+                          <Select
+                            value={selectedLead.assegnato_a || "Nessuno"}
+                            onValueChange={(v) => setSelectedLead({...selectedLead, assegnato_a: v})}
+                          >
+                            <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="Nessuno">Nessuno</SelectItem>
+                              {AGENTS.map(agent => (
+                                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Tipo Cliente</Label>
+                          <Select
+                            value={selectedLead.tipo_cliente || "Acquirente"}
+                            onValueChange={(v) => setSelectedLead({...selectedLead, tipo_cliente: v})}
+                          >
+                            <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              <SelectItem value="Acquirente">Acquirente</SelectItem>
+                              <SelectItem value="Venditore">Venditore</SelectItem>
+                              <SelectItem value="Ibrido">Ibrido (Entrambi)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Card: Esigenze di Acquisto (conditional) */}
+                    {(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && (
+                      <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5 space-y-5">
+                        <div className="flex items-center gap-2">
+                          <Briefcase size={15} className="text-blue-500" />
+                          <h3 className="text-sm font-semibold text-blue-600 tracking-wide uppercase">Esigenze di Acquisto</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Email</Label>
+                            <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
                             <Input
-                              value={selectedLead.email || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, email: e.target.value})}
-                              className="h-12 rounded-xl border-gray-100"
+                              type="number"
+                              value={selectedLead.budget || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, budget: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Telefono</Label>
+                            <Label className="text-xs font-bold text-gray-500">Tipologia Ricerca</Label>
                             <Input
-                              value={selectedLead.telefono || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, telefono: e.target.value})}
-                              className="h-12 rounded-xl border-gray-100"
+                              value={selectedLead.tipologia_ricerca || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, tipologia_ricerca: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Card: Dati di Vendita (conditional) */}
+                    {(selectedLead.tipo_cliente === 'Venditore' || selectedLead.tipo_cliente === 'Ibrido') && (
+                      <div className="bg-white border border-red-100 rounded-xl shadow-sm p-5 space-y-5">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp size={15} className="text-red-500" />
+                          <h3 className="text-sm font-semibold text-red-600 tracking-wide uppercase">Dati di Vendita</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                          <div className="space-y-2 col-span-full">
+                            <Label className="text-xs font-bold text-gray-500">Indirizzo Immobile da Vendere</Label>
+                            <Input
+                              value={selectedLead.indirizzo_vendita || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, indirizzo_vendita: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Assegnato a</Label>
-                            <Select
-                              value={selectedLead.assegnato_a || "Nessuno"}
-                              onValueChange={(v) => setSelectedLead({...selectedLead, assegnato_a: v})}
-                            >
-                              <SelectTrigger className="h-12 rounded-xl border-gray-100">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl">
-                                <SelectItem value="Nessuno">Nessuno</SelectItem>
-                                {AGENTS.map(agent => (
-                                  <SelectItem key={agent} value={agent}>{agent}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-xs font-bold text-gray-500">Valutazione Stimata (€)</Label>
+                            <Input
+                              type="number"
+                              value={selectedLead.valutazione_stimata || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, valutazione_stimata: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                            />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Tipo Cliente</Label>
-                            <Select
-                              value={selectedLead.tipo_cliente || "Acquirente"}
-                              onValueChange={(v) => setSelectedLead({...selectedLead, tipo_cliente: v})}
-                            >
-                              <SelectTrigger className="h-12 rounded-xl border-gray-100">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl">
-                                <SelectItem value="Acquirente">Acquirente</SelectItem>
-                                <SelectItem value="Venditore">Venditore</SelectItem>
-                                <SelectItem value="Ibrido">Ibrido (Entrambi)</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-xs font-bold text-gray-500">Scadenza Esclusiva</Label>
+                            <Input
+                              type="date"
+                              value={selectedLead.scadenza_esclusiva || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, scadenza_esclusiva: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                            />
+                          </div>
+                          <div className="space-y-2 col-span-full">
+                            <Label className="text-xs font-bold text-gray-500">Motivazione Vendita</Label>
+                            <Input
+                              value={selectedLead.motivazione_vendita || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, motivazione_vendita: e.target.value})}
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                            />
                           </div>
                         </div>
-                      </section>
+                      </div>
+                    )}
+                  </TabsContent>
 
-                      {/* Campi Condizionali Acquirente */}
-                      {(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && (
-                        <section className="space-y-6 p-6 bg-blue-50/30 rounded-[2rem] border border-blue-100/50">
-                          <div className="flex items-center gap-2 text-blue-600">
-                            <Briefcase size={18} />
-                            <h3 className="text-xs font-black uppercase tracking-widest">Esigenze di Acquisto</h3>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
-                              <Input
-                                type="number"
-                                value={selectedLead.budget || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, budget: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
+                  {/* ── WISHLIST TAB ── */}
+                  <TabsContent value="immobili" className="mt-0 p-6 space-y-6 animate-in fade-in slide-in-from-bottom-2">
+
+                    {/* ── Primo Contatto ── */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">Immobile di Primo Contatto</h3>
+                      </div>
+
+                      {selectedLead.immobile_primo_contatto ? (
+                        <div className="bg-white rounded-xl border border-[#94b0ab]/25 shadow-sm overflow-hidden">
+                          {/* Hero image */}
+                          <div className="h-36 bg-slate-100 relative overflow-hidden">
+                            {selectedLead.immobile_primo_contatto.copertina_url ? (
+                              <img
+                                src={selectedLead.immobile_primo_contatto.copertina_url}
+                                alt={selectedLead.immobile_primo_contatto.titolo}
+                                className="w-full h-full object-cover"
                               />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500">Tipologia Ricerca</Label>
-                              <Input
-                                value={selectedLead.tipologia_ricerca || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, tipologia_ricerca: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
-                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                <HomeIcon size={32} />
+                              </div>
+                            )}
+                            <div className="absolute top-2.5 left-2.5">
+                              <Badge className="bg-[#94b0ab] text-white text-[9px] font-black uppercase tracking-widest border-none shadow-sm">
+                                Primo Contatto
+                              </Badge>
                             </div>
                           </div>
-                        </section>
+                          {/* Info row */}
+                          <div className="px-4 py-3 flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="font-bold text-gray-900 truncate text-sm leading-tight">
+                                {selectedLead.immobile_primo_contatto.titolo}
+                              </p>
+                              {(selectedLead.immobile_primo_contatto.zona || selectedLead.immobile_primo_contatto.citta) && (
+                                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                                  {[selectedLead.immobile_primo_contatto.zona, selectedLead.immobile_primo_contatto.citta].filter(Boolean).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                            <span className="text-base font-extrabold text-[#94b0ab] shrink-0">
+                              {formatPrice(selectedLead.immobile_primo_contatto.prezzo)}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-6 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
+                          <p className="text-xs text-gray-400 italic">Nessun immobile di primo contatto</p>
+                        </div>
                       )}
+                    </div>
 
-                      {/* Campi Condizionali Venditore */}
-                      {(selectedLead.tipo_cliente === 'Venditore' || selectedLead.tipo_cliente === 'Ibrido') && (
-                        <section className="space-y-6 p-6 bg-red-50/30 rounded-[2rem] border border-red-100/50">
-                          <div className="flex items-center gap-2 text-red-600">
-                            <TrendingUp size={18} />
-                            <h3 className="text-xs font-black uppercase tracking-widest">Dati di Vendita</h3>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-2 col-span-full">
-                              <Label className="text-xs font-bold text-gray-500">Indirizzo Immobile da Vendere</Label>
-                              <Input
-                                value={selectedLead.indirizzo_vendita || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, indirizzo_vendita: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500">Valutazione Stimata (€)</Label>
-                              <Input
-                                type="number"
-                                value={selectedLead.valutazione_stimata || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, valutazione_stimata: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500">Scadenza Esclusiva</Label>
-                              <Input
-                                type="date"
-                                value={selectedLead.scadenza_esclusiva || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, scadenza_esclusiva: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
-                              />
-                            </div>
-                            <div className="space-y-2 col-span-full">
-                              <Label className="text-xs font-bold text-gray-500">Motivazione Vendita</Label>
-                              <Input
-                                value={selectedLead.motivazione_vendita || ''}
-                                onChange={(e) => setSelectedLead({...selectedLead, motivazione_vendita: e.target.value})}
-                                className="h-12 rounded-xl border-gray-100"
-                              />
-                            </div>
-                          </div>
-                        </section>
-                      )}
-                    </TabsContent>
-
-                    <TabsContent value="immobili" className="mt-0 p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2">
-                      <div className="flex justify-between items-center">
-                        <h3 className="text-xs font-black uppercase tracking-widest text-gray-400">Immobili Associati</h3>
+                    {/* ── Wishlist aggiuntiva ── */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">Wishlist</h3>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          className="text-[#94b0ab] font-bold gap-2"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                          className="rounded-xl font-bold gap-1.5 border-[#94b0ab] text-[#94b0ab] hover:bg-[#94b0ab]/5 cursor-pointer"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); openPropertyPicker(); }}
                         >
-                          <Plus size={14} /> Associa Immobile
+                          <Plus size={15} /> Associa Immobile
                         </Button>
                       </div>
 
                       {!selectedLead.lead_immobili || selectedLead.lead_immobili.length === 0 ? (
-                        <div className="py-20 text-center bg-gray-50 rounded-[2rem] border border-dashed border-gray-200">
-                          <Heart className="mx-auto text-gray-300 mb-4" size={40} />
-                          <p className="text-sm text-gray-400 font-medium">Nessun immobile nella wishlist.</p>
+                        <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
+                          <Heart className="mx-auto text-gray-200 mb-2" size={28} />
+                          <p className="text-xs text-gray-400 italic">Nessun immobile aggiunto manualmente.</p>
                         </div>
                       ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                           {selectedLead.lead_immobili.map((item: any) => (
-                            <div key={item.id} className="p-5 bg-white rounded-2xl border border-gray-100 shadow-sm flex justify-between items-center group hover:border-[#94b0ab]/30 transition-all">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-[#94b0ab]">
-                                  <HomeIcon size={20} />
-                                </div>
-                                <div>
-                                  <p className="font-bold text-gray-900">{item.immobili.titolo}</p>
-                                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                                    {item.stato_interesse} • {format(new Date(item.created_at), 'dd/MM/yyyy')}
+                            <div key={item.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
+                              <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
+                                {item.immobili.copertina_url ? (
+                                  <img src={item.immobili.copertina_url} alt={item.immobili.titolo} className="w-full h-full object-cover" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-300 min-h-[68px]">
+                                    <HomeIcon size={20} />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 px-4 py-3 min-w-0">
+                                <p className="font-bold text-gray-900 truncate text-sm leading-tight">{item.immobili.titolo}</p>
+                                {(item.immobili.zona || item.immobili.citta) && (
+                                  <p className="text-xs text-gray-400 mt-0.5 truncate">
+                                    {[item.immobili.zona, item.immobili.citta].filter(Boolean).join(', ')}
                                   </p>
+                                )}
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className="text-sm font-bold text-[#94b0ab]">{formatPrice(item.immobili.prezzo)}</span>
+                                  <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border-gray-200 text-gray-500">
+                                    {item.stato_interesse}
+                                  </Badge>
                                 </div>
                               </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-[#94b0ab]"
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                              >
-                                <ExternalLink size={16} />
-                              </Button>
+                              <div className="flex items-center pr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-gray-300 hover:text-[#94b0ab] rounded-lg"
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                  title="Apri immobile"
+                                >
+                                  <ExternalLink size={15} />
+                                </Button>
+                              </div>
                             </div>
                           ))}
                         </div>
                       )}
-                    </TabsContent>
+                    </div>
 
-                    <TabsContent value="storico" className="mt-0 p-8 space-y-8 animate-in fade-in slide-in-from-bottom-2">
-                      <div className="space-y-4">
-                        <Label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                          <MessageSquare size={14} /> Messaggio Originale
-                        </Label>
-                        <div className="p-5 bg-gray-50 rounded-2xl border border-gray-100 text-sm text-gray-600 leading-relaxed italic">
-                          "{selectedLead.messaggio || 'Nessun messaggio ricevuto'}"
+                  </TabsContent>
+
+                  {/* ── STORICO TAB ── */}
+                  <TabsContent value="storico" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+
+                    {/* Original message — always visible, visually distinct */}
+                    <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <MessageSquare size={13} className="text-amber-600 shrink-0" />
+                        <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Messaggio di Primo Contatto</span>
+                        <span className="text-[10px] text-amber-500 ml-auto font-medium shrink-0">
+                          {format(new Date(selectedLead.created_at), "d MMM yyyy", { locale: it })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-amber-900 leading-relaxed italic">
+                        "{selectedLead.messaggio || 'Nessun messaggio ricevuto.'}"
+                      </p>
+                    </div>
+
+                    {/* Timeline of notes */}
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase mb-3">Note Interne</p>
+
+                      {/* Notes list — own scroll so the input stays visible */}
+                      <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+                        {leadNotes.length === 0 ? (
+                          <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200">
+                            <History className="mx-auto text-gray-200 mb-2" size={26} />
+                            <p className="text-xs text-gray-400 italic">Nessuna nota registrata ancora.</p>
+                          </div>
+                        ) : leadNotes.map((note, idx) => (
+                          <div key={note.id} className="flex gap-3 group">
+                            {/* Avatar + timeline connector */}
+                            <div className="flex flex-col items-center shrink-0 pt-0.5">
+                              <div className="w-7 h-7 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20">
+                                {note.autore?.charAt(0)?.toUpperCase() || '?'}
+                              </div>
+                              {idx < leadNotes.length - 1 && (
+                                <div className="w-px flex-1 bg-gray-100 my-1" />
+                              )}
+                            </div>
+                            {/* Bubble */}
+                            <div className={cn("flex-1 min-w-0", idx < leadNotes.length - 1 ? "pb-3" : "pb-1")}>
+                              <div className="flex items-baseline gap-2 mb-1">
+                                <span className="text-xs font-bold text-gray-800">{note.autore}</span>
+                                <span className="text-[10px] text-gray-400 font-medium">
+                                  {format(new Date(note.created_at), "d MMMM yyyy, HH:mm", { locale: it })}
+                                </span>
+                              </div>
+                              <div className="bg-white border border-gray-100 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm">
+                                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Add note input */}
+                    <div className="bg-white border rounded-xl shadow-sm p-4 space-y-3">
+                      {/* Author selector */}
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20 shrink-0">
+                          {newNoteAutore.charAt(0)}
                         </div>
+                        <Select value={newNoteAutore} onValueChange={setNewNoteAutore}>
+                          <SelectTrigger className="h-8 w-36 rounded-lg border-gray-200 text-xs font-bold bg-slate-50">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {AGENTS.map(a => <SelectItem key={a} value={a} className="text-xs font-medium">{a}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-xs text-gray-400">sta scrivendo una nota...</span>
                       </div>
 
-                      <div className="space-y-4">
-                        <Label className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                          <Save size={14} /> Note Interne (Private)
-                        </Label>
+                      {/* Textarea + submit */}
+                      <div className="flex gap-2 items-end">
                         <Textarea
-                          value={selectedLead.note_interne || ''}
-                          onChange={(e) => setSelectedLead({...selectedLead, note_interne: e.target.value})}
-                          placeholder="Aggiungi dettagli sulla trattativa, feedback visite, etc..."
-                          className="min-h-[200px] rounded-2xl border-gray-100 p-5 focus:ring-[#94b0ab]"
+                          value={newNoteText}
+                          onChange={(e) => setNewNoteText(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
+                          placeholder="Scrivi una nota (⌘↵ per salvare)..."
+                          className="flex-1 min-h-[80px] max-h-[140px] rounded-xl border-gray-200 bg-slate-50 text-sm resize-none focus:ring-[#94b0ab] p-3"
                         />
+                        <Button
+                          type="button"
+                          disabled={isSavingNote || !newNoteText.trim()}
+                          onClick={handleAddNote}
+                          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-10 px-4 font-bold shrink-0 gap-1.5 transition-all disabled:opacity-40"
+                        >
+                          {isSavingNote ? "..." : <><Send size={14} /> Aggiungi</>}
+                        </Button>
                       </div>
-                    </TabsContent>
-                  </div>
-                </Tabs>
-              </div>
+                    </div>
 
-              {/* Fixed Footer */}
-              <div className="px-8 py-6 bg-white border-t shrink-0">
+                  </TabsContent>
+
+                </div>
+              </Tabs>
+
+              {/* Fixed Footer — always visible, never cut off */}
+              <div className="px-7 py-5 bg-white border-t shrink-0">
                 <Button
                   type="submit"
                   disabled={isSaving}
-                  className="w-full bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl h-14 font-bold shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-[0.98]"
+                  className="w-full bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl h-13 font-bold shadow-lg shadow-[#94b0ab]/20 transition-all active:scale-[0.98]"
                 >
-                  {isSaving ? "Salvataggio..." : <><Save size={20} className="mr-2" /> Salva Modifiche</>}
+                  {isSaving ? "Salvataggio..." : <><Save size={18} className="mr-2" /> Salva Modifiche</>}
                 </Button>
               </div>
+
             </form>
           )}
         </DialogContent>
       </Dialog>
+      {/* Property Picker Dialog */}
+      <Dialog open={isPropertyPickerOpen} onOpenChange={(open) => { setIsPropertyPickerOpen(open); if (!open) setPropertySearch(''); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl rounded-[2rem]">
+          <DialogHeader className="px-7 pt-6 pb-4 border-b bg-white shrink-0">
+            <DialogTitle className="text-lg font-bold text-gray-900">Associa un Immobile</DialogTitle>
+            <DialogDescription className="text-sm text-gray-400">
+              Seleziona una proprietà da aggiungere alla wishlist del cliente.
+            </DialogDescription>
+            <div className="relative mt-3">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <Input
+                placeholder="Cerca per titolo, zona o città..."
+                value={propertySearch}
+                onChange={(e) => setPropertySearch(e.target.value)}
+                className="h-11 pl-10 rounded-xl border-gray-200 bg-slate-50"
+                autoFocus
+              />
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto bg-slate-50 p-4 space-y-3">
+            {isLoadingProperties ? (
+              <div className="py-16 text-center text-gray-400 text-sm animate-pulse">Caricamento immobili...</div>
+            ) : filteredPickerProperties.length === 0 ? (
+              <div className="py-16 text-center text-gray-400 text-sm">Nessun immobile trovato.</div>
+            ) : filteredPickerProperties.map((prop) => (
+              <div key={prop.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
+                {/* Thumbnail */}
+                <div className="w-20 shrink-0 bg-slate-100 relative overflow-hidden">
+                  {prop.copertina_url ? (
+                    <img src={prop.copertina_url} alt={prop.titolo} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-300 min-h-[72px]">
+                      <HomeIcon size={22} />
+                    </div>
+                  )}
+                </div>
+                {/* Info */}
+                <div className="flex-1 px-4 py-3 min-w-0">
+                  <p className="font-bold text-gray-900 truncate text-sm leading-tight">{prop.titolo}</p>
+                  {(prop.zona || prop.citta) && (
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {[prop.zona, prop.citta].filter(Boolean).join(', ')}
+                    </p>
+                  )}
+                  <p className="text-sm font-bold text-[#94b0ab] mt-1.5">{formatPrice(prop.prezzo)}</p>
+                </div>
+                {/* CTA */}
+                <div className="flex items-center pr-4 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="rounded-xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold px-4 h-9 cursor-pointer transition-all"
+                    onClick={() => handleAssociateProperty(prop)}
+                  >
+                    Seleziona
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </AdminLayout>
   );
 };
