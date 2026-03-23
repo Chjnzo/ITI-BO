@@ -10,6 +10,7 @@ import Properties from "./pages/Properties";
 import OpenHouses from "./pages/OpenHouses";
 import Leads from "./pages/Leads";
 import Agenda from "./pages/Agenda";
+import Tasks from "./pages/Tasks";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -51,6 +52,7 @@ const App = () => (
           <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
           <Route path="/open-houses" element={<ProtectedRoute><OpenHouses /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+          <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
