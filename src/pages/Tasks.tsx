@@ -31,7 +31,7 @@ interface Task {
 
 interface AgentProfile {
   id: string;
-  full_name: string | null;
+  nome_completo: string | null;
   email: string | null;
 }
 
@@ -55,10 +55,10 @@ const safeFormat = (date: any, fmt: string): string => {
 };
 
 const getAgentName = (agent: AgentProfile): string =>
-  agent.full_name ?? agent.email ?? agent.id.substring(0, 8);
+  agent.nome_completo ?? agent.email ?? agent.id.substring(0, 8);
 
 const getAgentInitials = (agent: AgentProfile): string => {
-  const name = agent.full_name ?? agent.email ?? agent.id;
+  const name = agent.nome_completo ?? agent.email ?? agent.id;
   return name.substring(0, 2).toUpperCase();
 };
 
@@ -193,11 +193,11 @@ const Tasks = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) setCurrentUserId(user.id);
 
-      const { data, error } = await supabase.from('profiles').select('id, full_name, email');
+      const { data, error } = await supabase.from('profili_agenti').select('id, nome_completo, email');
       if (!error && data && data.length > 0) {
         setAgents(data);
       } else if (user) {
-        setAgents([{ id: user.id, full_name: 'Tu', email: user.email ?? null }]);
+        setAgents([{ id: user.id, nome_completo: 'Tu', email: user.email ?? null }]);
       }
     };
     init();
@@ -347,16 +347,18 @@ const Tasks = () => {
       {/* VISIONE GENERALE — 3-column agent grid */}
       {viewMode === 'generale' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {agents.map(agent => (
-            <AgentColumn
-              key={agent.id}
-              agent={agent}
-              tasks={tasksByAgent.get(agent.id) ?? []}
-              loading={loading}
-              onToggleComplete={toggleComplete}
-              onCycleStato={cycleStato}
-            />
-          ))}
+          {agents
+            .filter(a => a.nome_completo?.toLowerCase() !== 'marco')
+            .map(agent => (
+              <AgentColumn
+                key={agent.id}
+                agent={agent}
+                tasks={tasksByAgent.get(agent.id) ?? []}
+                loading={loading}
+                onToggleComplete={toggleComplete}
+                onCycleStato={cycleStato}
+              />
+            ))}
           {agents.length === 0 && loading && (
             <div className="col-span-3 py-20 text-center text-gray-300 animate-pulse">Caricamento...</div>
           )}
@@ -370,7 +372,7 @@ const Tasks = () => {
             <CardHeader className="px-6 py-5 border-b border-gray-50 flex-row items-center gap-3 space-y-0">
               <div className="w-10 h-10 rounded-2xl bg-[#94b0ab] text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm shadow-[#94b0ab]/20">
                 {currentUserId
-                  ? getAgentInitials(agents.find(a => a.id === currentUserId) ?? { id: currentUserId, full_name: null, email: null })
+                  ? getAgentInitials(agents.find(a => a.id === currentUserId) ?? { id: currentUserId, nome_completo: null, email: null })
                   : '?'
                 }
               </div>
