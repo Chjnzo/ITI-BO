@@ -1,276 +1,495 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { Calendar, dateFnsLocalizer, Views } from 'react-big-calendar';
-import { format, parse, startOfWeek, getDay } from 'date-fns';
-import { it } from 'date-fns/locale';
-import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { supabase } from '@/lib/supabase';
-import { showError, showSuccess } from '@/utils/toast';
+import { showError } from '@/utils/toast';
+import { format, isToday, parseISO, startOfWeek, endOfWeek, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
+import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
-import { Plus, Calendar as CalendarIcon, Clock, User, Home as HomeIcon } from 'lucide-react';
-import { 
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter 
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { 
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
-} from "@/components/ui/select";
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Plus, Maximize2, ChevronLeft, ChevronRight, CalendarIcon, MapPin, AlignLeft } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import EventFormModal, {
+  type Appointment, type AgentProfile, TIPOLOGIA_COLORS,
+} from '@/components/agenda/EventFormModal';
+import AgentExpandModal from '@/components/agenda/AgentExpandModal';
+import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 
-const locales = {
-  'it': it,
+// ── Timeline constants ────────────────────────────────────────────────────────
+
+const HOUR_HEIGHT = 60; // px per hour
+const DAY_START = 8;
+const DAY_END = 20;
+const TOTAL_HOURS = DAY_END - DAY_START;
+const TIMELINE_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
+const HOURS = Array.from({ length: TOTAL_HOURS }, (_, i) => DAY_START + i);
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const timeToMinutes = (t: string): number => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
 };
 
-const localizer = dateFnsLocalizer({
-  format,
-  parse,
-  startOfWeek,
-  getDay,
-  locales,
-});
+const getEventTop = (ora_inizio: string | null): number => {
+  if (!ora_inizio) return 0;
+  return Math.max(0, ((timeToMinutes(ora_inizio) - DAY_START * 60) / 60) * HOUR_HEIGHT);
+};
 
-const Agenda = () => {
-  const [events, setEvents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  
-  // Form Data
-  const [leads, setLeads] = useState<any[]>([]);
-  const [properties, setProperties] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    titolo: '',
-    data: format(new Date(), 'yyyy-MM-dd'),
-    ora_inizio: '10:00',
-    ora_fine: '11:00',
-    cliente_id: '',
-    immobile_id: '',
-    tipo: 'Visita'
-  });
+const getEventHeight = (ora_inizio: string | null, ora_fine: string | null): number => {
+  if (!ora_inizio) return HOUR_HEIGHT;
+  const start = timeToMinutes(ora_inizio);
+  const end = ora_fine ? timeToMinutes(ora_fine) : start + 60;
+  return Math.max((Math.max(end - start, 30) / 60) * HOUR_HEIGHT, 28);
+};
 
-  const fetchEvents = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('appuntamenti')
-      .select(`
-        *,
-        leads (nome, cognome),
-        immobili (titolo)
-      `);
+const snapToQuarter = (minutes: number): number => Math.round(minutes / 15) * 15;
 
-    if (error) {
-      console.error("Errore fetch appuntamenti:", error);
-    } else {
-      const formatted = data.map(event => ({
-        id: event.id,
-        title: `${event.tipo}: ${event.titolo}`,
-        start: new Date(event.data_inizio),
-        end: new Date(event.data_fine),
-        resource: event
-      }));
-      setEvents(formatted);
-    }
-    setLoading(false);
-  }, []);
+const minutesToTimeStr = (totalMinutes: number): string => {
+  const clamped = Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 15, totalMinutes));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
 
-  const fetchResources = async () => {
-    const { data: lData } = await supabase.from('leads').select('id, nome, cognome').order('cognome');
-    const { data: iData } = await supabase.from('immobili').select('id, titolo').neq('stato', 'Venduto').order('titolo');
-    setLeads(lData || []);
-    setProperties(iData || []);
+const getAgentInitials = (agent: AgentProfile): string =>
+  (agent.nome_completo ?? agent.id).substring(0, 2).toUpperCase();
+
+// ── AgentDayColumn ────────────────────────────────────────────────────────────
+
+interface AgentDayColumnProps {
+  agent: AgentProfile;
+  events: Appointment[];
+  selectedDate: string;
+  loading: boolean;
+  onEventClick: (event: Appointment) => void;
+  onSlotClick: (agentId: string, time: string) => void;
+  onExpand: (agent: AgentProfile) => void;
+}
+
+const AgentDayColumn = memo(({
+  agent, events, selectedDate, loading, onEventClick, onSlotClick, onExpand,
+}: AgentDayColumnProps) => {
+  const agentColor = agent.colore_calendario ?? '#94b0ab';
+
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('[data-event-block]')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top + e.currentTarget.scrollTop;
+    const rawMinutes = DAY_START * 60 + (y / HOUR_HEIGHT) * 60;
+    const snapped = snapToQuarter(rawMinutes);
+    onSlotClick(agent.id, minutesToTimeStr(snapped));
   };
 
-  useEffect(() => {
-    fetchEvents();
-    fetchResources();
-  }, [fetchEvents]);
-
-  const handleCreate = async () => {
-    if (!form.titolo || !form.data) {
-      showError("Titolo e data sono obbligatori");
-      return;
-    }
-
-    const start = new Date(`${form.data}T${form.ora_inizio}:00`);
-    const end = new Date(`${form.data}T${form.ora_fine}:00`);
-
-    const payload = {
-      titolo: form.titolo,
-      data_inizio: start.toISOString(),
-      data_fine: end.toISOString(),
-      cliente_id: form.cliente_id || null,
-      immobile_id: form.immobile_id || null,
-      tipo: form.tipo
-    };
-
-    const { error } = await supabase.from('appuntamenti').insert([payload]);
-
-    if (error) {
-      showError("Errore nel salvataggio: " + error.message);
-    } else {
-      showSuccess("Appuntamento fissato");
-      setIsCreateOpen(false);
-      fetchEvents();
-      setForm({
-        titolo: '',
-        data: format(new Date(), 'yyyy-MM-dd'),
-        ora_inizio: '10:00',
-        ora_fine: '11:00',
-        cliente_id: '',
-        immobile_id: '',
-        tipo: 'Visita'
-      });
-    }
-  };
+  const parsedDate = parseISO(selectedDate);
+  const isSelectedToday = isToday(parsedDate);
+  const dateLabel = format(parsedDate, 'EEE d MMM', { locale: it });
 
   return (
-    <AdminLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
-        <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Agenda Operativa</h1>
-          <p className="text-gray-500 mt-1 font-medium">Pianifica visite, incontri e attività dell'agenzia.</p>
-        </div>
-        
-        <Button 
-          onClick={() => setIsCreateOpen(true)}
-          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+    <Card className="h-full rounded-[2rem] border-gray-100 shadow-sm flex flex-col overflow-hidden">
+      {/* Column header */}
+      <CardHeader className="px-5 py-4 border-b border-gray-50 flex-row items-center gap-3 space-y-0 shrink-0">
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-xs shrink-0 shadow-sm"
+          style={{ backgroundColor: agentColor }}
         >
-          <Plus className="mr-2" size={20} /> Nuovo Appuntamento
+          {getAgentInitials(agent)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-900 truncate text-sm">
+            {agent.nome_completo ?? agent.id.substring(0, 8)}
+          </h3>
+          <p className={cn('text-xs capitalize', isSelectedToday ? 'text-[#94b0ab] font-semibold' : 'text-gray-400')}>
+            {dateLabel} · {events.length} eventi
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onExpand(agent)}
+          className="h-8 w-8 rounded-xl text-gray-400 hover:text-gray-700 shrink-0"
+          title="Espandi calendario"
+        >
+          <Maximize2 size={13} />
         </Button>
-      </div>
+      </CardHeader>
 
-      <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-gray-100 h-[800px]">
-        <Calendar
-          localizer={localizer}
-          events={events}
-          startAccessor="start"
-          endAccessor="end"
-          style={{ height: '100%' }}
-          culture="it"
-          messages={{
-            next: "Successivo",
-            previous: "Precedente",
-            today: "Oggi",
-            month: "Mese",
-            week: "Settimana",
-            day: "Giorno",
-            agenda: "Agenda",
-            date: "Data",
-            time: "Ora",
-            event: "Evento",
-            noEventsInRange: "Nessun appuntamento in questo periodo."
-          }}
-          views={[Views.MONTH, Views.WEEK, Views.DAY]}
-          eventPropGetter={(event) => ({
-            className: "bg-[#94b0ab] border-none rounded-lg px-2 py-1 text-xs font-bold shadow-sm"
-          })}
-        />
-      </div>
-
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
-          <DialogHeader className="px-8 pt-8 pb-4">
-            <DialogTitle className="text-2xl font-bold">Nuovo Appuntamento</DialogTitle>
-          </DialogHeader>
-          
-          <div className="p-8 space-y-6">
-            <div className="space-y-3">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Titolo / Oggetto</Label>
-              <Input 
-                placeholder="Es: Visita Bilocale via Roma" 
-                value={form.titolo} 
-                onChange={(e) => setForm({...form, titolo: e.target.value})}
-                className="h-14 rounded-2xl border-gray-100"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipo</Label>
-                <Select onValueChange={(v) => setForm({...form, tipo: v})} value={form.tipo}>
-                  <SelectTrigger className="h-14 rounded-2xl border-gray-100">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-2xl">
-                    <SelectItem value="Visita">Visita Immobile</SelectItem>
-                    <SelectItem value="Incontro">Incontro in Ufficio</SelectItem>
-                    <SelectItem value="Altro">Altro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Data</Label>
-                <Input 
-                  type="date" 
-                  value={form.data} 
-                  onChange={(e) => setForm({...form, data: e.target.value})}
-                  className="h-14 rounded-2xl border-gray-100"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Ora Inizio</Label>
-                <Input 
-                  type="time" 
-                  value={form.ora_inizio} 
-                  onChange={(e) => setForm({...form, ora_inizio: e.target.value})}
-                  className="h-14 rounded-2xl border-gray-100"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Ora Fine</Label>
-                <Input 
-                  type="time" 
-                  value={form.ora_fine} 
-                  onChange={(e) => setForm({...form, ora_fine: e.target.value})}
-                  className="h-14 rounded-2xl border-gray-100"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Cliente (Lead)</Label>
-              <Select onValueChange={(v) => setForm({...form, cliente_id: v})} value={form.cliente_id}>
-                <SelectTrigger className="h-14 rounded-2xl border-gray-100">
-                  <SelectValue placeholder="Seleziona cliente..." />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl">
-                  {leads.map(l => (
-                    <SelectItem key={l.id} value={l.id}>{l.cognome} {l.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-3">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Immobile</Label>
-              <Select onValueChange={(v) => setForm({...form, immobile_id: v})} value={form.immobile_id}>
-                <SelectTrigger className="h-14 rounded-2xl border-gray-100">
-                  <SelectValue placeholder="Seleziona immobile..." />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl">
-                  {properties.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.titolo}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      {/* Timeline body */}
+      <CardContent className="flex-1 overflow-y-auto p-0 min-h-0 scrollbar-column">
+        {loading ? (
+          <div className="p-4 space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-12 bg-gray-100 rounded-xl animate-pulse" />
+            ))}
           </div>
+        ) : (
+          <div className="pt-6">
+          <div
+            className="relative cursor-pointer"
+            style={{ height: TIMELINE_HEIGHT }}
+            onClick={handleTimelineClick}
+          >
+            {/* Hour lines + labels */}
+            {HOURS.map(h => (
+              <React.Fragment key={h}>
+                <div
+                  className="absolute left-0 right-0 border-t border-gray-100 flex items-start"
+                  style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
+                >
+                  <span className="text-[9px] text-gray-300 font-medium pl-2 pt-0.5 leading-none select-none">
+                    {String(h).padStart(2, '0')}:00
+                  </span>
+                </div>
+                {/* Half-hour line */}
+                <div
+                  className="absolute left-8 right-0 border-t border-gray-50"
+                  style={{ top: (h - DAY_START) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
+                />
+              </React.Fragment>
+            ))}
 
-          <DialogFooter className="p-8 bg-gray-50/50">
-            <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="rounded-xl font-bold">Annulla</Button>
-            <Button 
-              onClick={handleCreate}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-10 h-12 font-bold transition-all"
+            {/* Event blocks */}
+            {events.map(event => {
+              const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+              const top = getEventTop(event.ora_inizio);
+              const height = getEventHeight(event.ora_inizio, event.ora_fine);
+              return (
+                <div
+                  key={event.id}
+                  data-event-block
+                  onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
+                  className="absolute left-14 right-2 rounded-xl px-2 py-1.5 overflow-hidden cursor-pointer hover:brightness-95 transition-all border"
+                  style={{
+                    top,
+                    height,
+                    backgroundColor: colors.bg,
+                    borderColor: colors.border,
+                    minHeight: 28,
+                  }}
+                >
+                  {/* Time + tipologia */}
+                  <p
+                    className="text-[10px] font-bold leading-tight truncate"
+                    style={{ color: colors.text }}
+                  >
+                    {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
+                  </p>
+
+                  {/* Lead name */}
+                  {height > 38 && event.leads && (
+                    <p className="text-[9px] leading-tight truncate opacity-75 mt-0.5" style={{ color: colors.text }}>
+                      {event.leads.nome} {event.leads.cognome}
+                    </p>
+                  )}
+
+                  {/* Property */}
+                  {height > 52 && event.immobili?.titolo && (
+                    <p className="flex items-center gap-0.5 text-[9px] leading-tight truncate opacity-70 mt-0.5" style={{ color: colors.text }}>
+                      <MapPin size={8} className="shrink-0" />
+                      {event.immobili.titolo}
+                    </p>
+                  )}
+
+                  {/* Notes */}
+                  {height > 68 && event.note && (
+                    <p className="flex items-start gap-0.5 text-[9px] leading-tight line-clamp-2 opacity-60 mt-0.5" style={{ color: colors.text }}>
+                      <AlignLeft size={8} className="shrink-0 mt-px" />
+                      {event.note}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Empty state */}
+            {events.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <p className="text-xs text-gray-300 italic">Nessun appuntamento</p>
+              </div>
+            )}
+          </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+});
+AgentDayColumn.displayName = 'AgentDayColumn';
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+
+interface FormModalState {
+  open: boolean;
+  event?: Appointment;
+  defaultAgentId?: string;
+  defaultDate?: string;
+  defaultTimeStart?: string;
+}
+
+interface ExpandState {
+  open: boolean;
+  agent: AgentProfile | null;
+}
+
+const Agenda = () => {
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [viewMode, setViewMode] = useState<'giornaliera' | 'planning'>('giornaliera');
+  const [events, setEvents] = useState<Appointment[]>([]);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [properties, setProperties] = useState<{ id: string; titolo: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [formModal, setFormModal] = useState<FormModalState>({ open: false });
+  const [expandState, setExpandState] = useState<ExpandState>({ open: false, agent: null });
+
+  // Fetch agents + properties once on mount
+  useEffect(() => {
+    const init = async () => {
+      const [{ data: { user } }, { data: agentsData }, { data: propsData }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
+        supabase.from('immobili').select('id, titolo').neq('stato', 'Venduto').order('titolo'),
+      ]);
+      if (user) setCurrentUserId(user.id);
+      setAgents((agentsData as AgentProfile[]) || []);
+      setProperties(propsData || []);
+    };
+    init();
+  }, []);
+
+  // Fetch events — single day or full week depending on viewMode
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    let query = supabase
+      .from('appuntamenti')
+      .select('*, leads(nome, cognome), immobili(titolo)')
+      .order('ora_inizio');
+
+    if (viewMode === 'giornaliera') {
+      query = query.eq('data', selectedDate);
+    } else {
+      const monday = format(startOfWeek(parseISO(selectedDate), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      const sunday = format(endOfWeek(parseISO(selectedDate), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+      query = query.gte('data', monday).lte('data', sunday);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      showError('Errore caricamento appuntamenti');
+    } else {
+      setEvents((data as Appointment[]) || []);
+    }
+    setLoading(false);
+  }, [selectedDate, viewMode]);
+
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // Agents visible in the board (exclude Marco, current user first)
+  const visibleAgents = useMemo(() => {
+    const filtered = agents.filter(a => a.nome_completo?.toLowerCase() !== 'marco');
+    if (!currentUserId) return filtered;
+    return [
+      ...filtered.filter(a => a.id === currentUserId),
+      ...filtered.filter(a => a.id !== currentUserId),
+    ];
+  }, [agents, currentUserId]);
+
+  // Events grouped by agent
+  const eventsByAgent = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    for (const a of visibleAgents) map.set(a.id, []);
+    for (const e of events) {
+      if (map.has(e.agente_id)) map.get(e.agente_id)!.push(e);
+    }
+    return map;
+  }, [events, visibleAgents]);
+
+  const openNewEvent = () =>
+    setFormModal({ open: true, defaultDate: selectedDate });
+
+  const openEventEdit = (event: Appointment) =>
+    setFormModal({ open: true, event });
+
+  const openSlotCreate = (agentId: string, time: string) =>
+    setFormModal({ open: true, defaultAgentId: agentId, defaultDate: selectedDate, defaultTimeStart: time });
+
+  const openDateSlotCreate = (date: string, time: string) =>
+    setFormModal({ open: true, defaultDate: date, defaultTimeStart: time });
+
+  const openExpand = (agent: AgentProfile) =>
+    setExpandState({ open: true, agent });
+
+  const parsedDate = parseISO(selectedDate);
+  const isSelectedToday = isToday(parsedDate);
+  const headerDateLabel = format(parsedDate, "EEEE d MMMM yyyy", { locale: it });
+
+  return (
+    <AdminLayout fullHeight>
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+
+        {/* Header */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
+          <div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Agenda</h1>
+            <p className="text-gray-500 mt-1 font-medium capitalize">
+              {isSelectedToday ? (
+                <span>
+                  <span className="text-[#94b0ab] font-bold">Oggi</span>
+                  {' · '}{headerDateLabel}
+                </span>
+              ) : headerDateLabel}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* View mode toggle */}
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden h-11">
+              <button
+                type="button"
+                onClick={() => setViewMode('giornaliera')}
+                className={cn(
+                  'px-4 text-sm font-bold transition-colors',
+                  viewMode === 'giornaliera'
+                    ? 'bg-[#94b0ab] text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50',
+                )}
+              >
+                Giorno
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('planning')}
+                className={cn(
+                  'px-4 text-sm font-bold border-l border-gray-200 transition-colors',
+                  viewMode === 'planning'
+                    ? 'bg-[#94b0ab] text-white'
+                    : 'bg-white text-gray-500 hover:bg-gray-50',
+                )}
+              >
+                Settimana
+              </button>
+            </div>
+
+            {/* Nav arrows */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 rounded-xl border-gray-200"
+              onClick={() => setSelectedDate(format(
+                viewMode === 'giornaliera'
+                  ? subDays(parseISO(selectedDate), 1)
+                  : subWeeks(parseISO(selectedDate), 1),
+                'yyyy-MM-dd',
+              ))}
             >
-              Salva Appuntamento
+              <ChevronLeft size={16} />
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-11 w-11 rounded-xl border-gray-200"
+              onClick={() => setSelectedDate(format(
+                viewMode === 'giornaliera'
+                  ? addDays(parseISO(selectedDate), 1)
+                  : addWeeks(parseISO(selectedDate), 1),
+                'yyyy-MM-dd',
+              ))}
+            >
+              <ChevronRight size={16} />
+            </Button>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-11 w-[190px] justify-start text-left font-medium rounded-xl border-gray-200 bg-white hover:bg-gray-50 shadow-sm gap-2"
+                >
+                  <CalendarIcon size={15} className="text-[#94b0ab] shrink-0" />
+                  {format(parseISO(selectedDate), 'd MMM yyyy', { locale: it })}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="end">
+                <Calendar
+                  mode="single"
+                  selected={parseISO(selectedDate)}
+                  onSelect={(date) => date && setSelectedDate(format(date, 'yyyy-MM-dd'))}
+                  initialFocus
+                  locale={it}
+                />
+              </PopoverContent>
+            </Popover>
+            <Button
+              onClick={openNewEvent}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+            >
+              <Plus className="mr-2" size={16} /> Nuovo
+            </Button>
+          </div>
+        </div>
+
+        {/* Agent grid / Weekly planning */}
+        <div className="flex-1 overflow-hidden min-h-0">
+          {viewMode === 'giornaliera' ? (
+            <div className="flex flex-nowrap overflow-x-auto lg:grid lg:grid-cols-3 gap-5 h-full pb-4 snap-x">
+              {visibleAgents.map(agent => (
+                <div key={agent.id} className="min-w-[320px] w-[85vw] lg:w-auto lg:min-w-0 shrink-0 snap-center h-full flex flex-col">
+                <AgentDayColumn
+                  agent={agent}
+                  events={eventsByAgent.get(agent.id) ?? []}
+                  selectedDate={selectedDate}
+                  loading={loading}
+                  onEventClick={openEventEdit}
+                  onSlotClick={openSlotCreate}
+                  onExpand={openExpand}
+                />
+                </div>
+              ))}
+              {visibleAgents.length === 0 && loading && (
+                <div className="col-span-3 py-20 text-center text-gray-300 animate-pulse text-sm">
+                  Caricamento...
+                </div>
+              )}
+            </div>
+          ) : (
+            <WeeklyPlanningView
+              events={events}
+              agents={agents}
+              visibleAgents={visibleAgents}
+              selectedDate={selectedDate}
+              loading={loading}
+              onEventClick={openEventEdit}
+              onSlotClick={openDateSlotCreate}
+            />
+          )}
+        </div>
+
+      </div>
+
+      {/* Create / Edit modal */}
+      <EventFormModal
+        open={formModal.open}
+        onClose={() => setFormModal({ open: false })}
+        onSaved={() => { fetchEvents(); setFormModal({ open: false }); }}
+        event={formModal.event}
+        defaultAgentId={formModal.defaultAgentId}
+        defaultDate={formModal.defaultDate}
+        defaultTimeStart={formModal.defaultTimeStart}
+        agents={agents}
+        properties={properties}
+      />
+
+      {/* Expand modal */}
+      <AgentExpandModal
+        open={expandState.open}
+        onClose={() => setExpandState({ open: false, agent: null })}
+        onRefresh={fetchEvents}
+        agent={expandState.agent}
+        allAgents={agents}
+        properties={properties}
+      />
     </AdminLayout>
   );
 };
