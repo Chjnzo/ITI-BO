@@ -6,9 +6,10 @@ import { supabase } from '@/lib/supabase';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
+  fullHeight?: boolean;
 }
 
-const AdminLayout = ({ children }: AdminLayoutProps) => {
+const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -100,7 +101,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto scroll-smooth flex flex-col min-w-0">
+      <main className={cn('flex-1 flex flex-col min-w-0', fullHeight ? 'overflow-hidden' : 'overflow-y-auto scroll-smooth')}>
         {/* Mobile top bar with hamburger */}
         <div className="md:hidden flex items-center gap-3 px-4 py-4 bg-white border-b border-gray-100 shrink-0">
           <button
@@ -113,11 +114,19 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
           <span className="text-base font-bold text-[#94b0ab]">Admin OS</span>
         </div>
 
-        <div className="flex-1 p-4 md:p-8">
-          <div className="max-w-6xl mx-auto pb-12">
-            {children}
+        {fullHeight ? (
+          <div className="flex-1 overflow-hidden flex flex-col min-h-0 p-4 md:p-8">
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0 max-w-6xl mx-auto w-full">
+              {children}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex-1 p-4 md:p-8">
+            <div className="max-w-6xl mx-auto pb-12">
+              {children}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

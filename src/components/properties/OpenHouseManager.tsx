@@ -173,7 +173,7 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
                       <Button
                         variant="outline"
                         className={cn(
-                          "w-full h-14 justify-start text-left font-normal rounded-2xl border-gray-100",
+                          "w-full h-14 justify-start text-left font-normal rounded-2xl border-gray-100 bg-gray-50/50 hover:bg-gray-100",
                           !date && "text-muted-foreground"
                         )}
                       >
@@ -181,7 +181,7 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
                         {date ? format(date, "PPP", { locale: it }) : "Seleziona data"}
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
+                    <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
                       <Calendar
                         mode="single"
                         selected={date}

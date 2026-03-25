@@ -11,11 +11,14 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Phone, MessageCircle, CalendarDays, Search } from 'lucide-react';
+import { Phone, MessageCircle, CalendarDays, Search, CalendarIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { it } from 'date-fns/locale';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
 
 export const TIPOLOGIA_CONFIG: Record<string, {
   icon: React.ElementType;
@@ -44,13 +47,13 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   const [leadSearch, setLeadSearch] = useState('');
   const [leadResults, setLeadResults] = useState<any[]>([]);
   const [showLeadDrop, setShowLeadDrop] = useState(false);
-  const [data, setData] = useState('');
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [ora, setOra] = useState('');
   const [nota, setNota] = useState('');
   const [agenteId, setAgenteId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
-  const [teamMembers, setTeamMembers] = useState<{ id: string; full_name: string | null; email: string | null }[]>([]);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; nome_completo: string | null }[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -59,16 +62,15 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
         setCurrentUserId(user.id);
         setAgenteId(user.id);
       }
-      // Fetch team members from profiles with fallback
-      const { data, error } = await supabase.from('profiles').select('id, full_name, email');
+      const { data, error } = await supabase.from('profili_agenti').select('id, nome_completo');
       if (!error && data && data.length > 0) {
         setTeamMembers(data);
       } else if (user) {
-        setTeamMembers([{ id: user.id, full_name: 'Tu', email: user.email ?? null }]);
+        setTeamMembers([{ id: user.id, nome_completo: 'Tu' }]);
       }
     });
     setTipologia('Chiamata');
-    setData(format(new Date(), 'yyyy-MM-dd'));
+    setSelectedDate(new Date());
     setOra('');
     setNota('');
     setLeadResults([]);
@@ -94,7 +96,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   };
 
   const handleSave = async () => {
-    if (!tipologia || !leadId || !data) {
+    if (!tipologia || !leadId || !selectedDate) {
       showError('Compila tutti i campi obbligatori (Tipologia, Lead, Data)');
       return;
     }
@@ -108,7 +110,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
       agente_id: agenteId || currentUserId,
       tipologia,
       nota: nota.trim() || null,
-      data,
+      data: format(selectedDate!, 'yyyy-MM-dd'),
       ora: ora || null,
       stato: 'Da fare',
     });
@@ -205,12 +207,29 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label className="text-xs font-bold text-gray-500">Data *</Label>
-              <Input
-                type="date"
-                value={data}
-                onChange={(e) => setData(e.target.value)}
-                className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-              />
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal rounded-xl bg-gray-50/50 border-gray-100 hover:bg-gray-100 h-11",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4 text-[#94b0ab]" />
+                    {selectedDate ? format(selectedDate, "PPP", { locale: it }) : "Seleziona una data"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={setSelectedDate}
+                    initialFocus
+                    locale={it}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <Label className="text-xs font-bold text-gray-500">Ora</Label>
@@ -244,7 +263,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               <SelectContent className="rounded-xl">
                 {teamMembers.map(m => (
                   <SelectItem key={m.id} value={m.id}>
-                    {m.full_name ?? m.email ?? m.id.substring(0, 8)}
+                    {m.nome_completo ?? m.id.substring(0, 8)}
                   </SelectItem>
                 ))}
               </SelectContent>

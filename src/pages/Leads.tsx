@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 
 const COLUMNS = [
@@ -1133,12 +1135,31 @@ const Leads = () => {
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Scadenza Esclusiva</Label>
-                            <Input
-                              type="date"
-                              value={selectedLead.scadenza_esclusiva || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, scadenza_esclusiva: e.target.value})}
-                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className={cn(
+                                    "w-full justify-start text-left font-normal rounded-xl border-gray-200 bg-slate-50/50 hover:bg-gray-100 h-11 gap-2",
+                                    !selectedLead.scadenza_esclusiva && "text-muted-foreground"
+                                  )}
+                                >
+                                  <Calendar size={14} className="text-[#94b0ab] shrink-0" />
+                                  {selectedLead.scadenza_esclusiva
+                                    ? format(parseISO(selectedLead.scadenza_esclusiva), 'd MMM yyyy', { locale: it })
+                                    : "Seleziona una data"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+                                <CalendarPicker
+                                  mode="single"
+                                  selected={selectedLead.scadenza_esclusiva ? parseISO(selectedLead.scadenza_esclusiva) : undefined}
+                                  onSelect={(date) => setSelectedLead({...selectedLead, scadenza_esclusiva: date ? format(date, 'yyyy-MM-dd') : null})}
+                                  initialFocus
+                                  locale={it}
+                                />
+                              </PopoverContent>
+                            </Popover>
                           </div>
                           <div className="space-y-2 col-span-full">
                             <Label className="text-xs font-bold text-gray-500">Motivazione Vendita</Label>
