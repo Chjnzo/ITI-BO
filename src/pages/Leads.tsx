@@ -618,8 +618,9 @@ const Leads = () => {
   }, [filteredLeads]);
 
   return (
-    <AdminLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+    <AdminLayout fullHeight>
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
           <p className="text-gray-500 mt-1 font-medium">Gestione centralizzata dei contatti e delle trattative.</p>
@@ -633,48 +634,47 @@ const Leads = () => {
         </Button>
       </div>
 
-      <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-8 flex flex-col md:flex-row gap-4 items-center">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <Input 
-            placeholder="Cerca per nome, email o telefono..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
-          />
+      <Tabs defaultValue="kanban" className="w-full flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center shrink-0">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <Input
+              placeholder="Cerca per nome, email o telefono..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
+            />
+          </div>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <Filter className="text-gray-400 shrink-0" size={18} />
+            <Select value={agentFilter} onValueChange={setAgentFilter}>
+              <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
+                <SelectValue placeholder="Filtra per agente" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
+                <SelectItem value="Non assegnati">Non assegnati</SelectItem>
+                {AGENTS.map(agent => (
+                  <SelectItem key={agent} value={agent}>{agent}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <TabsList className="grid grid-cols-2 w-[200px] rounded-full p-1 bg-muted/50 border border-gray-100 shrink-0">
+            <TabsTrigger value="kanban" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white gap-1.5">
+              <LayoutDashboard size={13} /> Board
+            </TabsTrigger>
+            <TabsTrigger value="list" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white gap-1.5">
+              <List size={13} /> Lista
+            </TabsTrigger>
+          </TabsList>
         </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <Filter className="text-gray-400 shrink-0" size={18} />
-          <Select value={agentFilter} onValueChange={setAgentFilter}>
-            <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
-              <SelectValue placeholder="Filtra per agente" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
-              <SelectItem value="Non assegnati">Non assegnati</SelectItem>
-              {AGENTS.map(agent => (
-                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
 
-      <Tabs defaultValue="kanban" className="w-full">
-        <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 mb-8 flex justify-start gap-1 w-fit">
-          <TabsTrigger value="kanban" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all gap-2">
-            <LayoutDashboard size={18} /> Vista Board
-          </TabsTrigger>
-          <TabsTrigger value="list" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all gap-2">
-            <List size={18} /> Vista Lista
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="kanban" className="mt-0">
+        <TabsContent value="kanban" className="mt-0 flex-1 overflow-hidden min-h-0">
           <DragDropContext onDragEnd={onDragEnd}>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 h-[calc(100vh-420px)] min-h-[600px]">
+            <div className="flex gap-6 h-full overflow-x-auto pb-2">
               {COLUMNS.map((col) => (
-                <div key={col.id} className="flex flex-col h-full">
+                <div key={col.id} className="min-w-[280px] flex-1 flex flex-col min-h-0 h-full">
                   <div className={cn(
                     "flex items-center justify-between px-5 py-4 rounded-2xl border mb-4",
                     col.color
@@ -691,7 +691,7 @@ const Leads = () => {
                         {...provided.droppableProps}
                         ref={provided.innerRef}
                         className={cn(
-                          "flex-1 bg-gray-50/50 rounded-[2rem] p-4 border border-gray-100 overflow-y-auto space-y-4 scrollbar-hide transition-colors",
+                          "flex-1 min-h-0 bg-gray-50/50 rounded-[2rem] p-4 border border-gray-100 overflow-y-auto space-y-4 scrollbar-hide transition-colors",
                           snapshot.isDraggingOver && "bg-[#94b0ab]/5 border-[#94b0ab]/20"
                         )}
                       >
@@ -723,8 +723,8 @@ const Leads = () => {
           </DragDropContext>
         </TabsContent>
 
-        <TabsContent value="list" className="mt-0">
-          <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+        <TabsContent value="list" className="mt-0 flex-1 overflow-hidden min-h-0">
+          <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
             <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
@@ -789,6 +789,7 @@ const Leads = () => {
           </div>
         </TabsContent>
       </Tabs>
+      </div>
 
       {/* Unified Lead Dialog (create + edit) */}
       <Dialog open={!!selectedLead} onOpenChange={(open) => { if (!open) { setSelectedLead(null); setMatchedProperties([]); setZoneSearch(''); } }}>

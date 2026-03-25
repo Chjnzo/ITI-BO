@@ -152,7 +152,7 @@ const WeekView = ({ days, events, onEventClick, onSlotClick }: WeekViewProps) =>
       </div>
 
       {/* Timeline grid */}
-      <div className="flex flex-1 overflow-y-auto min-h-0">
+      <div className="flex flex-1 overflow-y-auto min-h-0 pt-3">
         {/* Time labels */}
         <div className="w-12 shrink-0 relative" style={{ height: TIMELINE_HEIGHT }}>
           {HOURS.map(h => (
@@ -419,12 +419,12 @@ const AgentExpandModal = ({
             </div>
 
             {/* View toggle */}
-            <div className="flex items-center bg-gray-100 rounded-xl p-1">
+            <div className="grid grid-cols-2 w-[190px] rounded-full p-1 bg-muted/50 border border-gray-100">
               <button
                 onClick={() => setViewMode('week')}
                 className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                  viewMode === 'week' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  'rounded-full px-4 py-1.5 text-xs font-semibold transition-all',
+                  viewMode === 'week' ? 'bg-[#94b0ab] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 )}
               >
                 Settimana
@@ -432,8 +432,8 @@ const AgentExpandModal = ({
               <button
                 onClick={() => setViewMode('month')}
                 className={cn(
-                  'px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                  viewMode === 'month' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  'rounded-full px-4 py-1.5 text-xs font-semibold transition-all',
+                  viewMode === 'month' ? 'bg-[#94b0ab] text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 )}
               >
                 Mese

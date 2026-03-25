@@ -17,6 +17,7 @@ import AgentExpandModal from '@/components/agenda/AgentExpandModal';
 import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // ── Timeline constants ────────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ const AgentDayColumn = memo(({
   const dateLabel = format(parsedDate, 'EEE d MMM', { locale: it });
 
   return (
-    <Card className="h-full rounded-[2rem] border-gray-100 shadow-sm flex flex-col overflow-hidden">
+    <Card className="flex-1 min-h-0 rounded-[2rem] border-gray-100 shadow-sm flex flex-col overflow-hidden">
       {/* Column header */}
       <CardHeader className="px-5 py-4 border-b border-gray-50 flex-row items-center gap-3 space-y-0 shrink-0">
         <div
@@ -329,7 +330,7 @@ const Agenda = () => {
 
   return (
     <AdminLayout fullHeight>
-      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
@@ -346,32 +347,16 @@ const Agenda = () => {
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             {/* View mode toggle */}
-            <div className="flex rounded-xl border border-gray-200 overflow-hidden h-11">
-              <button
-                type="button"
-                onClick={() => setViewMode('giornaliera')}
-                className={cn(
-                  'px-4 text-sm font-bold transition-colors',
-                  viewMode === 'giornaliera'
-                    ? 'bg-[#94b0ab] text-white'
-                    : 'bg-white text-gray-500 hover:bg-gray-50',
-                )}
-              >
-                Giorno
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('planning')}
-                className={cn(
-                  'px-4 text-sm font-bold border-l border-gray-200 transition-colors',
-                  viewMode === 'planning'
-                    ? 'bg-[#94b0ab] text-white'
-                    : 'bg-white text-gray-500 hover:bg-gray-50',
-                )}
-              >
-                Settimana
-              </button>
-            </div>
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as 'giornaliera' | 'planning')} className="w-auto">
+              <TabsList className="grid w-[220px] grid-cols-2 rounded-full p-1 bg-muted/50 border border-gray-100">
+                <TabsTrigger value="giornaliera" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  Giorno
+                </TabsTrigger>
+                <TabsTrigger value="planning" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  Settimana
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {/* Nav arrows */}
             <Button
@@ -430,39 +415,41 @@ const Agenda = () => {
           </div>
         </div>
 
-        {/* Agent grid / Weekly planning */}
-        <div className="flex-1 overflow-hidden min-h-0">
+        {/* Agent grid / Weekly planning — relative container so absolute fill works */}
+        <div className="flex-1 min-h-0 relative">
           {viewMode === 'giornaliera' ? (
-            <div className="flex flex-nowrap overflow-x-auto lg:grid lg:grid-cols-3 gap-5 h-full pb-4 snap-x">
+            <div className="absolute inset-0 flex gap-5 overflow-x-auto pb-4 snap-x">
               {visibleAgents.map(agent => (
-                <div key={agent.id} className="min-w-[320px] w-[85vw] lg:w-auto lg:min-w-0 shrink-0 snap-center h-full flex flex-col">
-                <AgentDayColumn
-                  agent={agent}
-                  events={eventsByAgent.get(agent.id) ?? []}
-                  selectedDate={selectedDate}
-                  loading={loading}
-                  onEventClick={openEventEdit}
-                  onSlotClick={openSlotCreate}
-                  onExpand={openExpand}
-                />
+                <div key={agent.id} className="min-w-[320px] flex-1 min-h-0 snap-center flex flex-col">
+                  <AgentDayColumn
+                    agent={agent}
+                    events={eventsByAgent.get(agent.id) ?? []}
+                    selectedDate={selectedDate}
+                    loading={loading}
+                    onEventClick={openEventEdit}
+                    onSlotClick={openSlotCreate}
+                    onExpand={openExpand}
+                  />
                 </div>
               ))}
               {visibleAgents.length === 0 && loading && (
-                <div className="col-span-3 py-20 text-center text-gray-300 animate-pulse text-sm">
+                <div className="flex-1 flex items-center justify-center text-gray-300 animate-pulse text-sm">
                   Caricamento...
                 </div>
               )}
             </div>
           ) : (
-            <WeeklyPlanningView
-              events={events}
-              agents={agents}
-              visibleAgents={visibleAgents}
-              selectedDate={selectedDate}
-              loading={loading}
-              onEventClick={openEventEdit}
-              onSlotClick={openDateSlotCreate}
-            />
+            <div className="absolute inset-0">
+              <WeeklyPlanningView
+                events={events}
+                agents={agents}
+                visibleAgents={visibleAgents}
+                selectedDate={selectedDate}
+                loading={loading}
+                onEventClick={openEventEdit}
+                onSlotClick={openDateSlotCreate}
+              />
+            </div>
           )}
         </div>
 

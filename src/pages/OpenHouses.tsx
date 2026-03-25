@@ -133,8 +133,9 @@ const OpenHouses = () => {
   });
 
   return (
-    <AdminLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+    <AdminLayout fullHeight>
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Gestione Open House</h1>
           <p className="text-gray-500 mt-1 font-medium">Pianifica e monitora le visite guidate.</p>
@@ -148,19 +149,20 @@ const OpenHouses = () => {
         </Button>
       </div>
 
-      <div className="mb-8">
-        <Tabs value={filter} onValueChange={setFilter}>
-          <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 w-full md:w-auto flex justify-start gap-1">
-            <TabsTrigger value="upcoming" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
+      <div className="mb-6 shrink-0">
+        <Tabs value={filter} onValueChange={setFilter} className="w-auto">
+          <TabsList className="grid grid-cols-2 w-[240px] rounded-full p-1 bg-muted/50 border border-gray-100">
+            <TabsTrigger value="upcoming" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
               In Programma
             </TabsTrigger>
-            <TabsTrigger value="past" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
+            <TabsTrigger value="past" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
               Passati
             </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
 
+      <div className="flex-1 overflow-y-auto min-h-0 pb-4">
       <div className="grid grid-cols-1 gap-6">
         {loading ? (
           <div className="p-20 text-center text-gray-400 font-medium">Caricamento eventi...</div>
@@ -214,6 +216,8 @@ const OpenHouses = () => {
             </div>
           </div>
         ))}
+      </div>
+      </div>
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
