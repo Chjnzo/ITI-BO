@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Home, MessageSquare, LogOut, CalendarDays, Calendar, LayoutDashboard, Menu, X, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -13,6 +14,17 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('sidebar-collapsed') === 'true'; } catch { return false; }
+  });
+
+  const toggleCollapsed = () => {
+    setIsCollapsed(v => {
+      const next = !v;
+      try { localStorage.setItem('sidebar-collapsed', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -28,53 +40,99 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
     { icon: CalendarDays, label: 'Open House', path: '/open-houses' },
   ];
 
-  const SidebarContent = () => (
-    <>
-      <div className="p-8">
-        <h1 className="text-xl font-bold tracking-tight text-[#94b0ab]">Admin OS</h1>
-        <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Il Tuo Immobiliare</p>
-      </div>
-
-      <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-        {navItems.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            onClick={() => setIsSidebarOpen(false)}
-            className={cn(
-              "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group",
-              location.pathname === item.path
-                ? "bg-[#94b0ab]/10 text-[#94b0ab]"
-                : "text-gray-500 hover:bg-gray-50 hover:text-[#1a1a1a]"
-            )}
-          >
-            <item.icon size={20} className={cn(
-              "transition-colors",
-              location.pathname === item.path ? "text-[#94b0ab]" : "text-gray-400 group-hover:text-[#1a1a1a]"
-            )} />
-            <span className="font-medium">{item.label}</span>
-          </Link>
-        ))}
-      </nav>
-
-      <div className="p-4 border-t border-gray-100 bg-white">
-        <button
-          onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
+  const SidebarContent = ({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void }) => (
+    <TooltipProvider delayDuration={0}>
+      <>
+        {/* Logo — click to toggle collapse (desktop only) */}
+        <div
+          onClick={onToggle}
+          className={cn(
+            "flex items-center border-b border-gray-100 cursor-pointer select-none transition-all duration-150 active:scale-95",
+            "hover:bg-accent/50",
+            collapsed ? "justify-center py-6 px-2" : "p-8"
+          )}
+          title={collapsed ? "Espandi sidebar" : "Comprimi sidebar"}
         >
-          <LogOut size={20} />
-          <span className="font-medium">Esci</span>
-        </button>
-      </div>
-    </>
+          {collapsed ? (
+            <span className="text-xl font-bold text-[#94b0ab]">A</span>
+          ) : (
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-[#94b0ab]">Admin OS</h1>
+              <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Il Tuo Immobiliare</p>
+            </div>
+          )}
+        </div>
+
+        {/* Nav */}
+        <nav className={cn("flex-1 py-4 space-y-1 overflow-y-auto", collapsed ? "px-2" : "px-4")}>
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            const link = (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsSidebarOpen(false)}
+                className={cn(
+                  "flex items-center py-3 rounded-xl transition-all duration-200 group",
+                  collapsed ? "justify-center px-2" : "gap-3 px-4",
+                  isActive
+                    ? "bg-[#94b0ab]/10 text-[#94b0ab]"
+                    : "text-gray-500 hover:bg-gray-50 hover:text-[#1a1a1a]"
+                )}
+              >
+                <item.icon size={20} className={cn(
+                  "shrink-0 transition-colors",
+                  isActive ? "text-[#94b0ab]" : "text-gray-400 group-hover:text-[#1a1a1a]"
+                )} />
+                {!collapsed && <span className="font-medium">{item.label}</span>}
+              </Link>
+            );
+            return collapsed ? (
+              <Tooltip key={item.path}>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : link;
+          })}
+        </nav>
+
+        {/* Footer: logout + toggle */}
+        <div className={cn("border-t border-gray-100 bg-white", collapsed ? "p-2 space-y-1" : "p-4 space-y-1")}>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center justify-center w-full p-3 text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
+                >
+                  <LogOut size={20} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">Esci</TooltipContent>
+            </Tooltip>
+          ) : (
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-3 px-4 py-3 w-full text-left text-gray-500 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
+            >
+              <LogOut size={20} />
+              <span className="font-medium">Esci</span>
+            </button>
+          )}
+        </div>
+      </>
+    </TooltipProvider>
   );
 
   return (
     <div className="flex h-screen bg-[#f8f9fa] text-[#1a1a1a] overflow-hidden">
 
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col h-full shrink-0">
-        <SidebarContent />
+      <aside className={cn(
+        "hidden md:flex bg-white border-r border-gray-200 flex-col h-full shrink-0 transition-all duration-300 ease-in-out",
+        isCollapsed ? "w-20" : "w-64"
+      )}>
+        <SidebarContent collapsed={isCollapsed} onToggle={toggleCollapsed} />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -97,7 +155,7 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
         >
           <X size={20} />
         </button>
-        <SidebarContent />
+        <SidebarContent collapsed={false} />
       </aside>
 
       {/* Main Content */}

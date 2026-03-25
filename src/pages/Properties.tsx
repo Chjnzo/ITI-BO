@@ -154,8 +154,9 @@ const Properties = () => {
   };
 
   return (
-    <AdminLayout>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-6">
+    <AdminLayout fullHeight>
+      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
           <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
@@ -169,13 +170,13 @@ const Properties = () => {
         </Button>
       </div>
 
-      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-8 gap-4">
-        <Tabs value={filter} onValueChange={setFilter} className="w-full xl:w-auto">
-          <TabsList className="bg-white border border-gray-100 p-1.5 rounded-2xl h-14 w-full xl:w-auto flex justify-start gap-1">
-            <TabsTrigger value="active" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-6 gap-4 shrink-0">
+        <Tabs value={filter} onValueChange={setFilter} className="w-auto">
+          <TabsList className="grid grid-cols-2 w-[220px] rounded-full p-1 bg-muted/50 border border-gray-100">
+            <TabsTrigger value="active" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
               In Vendita
             </TabsTrigger>
-            <TabsTrigger value="sold" className="rounded-xl px-8 h-full data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white font-bold transition-all">
+            <TabsTrigger value="sold" className="rounded-full px-5 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
               Venduti
             </TabsTrigger>
           </TabsList>
@@ -192,7 +193,8 @@ const Properties = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
         <div className="w-full overflow-hidden">
           <table className="w-full table-fixed text-left">
             <thead>
@@ -347,6 +349,8 @@ const Properties = () => {
             </Button>
           </div>
         </div>
+      </div>
+      </div>
       </div>
 
       {/* Modals */}
