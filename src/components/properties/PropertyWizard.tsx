@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
+import { compressCopertina, compressGalleria } from '@/utils/imageCompression';
 import { cn } from '@/lib/utils';
 import {
   Select,
@@ -37,6 +38,7 @@ const PREDEFINED_FEATURES = [
 const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   
   // Form Data
   const [formData, setFormData] = useState({
@@ -119,36 +121,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
     }
   };
 
-  /**
-   * Refactored upload function to use Cloudinary API
-   */
-  const uploadFile = async (file: File) => {
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
-    if (!cloudName || !uploadPreset) {
-      throw new Error("Configurazione Cloudinary mancante (VITE_CLOUDINARY_CLOUD_NAME o VITE_CLOUDINARY_UPLOAD_PRESET)");
-    }
-
-    const formDataCloudinary = new FormData();
-    formDataCloudinary.append('file', file);
-    formDataCloudinary.append('upload_preset', uploadPreset);
-
-    const response = await fetch(
-      `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-      {
-        method: 'POST',
-        body: formDataCloudinary,
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || "Errore durante l'upload su Cloudinary");
-    }
-
-    const data = await response.json();
-    return data.secure_url;
+  const uploadToStorage = async (file: File, path: string): Promise<string> => {
+    const { error } = await supabase.storage.from('immobili').upload(path, file, { upsert: true });
+    if (error) throw new Error(`Upload fallito (${path}): ${error.message}`);
+    const { data } = supabase.storage.from('immobili').getPublicUrl(path);
+    return data.publicUrl;
   };
 
   const handleSubmit = async () => {
@@ -158,20 +135,30 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
       return;
     }
 
+    // Fase 1: compressione
+    setIsCompressing(true);
+    let compressedCover: File | null = null;
+    let compressedGallery: File[] = [];
+    try {
+      if (coverImage) {
+        compressedCover = await compressCopertina(coverImage);
+      }
+      if (galleryImages.length > 0) {
+        compressedGallery = await Promise.all(galleryImages.map(f => compressGalleria(f)));
+      }
+    } catch (error: any) {
+      showError("Errore durante la compressione delle immagini: " + error.message);
+      setIsCompressing(false);
+      return;
+    } finally {
+      setIsCompressing(false);
+    }
+
+    // Fase 2: upload e salvataggio
     setLoading(true);
     try {
-      let copertinaUrl = coverPreview;
-      if (coverImage) {
-        copertinaUrl = await uploadFile(coverImage);
-      }
-
-      const galleriaUrls = [...galleryPreviews.filter(p => p.startsWith('http'))];
-      for (const file of galleryImages) {
-        const url = await uploadFile(file);
-        galleriaUrls.push(url);
-      }
-
-      const propertyPayload = {
+      const slug = formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+      const basePayload = {
         titolo: formData.titolo,
         prezzo: parseFloat(formData.prezzo) || 0,
         mq: parseInt(formData.mq) || 0,
@@ -187,19 +174,53 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         anno_costruzione: parseInt(formData.anno_costruzione) || null,
         caratteristiche: formData.caratteristiche,
         descrizione: formData.descrizione,
-        copertina_url: copertinaUrl,
-        immagini_urls: galleriaUrls,
         stato: formData.stato,
         link_immobiliare: formData.link_immobiliare,
-        slug: formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '')
+        slug,
+      };
+
+      // Ottieni l'ID: per nuovi immobili inserisci prima senza immagini
+      let immobileId: string;
+      if (initialData) {
+        immobileId = initialData.id;
+      } else {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('immobili')
+          .insert([{ ...basePayload, copertina_url: null, immagini_urls: [] }])
+          .select('id')
+          .single();
+        if (insertErr) throw insertErr;
+        immobileId = inserted.id;
+      }
+
+      // Upload immagini su Supabase Storage
+      const ts = Date.now();
+      let copertinaUrl: string | null = coverPreview?.startsWith('http') ? coverPreview : null;
+      if (compressedCover) {
+        copertinaUrl = await uploadToStorage(compressedCover, `immobili/${immobileId}/copertina_${ts}.webp`);
+      }
+
+      const newGalleryUrls = await Promise.all(
+        compressedGallery.map((file, i) =>
+          uploadToStorage(file, `immobili/${immobileId}/galleria_${ts}_${i}.webp`)
+        )
+      );
+
+      const imagePayload = {
+        copertina_url: copertinaUrl,
+        immagini_urls: [
+          ...galleryPreviews.filter(p => p.startsWith('http')),
+          ...newGalleryUrls,
+        ],
       };
 
       if (initialData) {
-        const { error } = await supabase.from('immobili').update(propertyPayload).eq('id', initialData.id);
+        const { error } = await supabase.from('immobili').update({ ...basePayload, ...imagePayload }).eq('id', immobileId);
         if (error) throw error;
         showSuccess("Immobile aggiornato correttamente");
       } else {
-        const { error } = await supabase.from('immobili').insert([propertyPayload]);
+        // Aggiorna il record già inserito con gli URL delle immagini
+        const { error } = await supabase.from('immobili').update(imagePayload).eq('id', immobileId);
         if (error) throw error;
         showSuccess("Immobile pubblicato con successo");
       }
@@ -445,6 +466,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
                   <span className="text-[10px] font-bold uppercase">Aggiungi</span>
                 </div>
               </div>
+            {isCompressing && (
+              <p className="text-sm text-[#94b0ab] font-medium mt-2 animate-pulse">
+                Ottimizzazione foto in corso...
+              </p>
+            )}
             </div>
           </div>
         )}
@@ -461,30 +487,31 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         
         <div className="flex gap-3">
           {initialData && (
-            <Button 
+            <Button
               variant="outline"
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || isCompressing}
               className="border-2 border-[#94b0ab] text-[#94b0ab] hover:bg-[#94b0ab]/5 rounded-2xl px-8 h-14 font-bold"
             >
-              <Save size={18} className="mr-2" /> {loading ? "Salvataggio..." : "Salva"}
+              <Save size={18} className="mr-2" />
+              {isCompressing ? "Ottimizzazione foto..." : loading ? "Salvataggio..." : "Salva"}
             </Button>
           )}
 
           {step < 5 ? (
-            <Button 
+            <Button
               onClick={() => setStep(step + 1)}
               className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-10 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold"
             >
               Avanti <ChevronRight className="ml-2" size={18} />
             </Button>
           ) : !initialData ? (
-            <Button 
+            <Button
               onClick={handleSubmit}
-              disabled={loading || !coverPreview}
+              disabled={loading || isCompressing || !coverPreview}
               className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-14 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold"
             >
-              {loading ? "Pubblicazione..." : "Pubblica Annuncio"}
+              {isCompressing ? "Ottimizzazione foto..." : loading ? "Pubblicazione..." : "Pubblica Annuncio"}
             </Button>
           ) : null}
         </div>
