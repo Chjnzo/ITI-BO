@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, LogOut, CalendarDays, Calendar, LayoutDashboard, Menu, X, ListTodo } from 'lucide-react';
+import { Home, MessageSquare, LogOut, CalendarDays, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -34,6 +34,7 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Home, label: 'Immobili', path: '/immobili' },
+    { icon: Calculator, label: 'Valutazioni', path: '/valutazioni' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
     { icon: MessageSquare, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
