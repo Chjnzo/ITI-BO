@@ -100,9 +100,6 @@ const AgentDayColumn = memo(({
           {getAgentInitials(agent)}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 truncate text-sm">
-            {agent.nome_completo ?? agent.id.substring(0, 8)}
-          </h3>
           <p className={cn('text-xs capitalize', isSelectedToday ? 'text-[#94b0ab] font-semibold' : 'text-gray-400')}>
             {dateLabel} · {events.length} eventi
           </p>

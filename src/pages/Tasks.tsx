@@ -1,173 +1,202 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError } from '@/utils/toast';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isToday, isYesterday, isTomorrow, subDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
-import { Plus, Search, Filter, Check, CalendarIcon } from 'lucide-react';
+  Plus, Search, Check, CalendarIcon, User, StickyNote,
+  ChevronDown, ChevronRight,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Task {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
   agente_id: string;
-  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento';
+  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento' | null;
+  titolo: string | null;
   nota: string | null;
   data: string;
   ora: string | null;
   stato: 'Da fare' | 'Completata';
-  leads?: { nome: string; cognome: string };
+  leads?: { id: string; nome: string; cognome: string } | null;
 }
 
-interface AgentProfile {
-  id: string;
-  nome_completo: string | null;
-  colore_calendario?: string | null;
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-// ── Constants ────────────────────────────────────────────────────────────────
-
-const STATO_CONFIG: Record<Task['stato'], { badge: string }> = {
-  'Da fare':    { badge: 'bg-amber-100 text-amber-700 border-amber-200' },
-  'Completata': { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+const formatDateHeader = (dateStr: string): string => {
+  const d = parseISO(dateStr);
+  if (isToday(d)) return 'Oggi';
+  if (isTomorrow(d)) return 'Domani';
+  if (isYesterday(d)) return 'Ieri';
+  return format(d, 'EEEE d MMMM', { locale: it });
 };
 
-const safeFormat = (date: any, fmt: string): string => {
-  if (!date) return '';
-  const d = new Date(date);
-  if (isNaN(d.getTime())) return '';
-  return format(d, fmt);
-};
+// ── TaskCard ──────────────────────────────────────────────────────────────────
 
-const getAgentName = (agent: AgentProfile): string =>
-  agent.nome_completo ?? agent.id.substring(0, 8);
-
-const getAgentInitials = (agent: AgentProfile): string => {
-  const name = agent.nome_completo ?? agent.id;
-  return name.substring(0, 2).toUpperCase();
-};
-
-// ── Task Row ─────────────────────────────────────────────────────────────────
-
-interface TaskRowProps {
+interface TaskCardProps {
   task: Task;
   onToggleComplete: (task: Task) => void;
+  onOpenLead: (task: Task) => void;
+  onUpdateDate: (taskId: string, newDate: string) => void;
 }
 
-const TaskRow = React.memo(({ task, onToggleComplete }: TaskRowProps) => {
-  const cfg = TIPOLOGIA_CONFIG[task.tipologia];
-  const Icon = cfg.icon;
+const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate }: TaskCardProps) => {
+  const [noteExpanded, setNoteExpanded] = useState(false);
+  const [datePicker, setDatePicker] = useState(false);
+
   const isComplete = task.stato === 'Completata';
+  const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
+  const Icon = cfg?.icon;
+
+  const leadName = task.leads
+    ? `${task.leads.nome} ${task.leads.cognome}`.trim()
+    : null;
+
   return (
-    <div className={cn('flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50/80 transition-colors group', isComplete && 'opacity-50')}>
+    <div
+      className={cn(
+        'flex items-start gap-3 px-4 py-3 border-l-4 hover:bg-gray-50/80 transition-colors group',
+        isComplete ? 'border-l-red-400' : 'border-l-transparent',
+      )}
+    >
+      {/* Checkbox */}
       <button
         type="button"
         onClick={() => onToggleComplete(task)}
         className={cn(
-          'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
-          isComplete ? 'bg-[#94b0ab] border-[#94b0ab]' : 'border-gray-300 hover:border-[#94b0ab]'
+          'w-5 h-5 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
+          isComplete ? 'bg-[#94b0ab] border-[#94b0ab]' : 'border-gray-300 hover:border-[#94b0ab]',
         )}
       >
         {isComplete && <Check size={10} className="text-white" />}
       </button>
-      <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
-        <Icon size={13} className={cfg.color} />
-      </div>
+
+      {/* Tipologia icon (for existing tasks that have tipologia) */}
+      {Icon && cfg && (
+        <div className={cn('w-7 h-7 mt-0.5 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
+          <Icon size={13} className={cfg.color} />
+        </div>
+      )}
+
+      {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className={cn('text-sm font-bold text-gray-900 truncate', isComplete && 'line-through')}>
-          {task.leads?.nome} {task.leads?.cognome}
+        <p
+          className={cn(
+            'text-sm font-bold truncate cursor-pointer',
+            isComplete ? 'line-through text-gray-400' : 'text-gray-900',
+          )}
+          onClick={() => task.lead_id && onOpenLead(task)}
+        >
+          {task.titolo || leadName || 'Task senza titolo'}
         </p>
-        <p className="text-xs text-gray-400">
-          {task.ora ? task.ora.slice(0, 5) : safeFormat(task.data, 'dd/MM')}
-          {task.nota && <span className="ml-2 text-gray-400 truncate">{task.nota.length > 40 ? task.nota.slice(0, 40) + '…' : task.nota}</span>}
-        </p>
+
+        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+          {leadName && task.titolo && (
+            <span className="text-xs text-gray-400 truncate">{leadName}</span>
+          )}
+          {task.ora && (
+            <span className="text-xs text-gray-300">{task.ora.slice(0, 5)}</span>
+          )}
+          {/* Date chip — click to change */}
+          <Popover open={datePicker} onOpenChange={setDatePicker}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="text-xs text-gray-300 hover:text-[#94b0ab] transition-colors"
+              >
+                {format(parseISO(task.data), 'd MMM', { locale: it })}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+              <Calendar
+                mode="single"
+                selected={parseISO(task.data)}
+                onSelect={(date) => {
+                  if (date) {
+                    onUpdateDate(task.id, format(date, 'yyyy-MM-dd'));
+                    setDatePicker(false);
+                  }
+                }}
+                initialFocus
+                locale={it}
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Expanded note */}
+        {noteExpanded && task.nota && (
+          <p className="text-xs text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2">
+            {task.nota}
+          </p>
+        )}
       </div>
-      <span className={cn('text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border shrink-0', STATO_CONFIG[task.stato].badge)}>
-        {task.stato}
-      </span>
+
+      {/* Quick actions */}
+      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        {task.lead_id && (
+          <button
+            type="button"
+            title="Apri scheda lead"
+            onClick={() => onOpenLead(task)}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+          >
+            <User size={13} />
+          </button>
+        )}
+        {task.nota && (
+          <button
+            type="button"
+            title="Mostra nota"
+            onClick={() => setNoteExpanded(v => !v)}
+            className={cn(
+              'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+              noteExpanded
+                ? 'text-[#94b0ab] bg-[#94b0ab]/10'
+                : 'text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10',
+            )}
+          >
+            <StickyNote size={13} />
+          </button>
+        )}
+      </div>
     </div>
   );
 });
-TaskRow.displayName = 'TaskRow';
+TaskCard.displayName = 'TaskCard';
 
-// ── Agent Column Card ─────────────────────────────────────────────────────────
-
-interface AgentColumnProps {
-  agent: AgentProfile;
-  tasks: Task[];
-  loading: boolean;
-  onToggleComplete: (task: Task) => void;
-}
-
-const AgentColumn = React.memo(({ agent, tasks, loading, onToggleComplete }: AgentColumnProps) => {
-  const pending = tasks.filter(t => t.stato !== 'Completata').length;
-  return (
-    <Card
-      className="h-full rounded-[2rem] border-gray-100 shadow-sm flex flex-col overflow-hidden"
-    >
-      <CardHeader className="px-6 py-5 border-b border-gray-50 flex-row items-center gap-3 space-y-0 shrink-0">
-        <div className="w-10 h-10 rounded-2xl bg-[#94b0ab] text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm shadow-[#94b0ab]/20">
-          {getAgentInitials(agent)}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-bold text-gray-900 truncate">{getAgentName(agent)}</h3>
-          <p className="text-xs text-gray-400">{tasks.length} task</p>
-        </div>
-        {pending > 0 && (
-          <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2.5 py-1 rounded-full shrink-0">
-            {pending} da fare
-          </span>
-        )}
-      </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto scrollbar-column p-3 min-h-0">
-        {loading ? (
-          <div className="py-12 text-center text-gray-300 animate-pulse text-sm">Caricamento...</div>
-        ) : tasks.length === 0 ? (
-          <div className="py-12 text-center text-gray-300 text-sm italic">Nessuna task per oggi</div>
-        ) : (
-          tasks.map(task => (
-            <TaskRow key={task.id} task={task} onToggleComplete={onToggleComplete} />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-});
-AgentColumn.displayName = 'AgentColumn';
-
-// ── Main Page ────────────────────────────────────────────────────────────────
+// ── Main Page ─────────────────────────────────────────────────────────────────
 
 const Tasks = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-
+  const [completedExpanded, setCompletedExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [tipologiaFilter, setTipologiaFilter] = useState('Tutti');
-  const [statoFilter, setStatoFilter] = useState('Tutti');
-  const [dateFilter, setDateFilter] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [agents, setAgents] = useState<AgentProfile[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState('');
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
+    const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, lead_id, agente_id, tipologia, nota, data, ora, stato, leads(nome, cognome)')
-      .order('data', { ascending: true });
+      .select('id, titolo, lead_id, agente_id, tipologia, nota, data, ora, stato, leads(id, nome, cognome)')
+      .or(`stato.eq.Da fare,and(stato.eq.Completata,data.gte.${thirtyDaysAgo})`)
+      .order('data', { ascending: true })
+      .order('ora', { ascending: true, nullsFirst: true });
     if (error) {
       showError('Errore nel caricamento task');
     } else {
@@ -178,20 +207,6 @@ const Tasks = () => {
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  useEffect(() => {
-    const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) setCurrentUserId(user.id);
-      const { data, error } = await supabase.from('profili_agenti').select('id, nome_completo, colore_calendario');
-      if (!error && data && data.length > 0) {
-        setAgents(data);
-      } else if (user) {
-        setAgents([{ id: user.id, nome_completo: 'Tu' }]);
-      }
-    };
-    init();
-  }, []);
-
   const toggleComplete = async (task: Task) => {
     const newStato: Task['stato'] = task.stato === 'Completata' ? 'Da fare' : 'Completata';
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stato: newStato } : t));
@@ -199,55 +214,48 @@ const Tasks = () => {
     if (error) { showError('Errore aggiornamento stato'); fetchTasks(); }
   };
 
-  const filteredTasks = useMemo(() => {
-    return tasks
-      .filter(task => {
-        const leadName = `${task.leads?.nome ?? ''} ${task.leads?.cognome ?? ''}`.toLowerCase();
-        const matchesSearch = !searchQuery
-          || leadName.includes(searchQuery.toLowerCase())
-          || (task.nota?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
-        const matchesTipologia = tipologiaFilter === 'Tutti' || task.tipologia === tipologiaFilter;
-        const matchesStato = statoFilter === 'Tutti' || task.stato === statoFilter;
-        const matchesDate = !dateFilter || task.data === dateFilter;
-        return matchesSearch && matchesTipologia && matchesStato && matchesDate;
-      });
-  }, [tasks, searchQuery, tipologiaFilter, statoFilter, dateFilter]);
-
-  const sortByTime = (a: Task, b: Task) => {
-    const aHasTime = !!a.ora;
-    const bHasTime = !!b.ora;
-    if (aHasTime !== bHasTime) return aHasTime ? 1 : -1;
-    if (aHasTime && bHasTime) return a.ora!.localeCompare(b.ora!);
-    return 0;
+  const updateTaskDate = async (taskId: string, newDate: string) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, data: newDate } : t));
+    const { error } = await supabase.from('tasks').update({ data: newDate }).eq('id', taskId);
+    if (error) { showError('Errore aggiornamento data'); fetchTasks(); }
   };
 
-  const tasksByAgent = useMemo(() => {
-    const map = new Map<string, Task[]>();
-    for (const agent of agents) map.set(agent.id, []);
-    for (const task of filteredTasks) {
-      if (map.has(task.agente_id)) {
-        map.get(task.agente_id)!.push(task);
-      }
+  const openLeadProfile = (task: Task) => {
+    if (task.leads?.id) {
+      navigate('/leads', { state: { openLeadId: task.leads.id } });
     }
-    for (const [id, list] of map) map.set(id, [...list].sort(sortByTime));
-    return map;
-  }, [filteredTasks, agents]);
+  };
 
-  const visibleAgents = useMemo(() => {
-    const filtered = agents.filter(a => a.nome_completo?.toLowerCase() !== 'marco');
-    if (!currentUserId) return filtered;
-    return [
-      ...filtered.filter(a => a.id === currentUserId),
-      ...filtered.filter(a => a.id !== currentUserId),
-    ];
-  }, [agents, currentUserId]);
+  const pendingTasks = useMemo(() => tasks.filter(t => {
+    if (t.stato === 'Completata') return false;
+    const leadName = `${t.leads?.nome ?? ''} ${t.leads?.cognome ?? ''}`.toLowerCase();
+    const matchesSearch = !searchQuery
+      || leadName.includes(searchQuery.toLowerCase())
+      || (t.titolo?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false)
+      || (t.nota?.toLowerCase().includes(searchQuery.toLowerCase()) ?? false);
+    const matchesDate = !dateFilter || t.data === dateFilter;
+    return matchesSearch && matchesDate;
+  }), [tasks, searchQuery, dateFilter]);
+
+  const completedTasks = useMemo(() => tasks.filter(t => t.stato === 'Completata'), [tasks]);
+
+  const tasksByDate = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const task of pendingTasks) {
+      if (!map.has(task.data)) map.set(task.data, []);
+      map.get(task.data)!.push(task);
+    }
+    return map;
+  }, [pendingTasks]);
+
+  const sortedDates = useMemo(() => [...tasksByDate.keys()].sort(), [tasksByDate]);
 
   return (
-    <AdminLayout fullHeight>
-      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+    <AdminLayout>
+      <div className="flex flex-col min-h-0 max-w-3xl mx-auto w-full">
 
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Task</h1>
             <p className="text-gray-500 mt-1 font-medium">Attività pianificate per i tuoi lead.</p>
@@ -261,84 +269,115 @@ const Tasks = () => {
         </div>
 
         {/* Filter Bar */}
-        <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-4 flex flex-col md:flex-row gap-4 items-center shrink-0">
-          <div className="relative flex-1 w-full">
+        <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex gap-3 items-center">
+          <div className="relative flex-1">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
             <Input
-              placeholder="Cerca per lead o nota..."
+              placeholder="Cerca per titolo, lead o nota..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-12 pl-11 rounded-xl border-gray-100 bg-slate-50/50"
             />
           </div>
-          <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
-            <Filter size={16} className="text-gray-400 shrink-0" />
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "h-12 w-[170px] justify-start text-left font-normal rounded-xl border-gray-100 bg-slate-50/50 hover:bg-gray-100 gap-2",
-                    !dateFilter && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon size={14} className="text-[#94b0ab] shrink-0" />
-                  {dateFilter ? format(parseISO(dateFilter), 'd MMM yyyy', { locale: it }) : "Filtra data"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
-                <Calendar
-                  mode="single"
-                  selected={dateFilter ? parseISO(dateFilter) : undefined}
-                  onSelect={(date) => setDateFilter(date ? format(date, 'yyyy-MM-dd') : '')}
-                  initialFocus
-                  locale={it}
-                />
-              </PopoverContent>
-            </Popover>
-            <Select value={tipologiaFilter} onValueChange={setTipologiaFilter}>
-              <SelectTrigger className="h-12 w-[160px] rounded-xl border-gray-100">
-                <SelectValue placeholder="Tipologia" />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                <SelectItem value="Tutti">Tutti</SelectItem>
-                <SelectItem value="Chiamata">Chiamata</SelectItem>
-                <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                <SelectItem value="Appuntamento">Appuntamento</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statoFilter} onValueChange={setStatoFilter}>
-              <SelectTrigger className="h-12 w-[150px] rounded-xl border-gray-100">
-                <SelectValue placeholder="Stato" />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                <SelectItem value="Tutti">Tutti</SelectItem>
-                <SelectItem value="Da fare">Da fare</SelectItem>
-                <SelectItem value="Completata">Completata</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Agent Grid */}
-        <div className="flex-1 overflow-hidden min-h-0">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 h-full">
-            {visibleAgents.map(agent => (
-              <AgentColumn
-                key={agent.id}
-                agent={agent}
-                tasks={tasksByAgent.get(agent.id) ?? []}
-                loading={loading}
-                onToggleComplete={toggleComplete}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  'h-12 w-[150px] justify-start text-left font-normal rounded-xl border-gray-100 bg-slate-50/50 hover:bg-gray-100 gap-2',
+                  !dateFilter && 'text-muted-foreground',
+                )}
+              >
+                <CalendarIcon size={14} className="text-[#94b0ab] shrink-0" />
+                {dateFilter ? format(parseISO(dateFilter), 'd MMM', { locale: it }) : 'Data'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+              <Calendar
+                mode="single"
+                selected={dateFilter ? parseISO(dateFilter) : undefined}
+                onSelect={(date) => setDateFilter(date ? format(date, 'yyyy-MM-dd') : '')}
+                initialFocus
+                locale={it}
               />
-            ))}
-            {agents.length === 0 && loading && (
-              <div className="col-span-3 py-20 text-center text-gray-300 animate-pulse">Caricamento...</div>
-            )}
-          </div>
+            </PopoverContent>
+          </Popover>
+          {dateFilter && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDateFilter('')}
+              className="text-gray-400 hover:text-gray-600 rounded-xl h-12"
+            >
+              Reset
+            </Button>
+          )}
         </div>
 
-        {/* New Task Modal */}
+        {/* Date-grouped task list */}
+        <div className="space-y-6 pb-8">
+          {loading ? (
+            <div className="py-20 text-center text-gray-300 animate-pulse">Caricamento...</div>
+          ) : sortedDates.length === 0 && pendingTasks.length === 0 ? (
+            <div className="py-20 text-center text-gray-300 italic">Nessuna task in programma</div>
+          ) : (
+            sortedDates.map(dateStr => (
+              <div key={dateStr}>
+                {/* Date separator */}
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-xs font-black uppercase tracking-widest text-gray-500">
+                    {formatDateHeader(dateStr)}
+                  </span>
+                  <span className="text-xs text-gray-300 font-medium">
+                    {format(parseISO(dateStr), 'd MMM yyyy', { locale: it })}
+                  </span>
+                  <div className="flex-1 h-px bg-gray-100" />
+                  <span className="text-xs text-gray-300">{tasksByDate.get(dateStr)!.length}</span>
+                </div>
+                <div className="bg-white rounded-[1.5rem] border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+                  {tasksByDate.get(dateStr)!.map(task => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onToggleComplete={toggleComplete}
+                      onOpenLead={openLeadProfile}
+                      onUpdateDate={updateTaskDate}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Collapsible completed section */}
+          {completedTasks.length > 0 && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setCompletedExpanded(v => !v)}
+                className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors mb-3"
+              >
+                {completedExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                Task completate ({completedTasks.length})
+              </button>
+
+              {completedExpanded && (
+                <div className="bg-white rounded-[1.5rem] border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+                  {completedTasks.map(task => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onToggleComplete={toggleComplete}
+                      onOpenLead={openLeadProfile}
+                      onUpdateDate={updateTaskDate}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <TaskModal
           open={isTaskModalOpen}
           onClose={() => setIsTaskModalOpen(false)}
