@@ -4,7 +4,7 @@ import React, { useState, useMemo, memo } from 'react';
 import { format, isToday, parseISO, startOfWeek, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
+import { type Appointment, type AgentProfile, TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -199,6 +199,7 @@ const DayColumn = memo(({
 
           {/* Event blocks */}
           {laid.map(event => {
+            const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
             const agentColor = agentColorMap.get(event.agente_id) ?? '#94b0ab';
             const initials = (agentNameMap.get(event.agente_id) ?? '?').substring(0, 2).toUpperCase();
             const top = getEventTop(event.ora_inizio);
@@ -218,20 +219,20 @@ const DayColumn = memo(({
                   minHeight: 24,
                   left: `calc(${leftPct}% + 1px)`,
                   width: `calc(${widthPct}% - 2px)`,
-                  backgroundColor: hexWithOpacity(agentColor, 0.15),
-                  borderColor: agentColor,
+                  backgroundColor: colors.bg,
+                  borderColor: colors.border,
                 }}
               >
                 <p
                   className="text-[9px] font-bold leading-tight truncate"
-                  style={{ color: agentColor }}
+                  style={{ color: colors.text }}
                 >
                   {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
                 </p>
                 {height > 36 && (
                   <p
                     className="text-[8px] leading-tight truncate opacity-80"
-                    style={{ color: agentColor }}
+                    style={{ color: colors.text }}
                   >
                     {event.leads
                       ? `${event.leads.nome} ${event.leads.cognome}`
@@ -323,11 +324,7 @@ const WeeklyPlanningView = ({
                 color: hidden ? '#9ca3af' : color,
               }}
             >
-              <span
-                className="inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle"
-                style={{ backgroundColor: hidden ? '#d1d5db' : color }}
-              />
-              {agent.nome_completo ?? agent.id.substring(0, 8)}
+              {(agent.nome_completo ?? agent.id).substring(0, 2).toUpperCase()}
             </button>
           );
         })}

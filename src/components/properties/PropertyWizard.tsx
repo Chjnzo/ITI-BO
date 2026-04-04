@@ -60,7 +60,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
     // Legacy/Basic
     descrizione: '',
     stato: 'Disponibile',
-    link_immobiliare: ''
+    link_immobiliare: '',
+    proprietario: '',
   });
 
   // Media State
@@ -88,7 +89,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         caratteristiche: initialData.caratteristiche || [],
         descrizione: initialData.descrizione || '',
         stato: initialData.stato || 'Disponibile',
-        link_immobiliare: initialData.link_immobiliare || ''
+        link_immobiliare: initialData.link_immobiliare || '',
+        proprietario: initialData.proprietario || '',
       });
       if (initialData.copertina_url) setCoverPreview(initialData.copertina_url);
       if (initialData.immagini_urls) setGalleryPreviews(initialData.immagini_urls);
@@ -176,6 +178,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
         descrizione: formData.descrizione,
         stato: formData.stato,
         link_immobiliare: formData.link_immobiliare,
+        proprietario: formData.proprietario || null,
         slug,
       };
 
@@ -300,6 +303,10 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>
                 <Input placeholder="Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Proprietario</Label>
+                <Input placeholder="Nome del proprietario" value={formData.proprietario} onChange={(e) => setFormData({...formData, proprietario: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
             </div>
           </div>

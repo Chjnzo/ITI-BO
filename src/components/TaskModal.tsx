@@ -20,18 +20,17 @@ import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 
+// Exported for use in Tasks.tsx and Dashboard.tsx
 export const TIPOLOGIA_CONFIG: Record<string, {
   icon: React.ElementType;
   color: string;
   bg: string;
   activeCls: string;
 }> = {
-  Chiamata:     { icon: Phone,        color: 'text-blue-500',   bg: 'bg-blue-50',   activeCls: 'bg-blue-50 border-blue-200 text-blue-700'   },
+  Chiamata:     { icon: Phone,         color: 'text-blue-500',   bg: 'bg-blue-50',   activeCls: 'bg-blue-50 border-blue-200 text-blue-700'   },
   WhatsApp:     { icon: MessageCircle, color: 'text-green-500',  bg: 'bg-green-50',  activeCls: 'bg-green-50 border-green-200 text-green-700'  },
-  Appuntamento: { icon: CalendarDays, color: 'text-purple-500', bg: 'bg-purple-50', activeCls: 'bg-purple-50 border-purple-200 text-purple-700' },
+  Appuntamento: { icon: CalendarDays,  color: 'text-purple-500', bg: 'bg-purple-50', activeCls: 'bg-purple-50 border-purple-200 text-purple-700' },
 };
-
-const TIPOLOGIE = Object.keys(TIPOLOGIA_CONFIG);
 
 interface TaskModalProps {
   open: boolean;
@@ -42,7 +41,7 @@ interface TaskModalProps {
 }
 
 const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: TaskModalProps) => {
-  const [tipologia, setTipologia] = useState('Chiamata');
+  const [titolo, setTitolo] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadSearch, setLeadSearch] = useState('');
   const [leadResults, setLeadResults] = useState<any[]>([]);
@@ -69,7 +68,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
         setTeamMembers([{ id: user.id, nome_completo: 'Tu' }]);
       }
     });
-    setTipologia('Chiamata');
+    setTitolo('');
     setSelectedDate(new Date());
     setOra('');
     setNota('');
@@ -96,8 +95,12 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   };
 
   const handleSave = async () => {
-    if (!tipologia || !leadId || !selectedDate) {
-      showError('Compila tutti i campi obbligatori (Tipologia, Lead, Data)');
+    if (!titolo.trim()) {
+      showError('Il titolo della task è obbligatorio');
+      return;
+    }
+    if (!selectedDate) {
+      showError('Seleziona una data');
       return;
     }
     if (!currentUserId) {
@@ -106,9 +109,10 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     }
     setIsSaving(true);
     const { error } = await supabase.from('tasks').insert({
-      lead_id: leadId,
+      titolo: titolo.trim(),
+      lead_id: leadId || null,
       agente_id: agenteId || currentUserId,
-      tipologia,
+      tipologia: null,
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora: ora || null,
@@ -133,36 +137,37 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
         </DialogHeader>
 
         <div className="px-6 py-5 space-y-5">
-          {/* Tipologia */}
+          {/* Titolo task */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold text-gray-500">Tipologia *</Label>
-            <div className="flex gap-2">
-              {TIPOLOGIE.map(t => {
-                const cfg = TIPOLOGIA_CONFIG[t];
-                const Icon = cfg.icon;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTipologia(t)}
-                    className={cn(
-                      "flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl border text-xs font-semibold transition-all min-h-[44px]",
-                      tipologia === t
-                        ? cfg.activeCls
-                        : "bg-slate-50/80 border-gray-200 text-gray-500 hover:border-gray-300 hover:bg-slate-100"
-                    )}
-                  >
-                    <Icon size={18} className={tipologia === t ? cfg.color : 'text-gray-400'} />
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
+            <Label className="text-xs font-bold text-gray-500">Titolo task *</Label>
+            <Input
+              value={titolo}
+              onChange={(e) => setTitolo(e.target.value)}
+              placeholder="Es: Richiamare cliente, Preparare documentazione..."
+              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+            />
           </div>
 
-          {/* Lead collegato */}
+          {/* Agente assegnato */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold text-gray-500">Lead collegato *</Label>
+            <Label className="text-xs font-bold text-gray-500">Agente assegnato *</Label>
+            <Select value={agenteId} onValueChange={setAgenteId}>
+              <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
+                <SelectValue placeholder="Seleziona agente..." />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {teamMembers.map(m => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.nome_completo ?? m.id.substring(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Lead collegato (opzionale) */}
+          <div className="space-y-2">
+            <Label className="text-xs font-bold text-gray-500">Lead collegato</Label>
             {defaultLeadId ? (
               <div className="h-11 flex items-center px-3 rounded-xl border border-gray-200 bg-slate-100 text-sm text-gray-700 font-medium">
                 {leadSearch || 'Lead selezionato'}
@@ -173,7 +178,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                 <Input
                   value={leadSearch}
                   onChange={(e) => { setLeadSearch(e.target.value); searchLeads(e.target.value); }}
-                  placeholder="Cerca lead per nome..."
+                  placeholder="Cerca lead per nome... (opzionale)"
                   className="h-11 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
                 />
                 {showLeadDrop && leadResults.length > 0 && (
@@ -212,12 +217,12 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-full justify-start text-left font-normal rounded-xl bg-gray-50/50 border-gray-100 hover:bg-gray-100 h-11",
-                      !selectedDate && "text-muted-foreground"
+                      'w-full justify-start text-left font-normal rounded-xl bg-gray-50/50 border-gray-100 hover:bg-gray-100 h-11',
+                      !selectedDate && 'text-muted-foreground',
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4 text-[#94b0ab]" />
-                    {selectedDate ? format(selectedDate, "PPP", { locale: it }) : "Seleziona una data"}
+                    {selectedDate ? format(selectedDate, 'PPP', { locale: it }) : 'Seleziona data'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
@@ -248,26 +253,9 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             <Textarea
               value={nota}
               onChange={(e) => setNota(e.target.value)}
-              placeholder="Aggiungi un messaggio o promemoria..."
+              placeholder="Aggiungi un promemoria..."
               className="rounded-xl border-gray-200 bg-slate-50/50 min-h-[80px] resize-none"
             />
-          </div>
-
-          {/* Agente assegnato */}
-          <div className="space-y-2">
-            <Label className="text-xs font-bold text-gray-500">Agente assegnato</Label>
-            <Select value={agenteId} onValueChange={setAgenteId}>
-              <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                <SelectValue placeholder="Seleziona agente..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {teamMembers.map(m => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.nome_completo ?? m.id.substring(0, 8)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
 

@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isFuture, parseISO as dateFnsParseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,21 +16,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
-import { 
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
   Phone, Home as HomeIcon,
   User, Search, MessageSquare, Save,
-  Calendar, GripVertical, Plus, LayoutDashboard, List, ExternalLink,
-  Filter, TrendingUp, History, Heart, UserCheck, Briefcase, Send, MapPin, X, ChevronDown, Trash2,
-  CheckSquare
+  Calendar, CalendarPlus, Plus, ExternalLink,
+  Filter, TrendingUp, History, Heart, UserCheck, Briefcase, Send, MapPin, ChevronDown, Trash2,
+  CheckSquare, Clock,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
+import EventFormModal from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
-import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 
 const COLUMNS = [
   { id: 'Nuovo', label: 'Nuovi Lead', color: 'bg-blue-50/50 border-blue-100 text-blue-700' },
@@ -63,61 +64,10 @@ const safeFormat = (date: any, fmt: string, options?: object): string => {
   return format(d, fmt, options);
 };
 
-// ── Memoized kanban card ─────────────────────────────────────────────────────
-interface LeadCardProps {
-  lead: any;
-  onOpen: (lead: any) => void;
-}
-const LeadCard = React.memo(({ lead, onOpen }: LeadCardProps) => (
-  <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-[#94b0ab]/30 transition-all group relative">
-    <div className="absolute top-4 right-4 flex items-center gap-2">
-      <button
-        onPointerDown={(e) => { e.stopPropagation(); onOpen(lead); }}
-        className="text-gray-300 hover:text-[#94b0ab] transition-colors p-1"
-      >
-        <ExternalLink size={14} />
-      </button>
-      <div className="text-gray-200 group-hover:text-gray-400 transition-colors">
-        <GripVertical size={14} />
-      </div>
-    </div>
-
-    <div className="font-bold text-gray-900 mb-1 pr-10 text-sm">
-      {lead.nome} {lead.cognome}
-    </div>
-
-    <Badge className={cn("mb-3 text-[9px] font-black uppercase tracking-widest border", getClientTypeBadge(lead.tipo_cliente))}>
-      {lead.tipo_cliente || 'Acquirente'}
-    </Badge>
-
-    <div className="space-y-1.5 mb-3">
-      <div className="flex items-center gap-2 text-[9px] font-bold text-gray-400 uppercase">
-        <Calendar size={10} />
-        {safeFormat(lead.created_at, 'dd MMM yyyy', { locale: it })}
-      </div>
-      {lead.lead_immobili && lead.lead_immobili.length > 0 && (
-        <div className="flex items-center gap-2 text-[9px] font-bold text-[#94b0ab] bg-[#94b0ab]/5 px-2 py-0.5 rounded-lg truncate">
-          <HomeIcon size={9} />
-          {lead.lead_immobili[0].immobili?.titolo}
-        </div>
-      )}
-    </div>
-
-    <div className="flex items-center justify-between pt-2 border-t border-gray-50">
-      <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
-        <Phone size={10} className="text-gray-300" />
-        {lead.telefono || 'N/D'}
-      </div>
-      {lead.assegnato_a && (
-        <div className="w-5 h-5 rounded-full bg-[#94b0ab] text-white flex items-center justify-center text-[8px] font-black shadow-sm" title={`Assegnato a ${lead.assegnato_a}`}>
-          {lead.assegnato_a.charAt(0)}
-        </div>
-      )}
-    </div>
-  </div>
-));
-
 const Leads = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const pendingOpenLeadIdRef = useRef<string | null>(location.state?.openLeadId ?? null);
   const [leads, setLeads] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState<any>(null);
@@ -163,6 +113,20 @@ const Leads = () => {
   // Tasks State
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
   const [isLeadTaskModalOpen, setIsLeadTaskModalOpen] = useState(false);
+
+  // Events State (appuntamenti linked to current lead)
+  const [leadEvents, setLeadEvents] = useState<any[]>([]);
+
+  // Event Form Modal (for quick "Nuovo evento" from list)
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [eventModalDefaultLeadId, setEventModalDefaultLeadId] = useState<string | undefined>(undefined);
+  const [agentsForEventModal, setAgentsForEventModal] = useState<any[]>([]);
+  const [propertiesForEventModal, setPropertiesForEventModal] = useState<any[]>([]);
+
+  // Quick task from list row
+  const [quickTaskLeadId, setQuickTaskLeadId] = useState<string | undefined>(undefined);
+  const [quickTaskLeadName, setQuickTaskLeadName] = useState<string | undefined>(undefined);
+  const [isQuickTaskModalOpen, setIsQuickTaskModalOpen] = useState(false);
 
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async () => {
@@ -254,27 +218,6 @@ const Leads = () => {
   }, [leads, searchQuery, agentFilter]);
 
 
-  const onDragEnd = async (result: DropResult) => {
-    const { destination, source, draggableId } = result;
-    if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
-
-    const newStatus = destination.droppableId;
-    const updatedLeads = Array.from(leads);
-    const leadIndex = updatedLeads.findIndex(l => l.id === draggableId);
-    if (leadIndex !== -1) {
-      updatedLeads[leadIndex] = { ...updatedLeads[leadIndex], stato: newStatus };
-      setLeads(updatedLeads);
-    }
-
-    const { error } = await supabase.from('leads').update({ stato: newStatus }).eq('id', draggableId);
-    if (error) {
-      showError("Errore nell'aggiornamento stato");
-      fetchLeads();
-    } else {
-      showSuccess(`Lead spostato in ${newStatus}`);
-    }
-  };
 
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -299,6 +242,8 @@ const Leads = () => {
       scadenza_esclusiva: selectedLead.scadenza_esclusiva || null,
       motivazione_vendita: selectedLead.motivazione_vendita || null,
       note_interne: selectedLead.note_interne || null,
+      zona_venditore: selectedLead.zona_venditore || null,
+      stato_venditore: selectedLead.stato_venditore || 'Nuovo',
     };
 
     setIsSaving(true);
@@ -367,6 +312,8 @@ const Leads = () => {
       scadenza_esclusiva: lead.scadenza_esclusiva || null,
       motivazione_vendita: lead.motivazione_vendita || null,
       note_interne: lead.note_interne || null,
+      zona_venditore: lead.zona_venditore || null,
+      stato_venditore: lead.stato_venditore || 'Nuovo',
     };
     const { error } = await supabase.from('leads').update(payload).eq('id', lead.id);
     if (!error && (lead.tipo_cliente === 'Acquirente' || lead.tipo_cliente === 'Ibrido')) {
@@ -492,12 +439,55 @@ const Leads = () => {
     (async () => {
       const { data } = await supabase
         .from('tasks')
-        .select('id, tipologia, nota, data, ora, stato, agente_id')
+        .select('id, titolo, tipologia, nota, data, ora, stato, agente_id')
         .eq('lead_id', selectedLead.id)
         .order('data', { ascending: true });
       setLeadTasks(data || []);
     })();
   }, [selectedLead?.id]);
+
+  // Fetch events (appuntamenti) whenever a different lead is opened
+  useEffect(() => {
+    if (!selectedLead?.id) { setLeadEvents([]); return; }
+    (async () => {
+      const { data } = await supabase
+        .from('appuntamenti')
+        .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id')
+        .eq('lead_id', selectedLead.id)
+        .order('data', { ascending: true })
+        .order('ora_inizio', { ascending: true });
+      setLeadEvents(data || []);
+    })();
+  }, [selectedLead?.id]);
+
+  // Open lead from navigation state (e.g. coming from Tasks page)
+  useEffect(() => {
+    if (!loading && pendingOpenLeadIdRef.current && leads.length > 0) {
+      const id = pendingOpenLeadIdRef.current;
+      pendingOpenLeadIdRef.current = null;
+      const lead = leads.find((l: any) => l.id === id);
+      if (lead) {
+        openLeadDetail(lead);
+      } else {
+        setSelectedLead({ id, nome: '', cognome: '' });
+        fetchLeadDetail(id);
+      }
+    }
+  }, [loading, leads, openLeadDetail, fetchLeadDetail]);
+
+  // Open EventFormModal pre-filled with a lead
+  const openEventForLead = useCallback(async (lead: any) => {
+    if (agentsForEventModal.length === 0) {
+      const [{ data: agents }, { data: props }] = await Promise.all([
+        supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
+        supabase.from('immobili').select('id, titolo').neq('stato', 'Venduto').order('titolo'),
+      ]);
+      setAgentsForEventModal(agents || []);
+      setPropertiesForEventModal(props || []);
+    }
+    setEventModalDefaultLeadId(lead.id);
+    setIsEventModalOpen(true);
+  }, [agentsForEventModal.length]);
 
   const cycleLeadTaskStato = async (taskId: string, currentStato: string) => {
     const STATI = ['Da fare', 'In corso', 'Completata'];
@@ -606,16 +596,6 @@ const Leads = () => {
     );
   }, [allProperties, propertySearch]);
 
-  // Pre-indexed by status — O(n) once instead of O(n×columns) on every render
-  const leadsByStatus = useMemo(() => {
-    const map = new Map<string, any[]>();
-    COLUMNS.forEach(col => map.set(col.id, []));
-    for (const lead of filteredLeads) {
-      const bucket = map.get(lead.stato);
-      if (bucket) bucket.push(lead);
-    }
-    return map;
-  }, [filteredLeads]);
 
   return (
     <AdminLayout fullHeight>
@@ -634,161 +614,130 @@ const Leads = () => {
         </Button>
       </div>
 
-      <Tabs defaultValue="kanban" className="w-full flex flex-col flex-1 min-h-0 overflow-hidden">
-        <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center shrink-0">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <Input
-              placeholder="Cerca per nome, email o telefono..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
-            />
-          </div>
-          <div className="flex items-center gap-3 w-full md:w-auto">
-            <Filter className="text-gray-400 shrink-0" size={18} />
-            <Select value={agentFilter} onValueChange={setAgentFilter}>
-              <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
-                <SelectValue placeholder="Filtra per agente" />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
-                <SelectItem value="Non assegnati">Non assegnati</SelectItem>
-                {AGENTS.map(agent => (
-                  <SelectItem key={agent} value={agent}>{agent}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <TabsList className="grid grid-cols-2 w-[200px] rounded-full p-1 bg-muted/50 border border-gray-100 shrink-0">
-            <TabsTrigger value="kanban" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white gap-1.5">
-              <LayoutDashboard size={13} /> Board
-            </TabsTrigger>
-            <TabsTrigger value="list" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white gap-1.5">
-              <List size={13} /> Lista
-            </TabsTrigger>
-          </TabsList>
+      {/* Filter bar */}
+      <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center shrink-0">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+          <Input
+            placeholder="Cerca per nome, telefono..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
+          />
         </div>
-
-        <TabsContent value="kanban" className="mt-0 flex-1 overflow-hidden min-h-0">
-          <DragDropContext onDragEnd={onDragEnd}>
-            <div className="flex gap-6 h-full overflow-x-auto pb-2">
-              {COLUMNS.map((col) => (
-                <div key={col.id} className="min-w-[280px] flex-1 flex flex-col min-h-0 h-full">
-                  <div className={cn(
-                    "flex items-center justify-between px-5 py-4 rounded-2xl border mb-4",
-                    col.color
-                  )}>
-                    <h2 className="font-black uppercase tracking-widest text-xs">{col.label}</h2>
-                    <Badge variant="outline" className="bg-white/50 border-none font-bold">
-                      {(leadsByStatus.get(col.id) || []).length}
-                    </Badge>
-                  </div>
-
-                  <Droppable droppableId={col.id}>
-                    {(provided, snapshot) => (
-                      <div 
-                        {...provided.droppableProps}
-                        ref={provided.innerRef}
-                        className={cn(
-                          "flex-1 min-h-0 bg-gray-50/50 rounded-[2rem] p-4 border border-gray-100 overflow-y-auto space-y-4 scrollbar-hide transition-colors",
-                          snapshot.isDraggingOver && "bg-[#94b0ab]/5 border-[#94b0ab]/20"
-                        )}
-                      >
-                        {loading ? (
-                          <div className="py-10 text-center text-gray-300 animate-pulse font-medium">Caricamento...</div>
-                        ) : (leadsByStatus.get(col.id) || []).length === 0 ? (
-                          <div className="py-10 text-center text-gray-300 italic text-sm">Nessun lead</div>
-                        ) : (leadsByStatus.get(col.id) || []).map((lead, index) => (
-                          <Draggable key={lead.id} draggableId={lead.id} index={index}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={cn(snapshot.isDragging && "shadow-2xl border-[#94b0ab] rotate-2 scale-105 z-50")}
-                              >
-                                <LeadCard lead={lead} onOpen={openLeadDetail} />
-                              </div>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </div>
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          <Filter className="text-gray-400 shrink-0" size={18} />
+          <Select value={agentFilter} onValueChange={setAgentFilter}>
+            <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
+              <SelectValue placeholder="Filtra per agente" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
+              <SelectItem value="Non assegnati">Non assegnati</SelectItem>
+              {AGENTS.map(agent => (
+                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
               ))}
-            </div>
-          </DragDropContext>
-        </TabsContent>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
-        <TabsContent value="list" className="mt-0 flex-1 overflow-hidden min-h-0">
-          <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="bg-gray-50/50 border-b border-gray-100">
-                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
-                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Tipo</th>
-                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
-                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Assegnato</th>
-                    <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filteredLeads.map((lead) => (
-                    <tr key={lead.id} className="hover:bg-gray-50/30 transition-colors group">
-                      <td className="px-8 py-5">
-                        <div className="font-bold text-gray-900">{lead.nome} {lead.cognome}</div>
-                        <div className="text-xs text-gray-400 font-medium">{lead.email}</div>
-                      </td>
-                      <td className="px-8 py-5">
-                        <Badge className={cn(
-                          "text-[9px] font-black uppercase tracking-widest border",
-                          getClientTypeBadge(lead.tipo_cliente)
-                        )}>
-                          {lead.tipo_cliente || 'Acquirente'}
-                        </Badge>
-                      </td>
-                      <td className="px-8 py-5">
-                        <Badge className={cn(
-                          "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] border-none",
-                          COLUMNS.find(c => c.id === lead.stato)?.color || "bg-gray-100 text-gray-600"
-                        )}>
-                          {lead.stato}
-                        </Badge>
-                      </td>
-                      <td className="px-8 py-5">
-                        {lead.assegnato_a ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-bold">
-                              {lead.assegnato_a.charAt(0)}
-                            </div>
-                            <span className="text-sm font-medium text-gray-600">{lead.assegnato_a}</span>
+      {/* Lead list */}
+      <div className="flex-1 overflow-hidden min-h-0">
+        <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50/50 border-b border-gray-100">
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Tipo</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Assegnato</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {loading ? (
+                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 animate-pulse">Caricamento...</td></tr>
+                ) : filteredLeads.length === 0 ? (
+                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun lead trovato</td></tr>
+                ) : filteredLeads.map((lead) => (
+                  <tr
+                    key={lead.id}
+                    className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
+                    onClick={() => openLeadDetail(lead)}
+                  >
+                    <td className="px-8 py-5">
+                      <div className="font-bold text-gray-900">{lead.nome} {lead.cognome}</div>
+                      <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5">
+                        <Phone size={10} className="text-gray-300" />
+                        {lead.telefono || 'N/D'}
+                      </div>
+                    </td>
+                    <td className="px-8 py-5">
+                      <Badge className={cn(
+                        "text-[9px] font-black uppercase tracking-widest border",
+                        getClientTypeBadge(lead.tipo_cliente)
+                      )}>
+                        {lead.tipo_cliente || 'Acquirente'}
+                      </Badge>
+                    </td>
+                    <td className="px-8 py-5">
+                      <Badge className={cn(
+                        "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] border-none",
+                        COLUMNS.find(c => c.id === lead.stato)?.color || "bg-gray-100 text-gray-600"
+                      )}>
+                        {lead.stato}
+                      </Badge>
+                    </td>
+                    <td className="px-8 py-5">
+                      {lead.assegnato_a ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-bold">
+                            {lead.assegnato_a.charAt(0)}
                           </div>
-                        ) : (
-                          <span className="text-xs text-gray-300 italic">Non assegnato</span>
-                        )}
-                      </td>
-                      <td className="px-8 py-5 text-right">
+                          <span className="text-sm font-medium text-gray-600">{lead.assegnato_a}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300 italic">Non assegnato</span>
+                      )}
+                    </td>
+                    <td className="px-8 py-5">
+                      <div
+                        className="flex items-center gap-2 justify-end"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => openLeadDetail(lead)}
-                          className="rounded-xl font-bold text-[#94b0ab] hover:bg-[#94b0ab]/5"
+                          title="Nuovo evento"
+                          onClick={() => openEventForLead(lead)}
+                          className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
                         >
-                          Vedi Scheda
+                          <CalendarPlus size={15} />
                         </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Nuova task"
+                          onClick={() => {
+                            setQuickTaskLeadId(lead.id);
+                            setQuickTaskLeadName(`${lead.nome} ${lead.cognome}`);
+                            setIsQuickTaskModalOpen(true);
+                          }}
+                          className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
+                        >
+                          <CheckSquare size={15} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </TabsContent>
-      </Tabs>
+        </div>
+      </div>
       </div>
 
       {/* Unified Lead Dialog (create + edit) */}
@@ -822,6 +771,37 @@ const Leads = () => {
                               <Badge className={cn("px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border", getClientTypeBadge(selectedLead.tipo_cliente))}>
                                 {selectedLead.tipo_cliente || 'Acquirente'}
                               </Badge>
+                              {selectedLead.tipo_cliente === 'Proprietario' && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button type="button" className={cn(
+                                      "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border cursor-pointer hover:opacity-80 transition-opacity",
+                                      selectedLead.stato_venditore === 'Valutazione fatta' ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                      selectedLead.stato_venditore === 'Chiuso' ? "bg-green-100 text-green-700 border-green-200" :
+                                      "bg-blue-100 text-blue-700 border-blue-200"
+                                    )}>
+                                      {selectedLead.stato_venditore || 'Nuovo'}
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-auto p-2 rounded-xl shadow-xl border-none" align="start">
+                                    <div className="flex flex-col gap-1">
+                                      {['Nuovo', 'Valutazione fatta', 'Chiuso'].map(stato => (
+                                        <button
+                                          key={stato}
+                                          type="button"
+                                          onClick={() => setSelectedLead({...selectedLead, stato_venditore: stato})}
+                                          className={cn(
+                                            "px-3 py-1.5 rounded-lg text-xs font-bold text-left transition-colors",
+                                            selectedLead.stato_venditore === stato ? "bg-gray-100" : "hover:bg-gray-50"
+                                          )}
+                                        >
+                                          {stato}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              )}
                             </>
                           )}
                         </div>
@@ -849,11 +829,13 @@ const Leads = () => {
                         <TabsTrigger value="profilo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2">
                           <User size={15} /> Profilo
                         </TabsTrigger>
-                        <TabsTrigger value="immobili" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
-                          <Heart size={15} /> Immobili
-                        </TabsTrigger>
-                        <TabsTrigger value="storico" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
-                          <History size={15} /> Storico
+                        {selectedLead.tipo_cliente !== 'Proprietario' && (
+                          <TabsTrigger value="immobili" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                            <Heart size={15} /> Immobili
+                          </TabsTrigger>
+                        )}
+                        <TabsTrigger value="attivita" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <History size={15} /> Attività
                         </TabsTrigger>
                         <TabsTrigger value="task" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <CheckSquare size={15} /> Task
@@ -1101,20 +1083,13 @@ const Leads = () => {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Zona Vendita</Label>
-                            <Select
-                              value={selectedLead.zona_id || ''}
-                              onValueChange={(v) => setSelectedLead({...selectedLead, zona_id: v})}
-                            >
-                              <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                                <SelectValue placeholder="Seleziona zona..." />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl">
-                                {dbZones.map(zona => (
-                                  <SelectItem key={zona.id} value={zona.id}>{zona.nome}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label className="text-xs font-bold text-gray-500">Zona Immobile</Label>
+                            <Input
+                              value={selectedLead.zona_venditore || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, zona_venditore: e.target.value})}
+                              placeholder="es. Zona Mazzini, Centro storico..."
+                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
@@ -1374,65 +1349,131 @@ const Leads = () => {
 
                   </TabsContent>
 
-                  {/* ── STORICO TAB ── */}
-                  <TabsContent value="storico" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+                  {/* ── ATTIVITÀ TAB ── (note + task + eventi cronologici) */}
+                  <TabsContent value="attivita" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
 
-                    {/* Original message — always visible, visually distinct */}
-                    <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4">
-                      <div className="flex items-center gap-2 mb-2.5">
-                        <MessageSquare size={13} className="text-amber-600 shrink-0" />
-                        <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Messaggio di Primo Contatto</span>
-                        <span className="text-[10px] text-amber-500 ml-auto font-medium shrink-0">
-                          {safeFormat(selectedLead.created_at, "d MMM yyyy", { locale: it })}
-                        </span>
+                    {/* Original message */}
+                    {selectedLead.messaggio && (
+                      <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4">
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <MessageSquare size={13} className="text-amber-600 shrink-0" />
+                          <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Messaggio di Primo Contatto</span>
+                          <span className="text-[10px] text-amber-500 ml-auto font-medium shrink-0">
+                            {safeFormat(selectedLead.created_at, "d MMM yyyy", { locale: it })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-amber-900 leading-relaxed italic">"{selectedLead.messaggio}"</p>
                       </div>
-                      <p className="text-sm text-amber-900 leading-relaxed italic">
-                        "{selectedLead.messaggio || 'Nessun messaggio ricevuto.'}"
-                      </p>
-                    </div>
+                    )}
 
-                    {/* Timeline of notes */}
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase mb-3">Note Interne</p>
+                    {/* Unified chronological timeline */}
+                    {(() => {
+                      const allItems = [
+                        ...leadNotes.map((n: any) => ({ type: 'nota', date: n.created_at, data: n })),
+                        ...leadTasks.map((t: any) => ({ type: 'task', date: t.data + 'T' + (t.ora || '00:00'), data: t })),
+                        ...leadEvents.map((e: any) => ({ type: 'evento', date: e.data + 'T' + (e.ora_inizio || '00:00'), data: e })),
+                      ].sort((a, b) => a.date.localeCompare(b.date));
 
-                      {/* Notes list — own scroll so the input stays visible */}
-                      <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
-                        {leadNotes.length === 0 ? (
-                          <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200">
-                            <History className="mx-auto text-gray-200 mb-2" size={26} />
-                            <p className="text-xs text-gray-400 italic">Nessuna nota registrata ancora.</p>
-                          </div>
-                        ) : leadNotes.map((note, idx) => (
-                          <div key={note.id} className="flex gap-3 group">
-                            {/* Avatar + timeline connector */}
-                            <div className="flex flex-col items-center shrink-0 pt-0.5">
-                              <div className="w-7 h-7 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20">
-                                {note.autore?.charAt(0)?.toUpperCase() || '?'}
+                      if (allItems.length === 0) return (
+                        <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200">
+                          <History className="mx-auto text-gray-200 mb-2" size={26} />
+                          <p className="text-xs text-gray-400 italic">Nessuna attività registrata ancora.</p>
+                        </div>
+                      );
+
+                      return (
+                        <div className="space-y-2">
+                          {allItems.map((item, idx) => {
+                            if (item.type === 'nota') {
+                              const note = item.data;
+                              return (
+                                <div key={`nota-${note.id}`} className="flex gap-3">
+                                  <div className="w-7 h-7 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20 shrink-0 mt-0.5">
+                                    {note.autore?.charAt(0)?.toUpperCase() || '?'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-baseline gap-2 mb-1">
+                                      <span className="text-xs font-bold text-gray-800">{note.autore}</span>
+                                      <span className="text-[10px] text-gray-400">{safeFormat(note.created_at, "d MMM yyyy, HH:mm", { locale: it })}</span>
+                                    </div>
+                                    <div className="bg-white border border-gray-100 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm">
+                                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (item.type === 'task') {
+                              const task = item.data;
+                              const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
+                              const Icon = cfg?.icon;
+                              return (
+                                <div key={`task-${task.id}`} className="flex gap-3 items-start">
+                                  <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5", cfg ? cfg.bg : 'bg-gray-100')}>
+                                    {Icon ? <Icon size={13} className={cfg!.color} /> : <CheckSquare size={13} className="text-gray-400" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <span className="text-xs font-bold text-gray-700">{task.titolo || task.tipologia || 'Task'}</span>
+                                      <span className="text-[10px] text-gray-400">{task.data}{task.ora ? ` — ${task.ora.slice(0,5)}` : ''}</span>
+                                      <span className={cn("ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
+                                        task.stato === 'Completata' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                                        task.stato === 'In corso' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                                        'bg-amber-100 text-amber-700 border-amber-200'
+                                      )}>{task.stato}</span>
+                                    </div>
+                                    {task.nota && <p className="text-xs text-gray-500">{task.nota}</p>}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            if (item.type === 'evento') {
+                              const event = item.data;
+                              return (
+                                <div key={`evento-${event.id}`} className="flex gap-3 items-start">
+                                  <div className="w-7 h-7 rounded-full bg-purple-50 flex items-center justify-center shrink-0 mt-0.5">
+                                    <Calendar size={13} className="text-purple-500" />
+                                  </div>
+                                  <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                      <span className="text-xs font-bold text-gray-700">{event.tipologia}</span>
+                                      <span className="text-[10px] text-gray-400">{event.data}{event.ora_inizio ? ` — ${event.ora_inizio.slice(0,5)}` : ''}</span>
+                                    </div>
+                                    {event.note && <p className="text-xs text-gray-500">{event.note}</p>}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Agenda futura */}
+                    {(() => {
+                      const futureEvents = leadEvents.filter(e => {
+                        try { return isFuture(dateFnsParseISO(e.data)); } catch { return false; }
+                      });
+                      if (futureEvents.length === 0) return null;
+                      return (
+                        <div className="space-y-2 pt-2">
+                          <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">Prossimi appuntamenti</p>
+                          {futureEvents.map((e: any) => (
+                            <div key={e.id} className="bg-white border border-[#94b0ab]/20 rounded-xl px-4 py-3 flex items-center gap-3">
+                              <Clock size={13} className="text-[#94b0ab] shrink-0" />
+                              <div>
+                                <p className="text-sm font-bold text-gray-800">{e.tipologia}</p>
+                                <p className="text-xs text-gray-400">{format(dateFnsParseISO(e.data), 'EEEE d MMMM yyyy', { locale: it })}{e.ora_inizio ? ` — ${e.ora_inizio.slice(0,5)}` : ''}</p>
                               </div>
-                              {idx < leadNotes.length - 1 && (
-                                <div className="w-px flex-1 bg-gray-100 my-1" />
-                              )}
                             </div>
-                            {/* Bubble */}
-                            <div className={cn("flex-1 min-w-0", idx < leadNotes.length - 1 ? "pb-3" : "pb-1")}>
-                              <div className="flex items-baseline gap-2 mb-1">
-                                <span className="text-xs font-bold text-gray-800">{note.autore}</span>
-                                <span className="text-[10px] text-gray-400 font-medium">
-                                  {safeFormat(note.created_at, "d MMMM yyyy, HH:mm", { locale: it })}
-                                </span>
-                              </div>
-                              <div className="bg-white border border-gray-100 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm">
-                                <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
 
                     {/* Add note input */}
                     <div className="bg-white border rounded-xl shadow-sm p-4 space-y-3">
-                      {/* Author selector */}
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20 shrink-0">
                           {newNoteAutore.charAt(0)}
@@ -1447,8 +1488,6 @@ const Leads = () => {
                         </Select>
                         <span className="text-xs text-gray-400">sta scrivendo una nota...</span>
                       </div>
-
-                      {/* Textarea + submit */}
                       <div className="flex gap-2 items-end">
                         <Textarea
                           value={newNoteText}
@@ -1668,6 +1707,25 @@ const Leads = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Quick Task Modal (from list row) */}
+      <TaskModal
+        open={isQuickTaskModalOpen}
+        onClose={() => setIsQuickTaskModalOpen(false)}
+        defaultLeadId={quickTaskLeadId}
+        defaultLeadName={quickTaskLeadName}
+        onSaved={() => { setIsQuickTaskModalOpen(false); fetchLeads(); }}
+      />
+
+      {/* Event Form Modal (from list row CalendarPlus) */}
+      <EventFormModal
+        open={isEventModalOpen}
+        onClose={() => setIsEventModalOpen(false)}
+        onSaved={() => setIsEventModalOpen(false)}
+        defaultLeadId={eventModalDefaultLeadId}
+        agents={agentsForEventModal}
+        properties={propertiesForEventModal}
+      />
 
     </AdminLayout>
   );
