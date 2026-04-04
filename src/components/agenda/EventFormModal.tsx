@@ -105,6 +105,8 @@ interface EventFormModalProps {
   defaultAgentId?: string;
   defaultDate?: string;
   defaultTimeStart?: string;
+  defaultLeadId?: string;
+  defaultLeadName?: string;
   agents: AgentProfile[];
   properties: Property[];
 }
@@ -112,6 +114,7 @@ interface EventFormModalProps {
 const EventFormModal = ({
   open, onClose, onSaved, event,
   defaultAgentId, defaultDate, defaultTimeStart,
+  defaultLeadId, defaultLeadName,
   agents, properties,
 }: EventFormModalProps) => {
   const isEdit = !!event;
@@ -145,8 +148,8 @@ const EventFormModal = ({
     } else {
       setAgenteId(defaultAgentId ?? agents[0]?.id ?? '');
       setTipologia('');
-      setLeadId('');
-      setLeadSearch('');
+      setLeadId(defaultLeadId ?? '');
+      setLeadSearch(defaultLeadName ?? '');
       setImmobileId('none');
       setSelectedDate(defaultDate ? parseISO(defaultDate) : new Date());
       const initStart = defaultTimeStart ?? '09:00';

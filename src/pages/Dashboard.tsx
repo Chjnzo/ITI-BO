@@ -33,7 +33,8 @@ interface TodayAppointment {
 
 interface PendingTask {
   id: string;
-  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento';
+  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento' | null;
+  titolo: string | null;
   stato: string;
   nota: string | null;
   data: string;
@@ -135,7 +136,7 @@ const Dashboard = () => {
           .order('ora_inizio', { ascending: true }),
         supabase
           .from('tasks')
-          .select('id, tipologia, nota, data, ora, stato, leads(nome, cognome)')
+          .select('id, titolo, tipologia, nota, data, ora, stato, leads(nome, cognome)')
           .eq('stato', 'Da fare')
           .eq('agente_id', user.id)
           .order('data', { ascending: true })
@@ -319,17 +320,19 @@ const Dashboard = () => {
             ) : (
               <div className="space-y-3">
                 {pendingTasks.map(task => {
-                  const cfg = TIPOLOGIA_CONFIG[task.tipologia];
-                  const Icon = cfg.icon;
+                  const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
+                  const Icon = cfg?.icon;
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
                   return (
                     <div key={task.id} className="flex items-center gap-3">
-                      <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
-                        <Icon size={14} className={cfg.color} />
-                      </div>
+                      {cfg && Icon && (
+                        <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
+                          <Icon size={14} className={cfg.color} />
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 truncate">
-                          {task.leads ? `${task.leads.nome} ${task.leads.cognome}` : task.tipologia}
+                          {task.titolo || (task.leads ? `${task.leads.nome} ${task.leads.cognome}` : task.tipologia)}
                         </p>
                         {!isToday && (
                           <p className="text-xs text-gray-400">

@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
@@ -13,6 +13,7 @@ import Agenda from "./pages/Agenda";
 import Tasks from "./pages/Tasks";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+const Valutazioni = lazy(() => import('./pages/Valutazioni'));
 
 const queryClient = new QueryClient();
 
@@ -53,6 +54,7 @@ const App = () => (
           <Route path="/open-houses" element={<ProtectedRoute><OpenHouses /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+          <Route path="/valutazioni" element={<ProtectedRoute><Suspense fallback={<div className="h-screen flex items-center justify-center">Caricamento...</div>}><Valutazioni /></Suspense></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

@@ -141,7 +141,12 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
       <div className="px-8 py-6 border-b flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Gestione Open House</h2>
-          <p className="text-sm text-gray-500">{property.titolo}</p>
+          <p className="text-sm text-gray-500">
+            {property.titolo}
+            {property.proprietario && (
+              <span className="ml-2 text-gray-400">· Proprietario: <span className="font-semibold text-gray-600">{property.proprietario}</span></span>
+            )}
+          </p>
         </div>
         {openHouse && (
           <Badge variant="outline" className="bg-[#94b0ab]/10 text-[#94b0ab] border-[#94b0ab]/20 px-4 py-1 rounded-full font-bold">
