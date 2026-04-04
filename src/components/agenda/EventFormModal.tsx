@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Search, Trash2, CalendarIcon } from 'lucide-react';
+import { Trash2, CalendarIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,7 @@ import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -122,9 +123,7 @@ const EventFormModal = ({
   const [agenteId, setAgenteId] = useState('');
   const [tipologia, setTipologia] = useState('');
   const [leadId, setLeadId] = useState('');
-  const [leadSearch, setLeadSearch] = useState('');
-  const [leadResults, setLeadResults] = useState<any[]>([]);
-  const [showLeadDrop, setShowLeadDrop] = useState(false);
+  const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
   const [immobileId, setImmobileId] = useState('none');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [oraInizio, setOraInizio] = useState('');
@@ -139,7 +138,9 @@ const EventFormModal = ({
       setAgenteId(event.agente_id);
       setTipologia(event.tipologia);
       setLeadId(event.lead_id ?? '');
-      setLeadSearch(event.leads ? `${event.leads.nome} ${event.leads.cognome}` : '');
+      setLeadItems(event.leads && event.lead_id
+        ? [{ id: event.lead_id, label: `${event.leads.nome} ${event.leads.cognome}` }]
+        : []);
       setImmobileId(event.immobile_id ?? 'none');
       setSelectedDate(parseISO(event.data));
       setOraInizio(event.ora_inizio?.slice(0, 5) ?? '');
@@ -149,7 +150,9 @@ const EventFormModal = ({
       setAgenteId(defaultAgentId ?? agents[0]?.id ?? '');
       setTipologia('');
       setLeadId(defaultLeadId ?? '');
-      setLeadSearch(defaultLeadName ?? '');
+      setLeadItems(defaultLeadId && defaultLeadName
+        ? [{ id: defaultLeadId, label: defaultLeadName }]
+        : []);
       setImmobileId('none');
       setSelectedDate(defaultDate ? parseISO(defaultDate) : new Date());
       const initStart = defaultTimeStart ?? '09:00';
@@ -157,19 +160,20 @@ const EventFormModal = ({
       setOraFine(addOneHour(initStart));
       setNote('');
     }
-    setLeadResults([]);
-    setShowLeadDrop(false);
   }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, agents]);
 
   const searchLeads = async (q: string) => {
-    if (!q.trim()) { setLeadResults([]); setShowLeadDrop(false); return; }
+    if (!q.trim()) { setLeadItems([]); return; }
     const { data: rows } = await supabase
       .from('leads')
       .select('id, nome, cognome, telefono')
       .or(`nome.ilike.%${q}%,cognome.ilike.%${q}%`)
       .limit(8);
-    setLeadResults(rows || []);
-    setShowLeadDrop(true);
+    setLeadItems((rows ?? []).map(r => ({
+      id: r.id,
+      label: `${r.nome} ${r.cognome}`,
+      sublabel: r.telefono ?? undefined,
+    })));
   };
 
   const handleSave = async () => {
@@ -238,9 +242,17 @@ const EventFormModal = ({
                 <SelectValue placeholder="Seleziona tipologia..." />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                {TIPOLOGIE.map(t => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                ))}
+                {TIPOLOGIE.map(t => {
+                  const c = TIPOLOGIA_COLORS[t] ?? TIPOLOGIA_COLORS['Altro'];
+                  return (
+                    <SelectItem key={t} value={t}>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.border }} />
+                        {t}
+                      </span>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -265,61 +277,31 @@ const EventFormModal = ({
           {/* Lead */}
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead collegato</Label>
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <Input
-                value={leadSearch}
-                onChange={(e) => {
-                  setLeadSearch(e.target.value);
-                  searchLeads(e.target.value);
-                  if (!e.target.value) setLeadId('');
-                }}
-                placeholder="Cerca lead per nome..."
-                className="h-12 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
-              />
-              {showLeadDrop && leadResults.length > 0 && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowLeadDrop(false)} />
-                  <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-y-auto max-h-48">
-                    {leadResults.map(lead => (
-                      <button
-                        key={lead.id}
-                        type="button"
-                        onClick={() => {
-                          setLeadId(lead.id);
-                          setLeadSearch(`${lead.nome} ${lead.cognome}`);
-                          setLeadResults([]);
-                          setShowLeadDrop(false);
-                        }}
-                        className="w-full px-4 py-3 text-sm text-left hover:bg-slate-50 transition-colors"
-                      >
-                        <p className="font-semibold text-gray-800">{lead.nome} {lead.cognome}</p>
-                        {lead.telefono && <p className="text-xs text-gray-400">{lead.telefono}</p>}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            <Combobox
+              items={leadItems}
+              value={leadId}
+              onSelect={(id) => setLeadId(id)}
+              onSearch={searchLeads}
+              placeholder="Cerca lead per nome..."
+              searchPlaceholder="Nome o cognome..."
+              emptyMessage="Nessun lead trovato."
+            />
           </div>
 
           {/* Immobile */}
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Immobile</Label>
-            <Select
+            <Combobox
+              items={[
+                { id: 'none', label: 'Nessuno' },
+                ...properties.map(p => ({ id: p.id, label: p.titolo })),
+              ]}
               value={immobileId}
-              onValueChange={setImmobileId}
-            >
-              <SelectTrigger className="h-12 rounded-xl border-gray-200 bg-slate-50/50">
-                <SelectValue placeholder="Collega un immobile..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                <SelectItem value="none">Nessuno</SelectItem>
-                {properties.map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.titolo}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onSelect={setImmobileId}
+              placeholder="Collega un immobile..."
+              searchPlaceholder="Cerca immobile..."
+              emptyMessage="Nessun immobile trovato."
+            />
           </div>
 
           {/* Data */}

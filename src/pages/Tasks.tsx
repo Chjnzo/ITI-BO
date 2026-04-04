@@ -9,14 +9,16 @@ import { format, parseISO, isToday, isYesterday, isTomorrow, subDays } from 'dat
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, Search, Check, CalendarIcon, User, StickyNote,
   ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
+import TaskModal from '@/components/TaskModal';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { type AgentProfile } from '@/components/agenda/EventFormModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +45,15 @@ const formatDateHeader = (dateStr: string): string => {
   return format(d, 'EEEE d MMMM', { locale: it });
 };
 
+const groupByDate = (tasks: Task[]): Map<string, Task[]> => {
+  const map = new Map<string, Task[]>();
+  for (const t of tasks) {
+    if (!map.has(t.data)) map.set(t.data, []);
+    map.get(t.data)!.push(t);
+  }
+  return map;
+};
+
 // ── TaskCard ──────────────────────────────────────────────────────────────────
 
 interface TaskCardProps {
@@ -57,8 +68,6 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
   const [datePicker, setDatePicker] = useState(false);
 
   const isComplete = task.stato === 'Completata';
-  const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
-  const Icon = cfg?.icon;
 
   const leadName = task.leads
     ? `${task.leads.nome} ${task.leads.cognome}`.trim()
@@ -67,8 +76,8 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
   return (
     <div
       className={cn(
-        'flex items-start gap-3 px-4 py-3 border-l-4 hover:bg-gray-50/80 transition-colors group',
-        isComplete ? 'border-l-red-400' : 'border-l-transparent',
+        'flex items-start gap-3 px-5 py-4 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group',
+        isComplete ? 'border-l-emerald-300 bg-slate-50/80' : 'border-l-transparent bg-white',
       )}
     >
       {/* Checkbox */}
@@ -77,25 +86,19 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
         onClick={() => onToggleComplete(task)}
         className={cn(
           'w-5 h-5 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
-          isComplete ? 'bg-[#94b0ab] border-[#94b0ab]' : 'border-gray-300 hover:border-[#94b0ab]',
+          isComplete ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-[#94b0ab]',
         )}
       >
         {isComplete && <Check size={10} className="text-white" />}
       </button>
 
-      {/* Tipologia icon (for existing tasks that have tipologia) */}
-      {Icon && cfg && (
-        <div className={cn('w-7 h-7 mt-0.5 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
-          <Icon size={13} className={cfg.color} />
-        </div>
-      )}
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         <p
           className={cn(
-            'text-sm font-bold truncate cursor-pointer',
-            isComplete ? 'line-through text-gray-400' : 'text-gray-900',
+            'text-sm font-semibold truncate cursor-pointer',
+            isComplete ? 'line-through text-gray-400' : 'text-gray-800',
           )}
           onClick={() => task.lead_id && onOpenLead(task)}
         >
@@ -104,18 +107,18 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
 
         <div className="flex items-center gap-2 flex-wrap mt-0.5">
           {leadName && task.titolo && (
-            <span className="text-xs text-gray-400 truncate">{leadName}</span>
+            <span className="text-xs text-gray-500 font-medium truncate">{leadName}</span>
           )}
           {task.ora && (
-            <span className="text-xs text-gray-300">{task.ora.slice(0, 5)}</span>
+            <span className="text-xs text-gray-400 font-medium">{task.ora.slice(0, 5)}</span>
           )}
-          {/* Date chip — click to change */}
           <Popover open={datePicker} onOpenChange={setDatePicker}>
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="text-xs text-gray-300 hover:text-[#94b0ab] transition-colors"
+                className="flex items-center gap-1 text-xs text-gray-400 hover:text-[#94b0ab] transition-colors"
               >
+                <CalendarIcon size={10} className="shrink-0" />
                 {format(parseISO(task.data), 'd MMM', { locale: it })}
               </button>
             </PopoverTrigger>
@@ -136,9 +139,8 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
           </Popover>
         </div>
 
-        {/* Expanded note */}
         {noteExpanded && task.nota && (
-          <p className="text-xs text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2">
+          <p className="text-xs text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2 break-words whitespace-pre-wrap">
             {task.nota}
           </p>
         )}
@@ -181,12 +183,32 @@ TaskCard.displayName = 'TaskCard';
 
 const Tasks = () => {
   const navigate = useNavigate();
+
+  // Core data
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // UI state
+  const [viewMode, setViewMode] = useState<'personale' | 'generale'>('personale');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+
+  // Fetch current user + agents once on mount
+  useEffect(() => {
+    const init = async () => {
+      const [{ data: { user } }, { data: agentsData }] = await Promise.all([
+        supabase.auth.getUser(),
+        supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
+      ]);
+      if (user) setCurrentUserId(user.id);
+      setAgents((agentsData as AgentProfile[]) ?? []);
+    };
+    init();
+  }, []);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -226,7 +248,10 @@ const Tasks = () => {
     }
   };
 
-  const pendingTasks = useMemo(() => tasks.filter(t => {
+  // ── Derived data ─────────────────────────────────────────────────────────────
+
+  // Base: all pending matching search + date filter
+  const filteredPending = useMemo(() => tasks.filter(t => {
     if (t.stato === 'Completata') return false;
     const leadName = `${t.leads?.nome ?? ''} ${t.leads?.cognome ?? ''}`.toLowerCase();
     const matchesSearch = !searchQuery
@@ -237,154 +262,263 @@ const Tasks = () => {
     return matchesSearch && matchesDate;
   }), [tasks, searchQuery, dateFilter]);
 
-  const completedTasks = useMemo(() => tasks.filter(t => t.stato === 'Completata'), [tasks]);
+  // Personale: filtered to current user
+  const personalPending = useMemo(() =>
+    filteredPending.filter(t => t.agente_id === currentUserId),
+    [filteredPending, currentUserId],
+  );
 
-  const tasksByDate = useMemo(() => {
+  const personalByDate = useMemo(() => groupByDate(personalPending), [personalPending]);
+  const sortedDates = useMemo(() => [...personalByDate.keys()].sort(), [personalByDate]);
+
+  // Generale: tasks per agent
+  const tasksByAgent = useMemo(() => {
     const map = new Map<string, Task[]>();
-    for (const task of pendingTasks) {
-      if (!map.has(task.data)) map.set(task.data, []);
-      map.get(task.data)!.push(task);
+    for (const a of agents) map.set(a.id, []);
+    for (const t of filteredPending) {
+      if (map.has(t.agente_id)) map.get(t.agente_id)!.push(t);
     }
     return map;
-  }, [pendingTasks]);
+  }, [filteredPending, agents]);
 
-  const sortedDates = useMemo(() => [...tasksByDate.keys()].sort(), [tasksByDate]);
+  // Completed tasks (shown only in Personale)
+  const completedTasks = useMemo(() => tasks.filter(t => t.stato === 'Completata'), [tasks]);
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <AdminLayout>
-      <div className="flex flex-col min-h-0 max-w-3xl mx-auto w-full">
+    <AdminLayout fullHeight>
+      <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6">
+        {/* Header — Agenda style */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Task</h1>
-            <p className="text-gray-500 mt-1 font-medium">Attività pianificate per i tuoi lead.</p>
+            <p className="text-gray-500 mt-1 font-medium">
+              {viewMode === 'personale'
+                ? `${personalPending.length} in programma`
+                : `${filteredPending.length} totali · ${agents.length} agenti`}
+            </p>
           </div>
-          <Button
-            onClick={() => setIsTaskModalOpen(true)}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold"
-          >
-            <Plus className="mr-2" size={20} /> Nuova Task
-          </Button>
-        </div>
 
-        {/* Filter Bar */}
-        <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex gap-3 items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={16} />
-            <Input
-              placeholder="Cerca per titolo, lead o nota..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-12 pl-11 rounded-xl border-gray-100 bg-slate-50/50"
-            />
-          </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                className={cn(
-                  'h-12 w-[150px] justify-start text-left font-normal rounded-xl border-gray-100 bg-slate-50/50 hover:bg-gray-100 gap-2',
-                  !dateFilter && 'text-muted-foreground',
-                )}
-              >
-                <CalendarIcon size={14} className="text-[#94b0ab] shrink-0" />
-                {dateFilter ? format(parseISO(dateFilter), 'd MMM', { locale: it }) : 'Data'}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
-              <Calendar
-                mode="single"
-                selected={dateFilter ? parseISO(dateFilter) : undefined}
-                onSelect={(date) => setDateFilter(date ? format(date, 'yyyy-MM-dd') : '')}
-                initialFocus
-                locale={it}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* View toggle */}
+            <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
+              <TabsList className="grid w-[240px] grid-cols-2 rounded-full p-1 bg-muted/50 border border-gray-100">
+                <TabsTrigger value="personale" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  Personale
+                </TabsTrigger>
+                <TabsTrigger value="generale" className="rounded-full px-4 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  Generale
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
+              <Input
+                placeholder="Cerca..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 pl-9 w-[200px] rounded-xl border-gray-200 bg-white"
               />
-            </PopoverContent>
-          </Popover>
-          {dateFilter && (
+            </div>
+
+            {/* Date filter */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  className={cn(
+                    'h-11 w-[130px] justify-start text-left font-normal rounded-xl border-gray-200 bg-white hover:bg-gray-50 gap-2',
+                    !dateFilter && 'text-muted-foreground',
+                  )}
+                >
+                  <CalendarIcon size={14} className="text-[#94b0ab] shrink-0" />
+                  {dateFilter ? format(parseISO(dateFilter), 'd MMM', { locale: it }) : 'Data'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+                <Calendar
+                  mode="single"
+                  selected={dateFilter ? parseISO(dateFilter) : undefined}
+                  onSelect={(date) => setDateFilter(date ? format(date, 'yyyy-MM-dd') : '')}
+                  initialFocus
+                  locale={it}
+                />
+              </PopoverContent>
+            </Popover>
+            {dateFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDateFilter('')}
+                className="text-gray-400 hover:text-gray-600 rounded-xl h-11"
+              >
+                Reset
+              </Button>
+            )}
+
+            {/* New task */}
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setDateFilter('')}
-              className="text-gray-400 hover:text-gray-600 rounded-xl h-12"
+              onClick={() => setIsTaskModalOpen(true)}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
             >
-              Reset
+              <Plus className="mr-2" size={16} /> Nuova Task
             </Button>
-          )}
+          </div>
         </div>
 
-        {/* Date-grouped task list */}
-        <div className="space-y-6 pb-8">
-          {loading ? (
-            <div className="py-20 text-center text-gray-300 animate-pulse">Caricamento...</div>
-          ) : sortedDates.length === 0 && pendingTasks.length === 0 ? (
-            <div className="py-20 text-center text-gray-300 italic">Nessuna task in programma</div>
-          ) : (
-            sortedDates.map(dateStr => (
-              <div key={dateStr}>
-                {/* Date separator */}
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-gray-500">
-                    {formatDateHeader(dateStr)}
-                  </span>
-                  <span className="text-xs text-gray-300 font-medium">
-                    {format(parseISO(dateStr), 'd MMM yyyy', { locale: it })}
-                  </span>
-                  <div className="flex-1 h-px bg-gray-100" />
-                  <span className="text-xs text-gray-300">{tasksByDate.get(dateStr)!.length}</span>
-                </div>
-                <div className="bg-white rounded-[1.5rem] border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
-                  {tasksByDate.get(dateStr)!.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggleComplete={toggleComplete}
-                      onOpenLead={openLeadProfile}
-                      onUpdateDate={updateTaskDate}
-                    />
-                  ))}
-                </div>
+        {/* Content area */}
+        <div className="flex-1 min-h-0 relative">
+
+          {/* ── PERSONALE ─────────────────────────────────────────────────── */}
+          {viewMode === 'personale' && (
+            <div className="absolute inset-0 overflow-y-auto pb-8">
+              <div className="max-w-4xl mx-auto w-full space-y-5">
+                {loading ? (
+                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm py-20 text-center text-gray-300 animate-pulse">
+                    Caricamento...
+                  </div>
+                ) : sortedDates.length === 0 ? (
+                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm py-20 text-center text-gray-300 italic">
+                    Nessuna task in programma
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+                    {sortedDates.map((dateStr, idx) => (
+                      <div key={dateStr} className={idx > 0 ? 'border-t border-gray-100' : ''}>
+                        <div className="flex items-center gap-3 px-5 py-3 bg-gray-50/60">
+                          <span className="text-xs font-black uppercase tracking-widest text-gray-500">
+                            {formatDateHeader(dateStr)}
+                          </span>
+                          <span className="text-xs text-gray-300 font-medium">
+                            {format(parseISO(dateStr), 'd MMM yyyy', { locale: it })}
+                          </span>
+                          <div className="flex-1 h-px bg-gray-100" />
+                          <span className="text-xs text-gray-300">{personalByDate.get(dateStr)!.length}</span>
+                        </div>
+                        <div className="divide-y divide-gray-50">
+                          {personalByDate.get(dateStr)!.map(task => (
+                            <TaskCard
+                              key={task.id}
+                              task={task}
+                              onToggleComplete={toggleComplete}
+                              onOpenLead={openLeadProfile}
+                              onUpdateDate={updateTaskDate}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Completed (personal only) */}
+                {completedTasks.length > 0 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setCompletedExpanded(v => !v)}
+                      className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-sm font-bold text-gray-500 hover:text-gray-700 hover:bg-slate-100 transition-all mb-3 border border-slate-200"
+                    >
+                      {completedExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                      <span>Task completate</span>
+                      <span className="bg-slate-200 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                        {completedTasks.length}
+                      </span>
+                    </button>
+                    {completedExpanded && (
+                      <div className="bg-slate-50/50 rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+                        {completedTasks.map(task => (
+                          <TaskCard
+                            key={task.id}
+                            task={task}
+                            onToggleComplete={toggleComplete}
+                            onOpenLead={openLeadProfile}
+                            onUpdateDate={updateTaskDate}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            ))
-          )}
-
-          {/* Collapsible completed section */}
-          {completedTasks.length > 0 && (
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setCompletedExpanded(v => !v)}
-                className="flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors mb-3"
-              >
-                {completedExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Task completate ({completedTasks.length})
-              </button>
-
-              {completedExpanded && (
-                <div className="bg-white rounded-[1.5rem] border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
-                  {completedTasks.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      onToggleComplete={toggleComplete}
-                      onOpenLead={openLeadProfile}
-                      onUpdateDate={updateTaskDate}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
           )}
+
+          {/* ── GENERALE ──────────────────────────────────────────────────── */}
+          {viewMode === 'generale' && (
+            <div className="absolute inset-0 flex gap-5 overflow-x-auto pb-4">
+              {loading ? (
+                <div className="flex-1 flex items-center justify-center text-gray-300 animate-pulse text-sm">
+                  Caricamento...
+                </div>
+              ) : agents.map(agent => {
+                const agentTasks = tasksByAgent.get(agent.id) ?? [];
+                const color = agent.colore_calendario ?? '#94b0ab';
+                const initials = (agent.nome_completo ?? agent.id).substring(0, 2).toUpperCase();
+                const byDate = groupByDate(agentTasks);
+                const dates = [...byDate.keys()].sort();
+
+                return (
+                  <div key={agent.id} className="flex-1 min-w-[350px] flex flex-col gap-3 min-h-0">
+                    {/* Column header */}
+                    <div className="flex items-center gap-3 px-1 shrink-0">
+                      <div
+                        className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-xs shrink-0 shadow-sm"
+                        style={{ backgroundColor: color }}
+                      >
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-sm text-gray-900 truncate">
+                          {agent.nome_completo ?? agent.id}
+                        </p>
+                        <p className="text-xs text-gray-400">{agentTasks.length} task</p>
+                      </div>
+                    </div>
+
+                    {/* Task list */}
+                    <div className="flex-1 bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-y-auto min-h-0">
+                      {agentTasks.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-gray-300 italic">Nessuna task</div>
+                      ) : (
+                        dates.map(dateStr => (
+                          <div key={dateStr}>
+                            <div className="px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50 bg-gray-50/50">
+                              {formatDateHeader(dateStr)}
+                            </div>
+                            <div className="divide-y divide-gray-50">
+                              {byDate.get(dateStr)!.map(task => (
+                                <TaskCard
+                                  key={task.id}
+                                  task={task}
+                                  onToggleComplete={toggleComplete}
+                                  onOpenLead={openLeadProfile}
+                                  onUpdateDate={updateTaskDate}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
         </div>
-
-        <TaskModal
-          open={isTaskModalOpen}
-          onClose={() => setIsTaskModalOpen(false)}
-          onSaved={() => { setIsTaskModalOpen(false); fetchTasks(); }}
-        />
-
       </div>
+
+      <TaskModal
+        open={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        onSaved={() => { setIsTaskModalOpen(false); fetchTasks(); }}
+      />
     </AdminLayout>
   );
 };

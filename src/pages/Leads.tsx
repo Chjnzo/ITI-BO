@@ -20,10 +20,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Phone, Home as HomeIcon,
   User, Search, MessageSquare, Save,
   Calendar, CalendarPlus, Plus, ExternalLink,
-  Filter, TrendingUp, History, Heart, UserCheck, Briefcase, Send, MapPin, ChevronDown, Trash2,
+  TrendingUp, History, Heart, UserCheck, Briefcase, Send, MapPin, ChevronDown, Trash2,
   CheckSquare, Clock,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
@@ -40,6 +43,12 @@ const COLUMNS = [
 ];
 
 const AGENTS = ["Matteo", "Gabriele"];
+
+const SELLER_STATES: Record<string, string> = {
+  'Nuovo':             'bg-blue-50 border border-blue-100 text-blue-700',
+  'Valutazione fatta': 'bg-amber-50 border border-amber-100 text-amber-700',
+  'Chiuso':            'bg-emerald-50 border border-emerald-100 text-emerald-700',
+};
 
 
 // Pure helper — defined at module level so it's never re-created
@@ -76,7 +85,7 @@ const Leads = () => {
   
   // Filter State
   const [searchQuery, setSearchQuery] = useState("");
-  const [agentFilter, setAgentFilter] = useState("Tutti");
+  const [tipoClienteFilter, setTipoClienteFilter] = useState<'Tutti' | 'Acquirenti' | 'Proprietari'>('Tutti');
 
   // Property Picker State
   const [isPropertyPickerOpen, setIsPropertyPickerOpen] = useState(false);
@@ -134,7 +143,7 @@ const Leads = () => {
     const { data, error } = await supabase
       .from('leads')
       .select(`
-        id, nome, cognome, stato, tipo_cliente, created_at,
+        id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
         assegnato_a, telefono, email,
         lead_immobili(immobili(titolo))
       `)
@@ -188,6 +197,44 @@ const Leads = () => {
     setSelectedLead({ nome: '', cognome: '', email: '', telefono: '', tipo_cliente: 'Acquirente', stato: 'Nuovo', created_at: new Date().toISOString() });
   }, []);
 
+  // ── Seller state helpers ────────────────────────────────────────────────────
+
+  /** Optimistically update stato_venditore in the list and persist to Supabase. */
+  const updateSellerState = useCallback(async (leadId: string, newState: string) => {
+    // Optimistic update
+    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stato_venditore: newState } : l));
+    const { error } = await supabase
+      .from('leads')
+      .update({ stato_venditore: newState })
+      .eq('id', leadId);
+    if (error) {
+      showError('Errore aggiornamento stato: ' + error.message);
+      // Rollback — re-fetch to restore truth
+      fetchLeads();
+    }
+  }, [fetchLeads]);
+
+  /**
+   * Automation hook — call when an AI evaluation report is completed for a lead.
+   * Updates stato_venditore → "Valutazione fatta" and appends a history note.
+   */
+  const handleAiEvaluationComplete = useCallback(async (leadId: string) => {
+    await updateSellerState(leadId, 'Valutazione fatta');
+    await supabase.from('lead_notes').insert({
+      lead_id: leadId,
+      testo: 'Stato aggiornato: Valutazione AI completata',
+      autore: 'Sistema',
+    });
+  }, [updateSellerState]);
+
+  /**
+   * Automation hook — call when a property is listed/linked to a specific lead.
+   * Updates stato_venditore → "Chiuso".
+   */
+  const handlePropertyLinked = useCallback(async (leadId: string) => {
+    await updateSellerState(leadId, 'Chiuso');
+  }, [updateSellerState]);
+
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
@@ -203,19 +250,19 @@ const Leads = () => {
 
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
-      const matchesSearch = 
+      const matchesSearch =
         `${lead.nome} ${lead.cognome}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
         lead.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         lead.telefono?.includes(searchQuery);
-      
-      const matchesAgent = 
-        agentFilter === "Tutti" || 
-        (agentFilter === "Non assegnati" && !lead.assegnato_a) ||
-        lead.assegnato_a === agentFilter;
 
-      return matchesSearch && matchesAgent;
+      const matchesTipo =
+        tipoClienteFilter === 'Tutti' ||
+        (tipoClienteFilter === 'Acquirenti' && (lead.tipo_cliente === 'Acquirente' || lead.tipo_cliente === 'Ibrido')) ||
+        (tipoClienteFilter === 'Proprietari' && (lead.tipo_cliente === 'Proprietario' || lead.tipo_cliente === 'Ibrido'));
+
+      return matchesSearch && matchesTipo;
     });
-  }, [leads, searchQuery, agentFilter]);
+  }, [leads, searchQuery, tipoClienteFilter]);
 
 
 
@@ -600,59 +647,64 @@ const Leads = () => {
   return (
     <AdminLayout fullHeight>
       <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
-          <p className="text-gray-500 mt-1 font-medium">Gestione centralizzata dei contatti e delle trattative.</p>
+          <p className="text-gray-500 mt-1 font-medium">
+            {filteredLeads.length} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
+          </p>
         </div>
-        
-        <Button
-          onClick={openCreateModal}
-          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
-        >
-          <Plus className="mr-2" size={20} /> Nuovo Contatto
-        </Button>
-      </div>
 
-      {/* Filter bar */}
-      <div className="bg-white p-4 rounded-[2rem] border border-gray-100 shadow-sm mb-6 flex flex-col md:flex-row gap-4 items-center shrink-0">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-          <Input
-            placeholder="Cerca per nome, telefono..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-12 pl-12 rounded-xl border-gray-100 focus:ring-[#94b0ab]"
-          />
-        </div>
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <Filter className="text-gray-400 shrink-0" size={18} />
-          <Select value={agentFilter} onValueChange={setAgentFilter}>
-            <SelectTrigger className="h-12 w-full md:w-[200px] rounded-xl border-gray-100">
-              <SelectValue placeholder="Filtra per agente" />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              <SelectItem value="Tutti">Tutti gli agenti</SelectItem>
-              <SelectItem value="Non assegnati">Non assegnati</SelectItem>
-              {AGENTS.map(agent => (
-                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Client type toggle */}
+          <Tabs value={tipoClienteFilter} onValueChange={(v) => setTipoClienteFilter(v as typeof tipoClienteFilter)}>
+            <TabsList className="grid w-[280px] grid-cols-3 rounded-full p-1 bg-muted/50 border border-gray-100">
+              <TabsTrigger value="Tutti" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Tutti</TabsTrigger>
+              <TabsTrigger value="Acquirenti" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Acquirenti</TabsTrigger>
+              <TabsTrigger value="Proprietari" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Proprietari</TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
+            <Input
+              placeholder="Cerca..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-11 pl-9 w-[220px] rounded-xl border-gray-200 bg-white"
+            />
+          </div>
+
+          <Button
+            onClick={openCreateModal}
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+          >
+            <Plus className="mr-2" size={16} /> Nuovo Contatto
+          </Button>
         </div>
       </div>
 
       {/* Lead list */}
       <div className="flex-1 overflow-hidden min-h-0">
         <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
+          <div className="overflow-x-auto w-full">
+            <table className="w-full text-left table-fixed">
+              <colgroup>
+                <col style={{ width: '35%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '25%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '10%' }} />
+              </colgroup>
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Tipo</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Assegnato</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">
+                    {tipoClienteFilter === 'Proprietari' ? 'Stato Venditore' : 'Immobile'}
+                  </th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Creato il</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
                 </tr>
               </thead>
@@ -667,11 +719,11 @@ const Leads = () => {
                     className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
                     onClick={() => openLeadDetail(lead)}
                   >
-                    <td className="px-8 py-5">
-                      <div className="font-bold text-gray-900">{lead.nome} {lead.cognome}</div>
-                      <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5">
-                        <Phone size={10} className="text-gray-300" />
-                        {lead.telefono || 'N/D'}
+                    <td className="px-8 py-5 min-w-0">
+                      <div className="font-bold text-gray-900 truncate">{lead.nome} {lead.cognome}</div>
+                      <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5 min-w-0">
+                        <Phone size={10} className="text-gray-300 shrink-0" />
+                        <span className="truncate">{lead.telefono || 'N/D'}</span>
                       </div>
                     </td>
                     <td className="px-8 py-5">
@@ -682,25 +734,48 @@ const Leads = () => {
                         {lead.tipo_cliente || 'Acquirente'}
                       </Badge>
                     </td>
-                    <td className="px-8 py-5">
-                      <Badge className={cn(
-                        "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[9px] border-none",
-                        COLUMNS.find(c => c.id === lead.stato)?.color || "bg-gray-100 text-gray-600"
-                      )}>
-                        {lead.stato}
-                      </Badge>
+                    <td className="px-8 py-5 min-w-0">
+                      {tipoClienteFilter === 'Proprietari' ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Badge className={cn(
+                              "text-[9px] font-black uppercase tracking-widest cursor-pointer hover:opacity-75 transition-opacity gap-1",
+                              SELLER_STATES[lead.stato_venditore ?? 'Nuovo'] ?? SELLER_STATES['Nuovo']
+                            )}>
+                              {lead.stato_venditore || 'Nuovo'}
+                              <ChevronDown size={9} className="shrink-0" />
+                            </Badge>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="rounded-xl min-w-[160px]">
+                            {(['Nuovo', 'Valutazione fatta', 'Chiuso'] as const).map(state => (
+                              <DropdownMenuItem
+                                key={state}
+                                onClick={(e) => { e.stopPropagation(); updateSellerState(lead.id, state); }}
+                                className={cn(
+                                  "rounded-lg text-xs font-semibold cursor-pointer",
+                                  lead.stato_venditore === state && "bg-gray-100",
+                                )}
+                              >
+                                <span className={cn(
+                                  "w-2 h-2 rounded-full shrink-0 mr-2",
+                                  state === 'Nuovo' ? 'bg-blue-400' :
+                                  state === 'Valutazione fatta' ? 'bg-amber-400' : 'bg-emerald-400'
+                                )} />
+                                {state}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        lead.lead_immobili?.[0]?.immobili?.titolo
+                          ? <span className="text-xs text-gray-500 truncate block">{lead.lead_immobili[0].immobili.titolo}</span>
+                          : <span className="text-xs text-gray-200">—</span>
+                      )}
                     </td>
                     <td className="px-8 py-5">
-                      {lead.assegnato_a ? (
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-bold">
-                            {lead.assegnato_a.charAt(0)}
-                          </div>
-                          <span className="text-sm font-medium text-gray-600">{lead.assegnato_a}</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-300 italic">Non assegnato</span>
-                      )}
+                      <span className="text-xs text-gray-400">
+                        {safeFormat(lead.created_at, 'd MMM yyyy', { locale: it })}
+                      </span>
                     </td>
                     <td className="px-8 py-5">
                       <div
@@ -765,13 +840,10 @@ const Leads = () => {
                           </DialogTitle>
                           {!isCreate && (
                             <>
-                              <Badge className={cn("px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px]", COLUMNS.find(c => c.id === selectedLead.stato)?.color)}>
-                                {selectedLead.stato}
-                              </Badge>
                               <Badge className={cn("px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border", getClientTypeBadge(selectedLead.tipo_cliente))}>
                                 {selectedLead.tipo_cliente || 'Acquirente'}
                               </Badge>
-                              {selectedLead.tipo_cliente === 'Proprietario' && (
+                              {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
                                 <Popover>
                                   <PopoverTrigger asChild>
                                     <button type="button" className={cn(
@@ -895,23 +967,6 @@ const Leads = () => {
                             onChange={(e) => setSelectedLead({...selectedLead, telefono: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Assegnato a</Label>
-                          <Select
-                            value={selectedLead.assegnato_a || "Nessuno"}
-                            onValueChange={(v) => setSelectedLead({...selectedLead, assegnato_a: v})}
-                          >
-                            <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              <SelectItem value="Nessuno">Nessuno</SelectItem>
-                              {AGENTS.map(agent => (
-                                <SelectItem key={agent} value={agent}>{agent}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Tipo Cliente</Label>

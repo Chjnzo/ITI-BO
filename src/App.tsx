@@ -7,13 +7,13 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Dashboard from "./pages/Dashboard";
 import Properties from "./pages/Properties";
-import OpenHouses from "./pages/OpenHouses";
 import Leads from "./pages/Leads";
 import Agenda from "./pages/Agenda";
 import Tasks from "./pages/Tasks";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 const Valutazioni = lazy(() => import('./pages/Valutazioni'));
+const ValuazioneReport = lazy(() => import('./pages/ValuazioneReport'));
 
 const queryClient = new QueryClient();
 
@@ -51,10 +51,10 @@ const App = () => (
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/immobili" element={<ProtectedRoute><Properties /></ProtectedRoute>} />
           <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
-          <Route path="/open-houses" element={<ProtectedRoute><OpenHouses /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
           <Route path="/valutazioni" element={<ProtectedRoute><Suspense fallback={<div className="h-screen flex items-center justify-center">Caricamento...</div>}><Valutazioni /></Suspense></ProtectedRoute>} />
+          <Route path="/report/:slug" element={<Suspense fallback={<div className="h-screen flex items-center justify-center">Caricamento...</div>}><ValuazioneReport /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

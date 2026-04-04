@@ -27,6 +27,10 @@ interface PropertyWizardProps {
   initialData?: any;
   onClose: () => void;
   onSuccess: () => void;
+  /** ID of the lead that originated this property listing (used for automation hooks). */
+  leadId?: string;
+  /** Called with the new immobile ID after a successful save, when leadId is provided. */
+  onLeadLinked?: (leadId: string, immobileId: string) => void;
 }
 
 const PREDEFINED_FEATURES = [
@@ -35,7 +39,7 @@ const PREDEFINED_FEATURES = [
   "Domotica", "Allarme", "Piscina", "Pannelli Solari"
 ];
 
-const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps) => {
+const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked }: PropertyWizardProps) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
@@ -229,6 +233,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess }: PropertyWizardProps
       }
 
       onSuccess();
+      // Fire automation hook if wizard was opened from a lead context
+      if (leadId && onLeadLinked) onLeadLinked(leadId, immobileId);
       onClose();
     } catch (error: any) {
       showError(error.message);

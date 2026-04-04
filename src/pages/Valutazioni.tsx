@@ -1,242 +1,168 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { showError } from '@/utils/toast';
+import { format, parseISO } from 'date-fns';
+import { it } from 'date-fns/locale';
+import { Plus, Calculator, ExternalLink } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import ValuationWizard from '@/components/valutazioni/ValuationWizard';
 
-interface Lead {
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface Valutazione {
   id: string;
-  nome: string;
-  cognome: string;
+  indirizzo: string;
+  superficie_mq: number;
+  stato: string;
+  created_at: string;
+  stima_min: number | null;
+  stima_max: number | null;
+  slug: string | null;
+  leads?: { nome: string; cognome: string } | null;
 }
 
-const TIPOLOGIE = ['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico'];
-const CONDIZIONI = ['Da ristrutturare', 'Discreto', 'Buono', 'Ottimo', 'Nuova Costruzione'];
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const STATO_BADGE: Record<string, string> = {
+  Bozza:      'bg-gray-100 text-gray-600',
+  Completata: 'bg-emerald-50 text-emerald-700',
+};
+
+const fmtEuro = (n: number | null) =>
+  n == null ? null : `€${(n / 1000).toFixed(0)}k`;
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 const Valutazioni = () => {
-  // Left card state
-  const [leadId, setLeadId] = useState('');
-  const [indirizzo, setIndirizzo] = useState('');
-  const [mq, setMq] = useState('');
-  const [tipologia, setTipologia] = useState('');
-  const [condizioni, setCondizioni] = useState('');
-  const [stimaMin, setStimaMin] = useState('');
-  const [stimaMax, setStimaMax] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [valutazioni, setValutazioni] = useState<Valutazione[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
 
-  // Right card state
-  const [descrizioneZona, setDescrizioneZona] = useState('');
-  const [rationaleValutazione, setRationaleValutazione] = useState('');
-
-  // Leads for select
-  const [leads, setLeads] = useState<Lead[]>([]);
-
-  useEffect(() => {
-    supabase
-      .from('leads')
-      .select('id, nome, cognome')
-      .order('cognome')
-      .then(({ data }) => setLeads(data ?? []));
+  const fetchValutazioni = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('valutazioni')
+      .select('id, indirizzo, superficie_mq, stato, created_at, stima_min, stima_max, slug, leads(nome, cognome)')
+      .order('created_at', { ascending: false });
+    if (error) {
+      showError('Errore nel caricamento valutazioni');
+    } else {
+      setValutazioni((data as any) ?? []);
+    }
+    setLoading(false);
   }, []);
 
-  const handleGenerateAI = async () => {
-    if (!indirizzo || !mq || !tipologia || !condizioni || !stimaMin || !stimaMax) {
-      showError('Compila tutti i campi prima di generare i testi.');
-      return;
-    }
-
-    setIsGenerating(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-evaluation', {
-        body: {
-          indirizzo,
-          metri_quadri: Number(mq),
-          tipologia,
-          condizioni,
-          stima_minima: Number(stimaMin),
-          stima_massima: Number(stimaMax),
-        },
-      });
-
-      if (error) throw error;
-
-      setDescrizioneZona(data.descrizione_zona ?? '');
-      setRationaleValutazione(data.razionale_valutazione ?? '');
-    } catch (err) {
-      showError('Errore durante la generazione. Riprova.');
-      console.error(err);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleSaveAndGenerateLink = async () => {
-    // TODO: persist to DB, return sharable dossier URL
-  };
+  useEffect(() => { fetchValutazioni(); }, [fetchValutazioni]);
 
   return (
     <AdminLayout>
-      {/* Page Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">
-          Valutazioni AI ✨
-        </h1>
-        <p className="text-gray-500 mt-1 font-medium">
-          Genera dossier immobiliari interattivi e professionali.
-        </p>
+
+      {/* Header */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Valutazioni</h1>
+          <p className="text-gray-500 mt-1 font-medium">
+            {loading ? '…' : `${valutazioni.length} valutazioni`}
+          </p>
+        </div>
+        <Button
+          onClick={() => setIsWizardOpen(true)}
+          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+        >
+          <Plus size={16} className="mr-2" /> Nuova Valutazione
+        </Button>
       </div>
 
-      {/* Two-column grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-        {/* Left Card — Input form */}
-        <div className="bg-white border-none shadow-sm rounded-[2rem] p-6 space-y-4">
-          <h2 className="text-lg font-bold text-gray-900">Dati Immobile</h2>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="lead">Lead</Label>
-            <Select value={leadId} onValueChange={setLeadId}>
-              <SelectTrigger id="lead" className="h-12 rounded-xl border-gray-100">
-                <SelectValue placeholder="Seleziona cliente..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {leads.map(l => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.cognome} {l.nome}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* Table card */}
+      <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="py-20 text-center text-gray-300 animate-pulse text-sm">Caricamento...</div>
+        ) : valutazioni.length === 0 ? (
+          <div className="py-20 flex flex-col items-center gap-3 text-gray-300">
+            <Calculator size={40} strokeWidth={1.5} />
+            <p className="text-sm italic">Nessuna valutazione ancora. Creane una!</p>
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="indirizzo">Indirizzo</Label>
-            <Input
-              id="indirizzo"
-              type="text"
-              placeholder="Via Roma 12, Bologna"
-              value={indirizzo}
-              onChange={e => setIndirizzo(e.target.value)}
-              className="h-12 rounded-xl border-gray-100"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="mq">Metri Quadri</Label>
-            <Input
-              id="mq"
-              type="number"
-              placeholder="80"
-              value={mq}
-              onChange={e => setMq(e.target.value)}
-              className="h-12 rounded-xl border-gray-100"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="tipologia">Tipologia</Label>
-            <Select value={tipologia} onValueChange={setTipologia}>
-              <SelectTrigger id="tipologia" className="h-12 rounded-xl border-gray-100">
-                <SelectValue placeholder="Seleziona tipologia..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {TIPOLOGIE.map(t => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="condizioni">Condizioni</Label>
-            <Select value={condizioni} onValueChange={setCondizioni}>
-              <SelectTrigger id="condizioni" className="h-12 rounded-xl border-gray-100">
-                <SelectValue placeholder="Seleziona condizioni..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {CONDIZIONI.map(c => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="stimaMin">Stima Minima €</Label>
-              <Input
-                id="stimaMin"
-                type="number"
-                placeholder="200000"
-                value={stimaMin}
-                onChange={e => setStimaMin(e.target.value)}
-                className="h-12 rounded-xl border-gray-100"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="stimaMax">Stima Massima €</Label>
-              <Input
-                id="stimaMax"
-                type="number"
-                placeholder="250000"
-                value={stimaMax}
-                onChange={e => setStimaMax(e.target.value)}
-                className="h-12 rounded-xl border-gray-100"
-              />
-            </div>
-          </div>
-
-          <Button
-            onClick={handleGenerateAI}
-            disabled={isGenerating}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-12 w-full font-semibold"
-          >
-            {isGenerating ? 'Generazione in corso...' : 'Genera Testi con AI ✨'}
-          </Button>
-        </div>
-
-        {/* Right Card — AI output */}
-        <div className="bg-white border-none shadow-sm rounded-[2rem] p-6 space-y-4">
-          <h2 className="text-lg font-bold text-gray-900">Testi Generati</h2>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="descrizioneZona">Descrizione Zona</Label>
-            <Textarea
-              id="descrizioneZona"
-              placeholder="La descrizione della zona verrà generata dall'AI..."
-              value={descrizioneZona}
-              onChange={e => setDescrizioneZona(e.target.value)}
-              className="min-h-[150px] rounded-xl border-gray-100 resize-none"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="rationaleValutazione">Razionale Valutazione</Label>
-            <Textarea
-              id="rationaleValutazione"
-              placeholder="Il razionale della valutazione verrà generato dall'AI..."
-              value={rationaleValutazione}
-              onChange={e => setRationaleValutazione(e.target.value)}
-              className="min-h-[150px] rounded-xl border-gray-100 resize-none"
-            />
-          </div>
-
-          <Button
-            variant="outline"
-            onClick={handleSaveAndGenerateLink}
-            className="rounded-xl h-12 w-full font-semibold border-gray-200 hover:bg-gray-50"
-          >
-            Salva e Genera Link Dossier
-          </Button>
-        </div>
-
+        ) : (
+          <table className="w-full table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '26%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '3%' }} />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/60">
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Lead</th>
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Indirizzo</th>
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">MQ</th>
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Stima</th>
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
+                <th className="px-5 py-3 text-left text-xs font-bold uppercase tracking-widest text-gray-400">Data</th>
+                <th className="px-2 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {valutazioni.map(v => {
+                const minStr = fmtEuro(v.stima_min);
+                const maxStr = fmtEuro(v.stima_max);
+                return (
+                  <tr key={v.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="px-5 py-4 font-medium text-gray-800 truncate">
+                      {v.leads
+                        ? `${v.leads.nome} ${v.leads.cognome}`
+                        : <span className="text-gray-300 italic">—</span>}
+                    </td>
+                    <td className="px-5 py-4 text-gray-600 truncate">{v.indirizzo}</td>
+                    <td className="px-5 py-4 text-gray-600">{v.superficie_mq} m²</td>
+                    <td className="px-5 py-4">
+                      {minStr && maxStr
+                        ? <span className="font-bold text-[#94b0ab]">{minStr} – {maxStr}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={cn(
+                        'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold',
+                        STATO_BADGE[v.stato] ?? 'bg-gray-100 text-gray-600',
+                      )}>
+                        {v.stato}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-gray-400 text-xs">
+                      {format(parseISO(v.created_at), 'd MMM', { locale: it })}
+                    </td>
+                    <td className="px-2 py-4">
+                      {v.slug && (
+                        <a
+                          href={`/report/${v.slug}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1.5 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+                          title="Apri report"
+                        >
+                          <ExternalLink size={14} />
+                        </a>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {/* Wizard */}
+      <ValuationWizard
+        open={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onSaved={() => { setIsWizardOpen(false); fetchValutazioni(); }}
+      />
+
     </AdminLayout>
   );
 };
