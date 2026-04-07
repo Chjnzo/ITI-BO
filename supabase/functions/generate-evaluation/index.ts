@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { indirizzo, metri_quadri, tipologia, condizioni, stima_minima, stima_massima } =
+    const { indirizzo, citta, metri_quadri, tipologia, condizioni, comfort } =
       await req.json();
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
@@ -22,9 +22,15 @@ Deno.serve(async (req) => {
       });
     }
 
-    const userPrompt = `Immobile: ${tipologia}, ${metri_quadri} mq, ${condizioni}.
-Indirizzo: ${indirizzo}.
-Range di prezzo: €${stima_minima} – €${stima_massima}.`;
+    const comfortLine = Array.isArray(comfort) && comfort.length > 0
+      ? `Dotazioni: ${comfort.join(", ")}.`
+      : "";
+
+    const userPrompt = `Immobile: ${tipologia ?? "appartamento"}, ${metri_quadri} mq, ${condizioni ?? "buono"}.
+Indirizzo: ${indirizzo}, ${citta ?? "Bergamo"}.
+${comfortLine}`.trim();
+
+    const currentYear = new Date().getFullYear();
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -38,7 +44,7 @@ Range di prezzo: €${stima_minima} – €${stima_massima}.`;
           {
             role: "system",
             content:
-              "Sei un esperto copywriter immobiliare per l'agenzia 'Il Tuo Immobiliare'. Analizza i dati forniti e restituisci SOLO un oggetto JSON valido con due chiavi: 'descrizione_zona' (un paragrafo sui punti di forza della zona, trasporti, servizi) e 'razionale_valutazione' (un testo persuasivo e professionale che giustifica il range di prezzo in base a condizioni, tipologia e metratura). Non usare formattazione markdown fuori dal JSON.",
+              `Sei un esperto valutatore immobiliare per l'agenzia "Il Tuo Immobiliare" di Ranica (BG). Analizza i dati forniti e restituisci SOLO un oggetto JSON valido con queste chiavi:\n- "descrizione_zona": paragrafo sui punti di forza della zona, trasporti, servizi\n- "razionale_valutazione": testo professionale che giustifica il range di prezzo\n- "stima_min": numero intero (prezzo minimo consigliato in €, basato su metratura, stato e zona)\n- "stima_max": numero intero (prezzo massimo consigliato in €)\n- "trend_prezzi": array di oggetti {anno, prezzo_mq} dal 2018 all'anno ${currentYear}, rappresentando l'andamento realistico del prezzo al m² nella zona dell'immobile. Usa dati plausibili per la provincia di Bergamo / zona specificata.\nNon usare formattazione markdown fuori dal JSON.`,
           },
           {
             role: "user",
