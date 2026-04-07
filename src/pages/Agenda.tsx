@@ -168,6 +168,14 @@ const AgentDayColumn = memo(({
                     minHeight: 28,
                   }}
                 >
+                  {/* Agent initials badge */}
+                  <span
+                    className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black text-white shrink-0"
+                    style={{ backgroundColor: agentColor }}
+                  >
+                    {getAgentInitials(agent)}
+                  </span>
+
                   {/* Time + tipologia */}
                   <p
                     className="text-[10px] font-bold leading-tight truncate"

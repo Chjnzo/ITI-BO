@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, LogOut, CalendarDays, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator } from 'lucide-react';
+import { Home, MessageSquare, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -38,7 +38,6 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
     { icon: MessageSquare, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
-    { icon: CalendarDays, label: 'Open House', path: '/open-houses' },
   ];
 
   const SidebarContent = ({ collapsed = false, onToggle }: { collapsed?: boolean; onToggle?: () => void }) => (

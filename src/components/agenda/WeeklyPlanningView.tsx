@@ -241,8 +241,8 @@ const DayColumn = memo(({
                 )}
                 {/* Agent initials badge */}
                 <span
-                  className="absolute bottom-0.5 right-1 text-[7px] font-black opacity-60"
-                  style={{ color: agentColor }}
+                  className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black text-white shrink-0"
+                  style={{ backgroundColor: agentColor }}
                 >
                   {initials}
                 </span>
