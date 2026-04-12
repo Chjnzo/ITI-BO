@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -33,6 +34,14 @@ const COMFORT_OPTIONS = [
 
 const STEP_LABELS = ['Lead', 'Immobile', 'Comfort', 'Stima & AI'];
 
+const LOADING_MESSAGES = [
+  "L'intelligenza artificiale sta analizzando i dati OMI e i comparabili di zona...",
+  'Geocodifica indirizzo in corso...',
+  'Elaborazione dei dati tecnici...',
+  'Generazione stima professionale...',
+  'Redazione del razionale...',
+];
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ComfortKey = typeof COMFORT_OPTIONS[number]['key'];
@@ -46,10 +55,15 @@ interface ValuationWizardProps {
 }
 
 const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiGenerated, setAiGenerated] = useState(false);
+
+  // Persisted draft after AI generation
+  const [valutazioneId, setValutazioneId] = useState<string | null>(null);
+  const [valutazioneSlug, setValutazioneSlug] = useState<string | null>(null);
 
   // Step 1 — Lead
   const [leadId, setLeadId] = useState('');
@@ -82,7 +96,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
   const [stimaMin, setStimaMin] = useState('');
   const [stimaMax, setStimaMax] = useState('');
   const [motivazioneAi, setMotivazioneAi] = useState('');
-  const [trendPrezzi, setTrendPrezzi] = useState('');
   const [loadingMsg, setLoadingMsg] = useState('');
   const [showPriceOverride, setShowPriceOverride] = useState(false);
 
@@ -93,6 +106,8 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     setLeadId('');
     setLeadItems([]);
     setAiGenerated(false);
+    setValutazioneId(null);
+    setValutazioneSlug(null);
     setIndirizzo('');
     setCitta('Ranica');
     setSuperficieMq('');
@@ -108,7 +123,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     setStimaMin('');
     setStimaMax('');
     setMotivazioneAi('');
-    setTrendPrezzi('');
     setLoadingMsg('');
     setShowPriceOverride(false);
 
@@ -141,53 +155,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     setStep(3);
   };
 
-  const LOADING_MESSAGES = [
-    'Analisi della zona in corso...',
-    'Elaborazione dei dati tecnici...',
-    'Generazione stima professionale...',
-    'Redazione del razionale...',
-  ];
-
-  const handleGenerateAI = async () => {
-    setIsGenerating(true);
-    setLoadingMsg(LOADING_MESSAGES[0]);
-    let msgIdx = 0;
-    const interval = setInterval(() => {
-      msgIdx = (msgIdx + 1) % LOADING_MESSAGES.length;
-      setLoadingMsg(LOADING_MESSAGES[msgIdx]);
-    }, 1800);
-    try {
-      const activeComfort = Object.entries(comfort)
-        .filter(([, v]) => v)
-        .map(([k]) => COMFORT_OPTIONS.find(c => c.key === k)?.label ?? k);
-      const { data, error } = await supabase.functions.invoke('generate-evaluation', {
-        body: {
-          indirizzo,
-          citta,
-          metri_quadri: Number(superficieMq),
-          tipologia: tipologia || undefined,
-          condizioni: statoConservativo || undefined,
-          comfort: activeComfort.length > 0 ? activeComfort : undefined,
-        },
-      });
-      if (error) throw error;
-      const parts: string[] = [];
-      if (data.descrizione_zona) parts.push(data.descrizione_zona);
-      if (data.razionale_valutazione) parts.push(data.razionale_valutazione);
-      setMotivazioneAi(parts.join('\n\n'));
-      if (data.stima_min) setStimaMin(String(data.stima_min));
-      if (data.stima_max) setStimaMax(String(data.stima_max));
-      if (data.trend_prezzi) setTrendPrezzi(JSON.stringify(data.trend_prezzi));
-      setAiGenerated(true);
-    } catch {
-      showError('Errore durante la generazione AI. Riprova.');
-    } finally {
-      clearInterval(interval);
-      setLoadingMsg('');
-      setIsGenerating(false);
-    }
-  };
-
   const generateSlug = (addr: string): string => {
     const base = addr
       .toLowerCase()
@@ -200,43 +167,143 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     return `${base}-${uid}`;
   };
 
+  const buildDraftPayload = () => ({
+    lead_id: leadId || null,
+    agente_id: agenteId || null,
+    indirizzo: indirizzo.trim(),
+    citta: citta.trim() || 'Ranica',
+    tipologia: tipologia || null,
+    superficie_mq: Number(superficieMq),
+    stato_conservativo: statoConservativo || null,
+    num_locali: numLocali ? Number(numLocali) : null,
+    piano: piano || null,
+    num_bagni: numBagni ? Number(numBagni) : null,
+    anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
+    classe_energetica: classeEnergetica || null,
+    ha_box: comfort.ha_box,
+    ha_posto_auto: comfort.ha_posto_auto,
+    ha_cantina: comfort.ha_cantina,
+    ha_giardino: comfort.ha_giardino,
+    ascensore: comfort.ascensore,
+    note_tecniche: noteTecniche.trim() || null,
+  });
+
+  // ── AI Generation ──────────────────────────────────────────────────────────
+
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    setLoadingMsg(LOADING_MESSAGES[0]);
+    let msgIdx = 0;
+    const interval = setInterval(() => {
+      msgIdx = (msgIdx + 1) % LOADING_MESSAGES.length;
+      setLoadingMsg(LOADING_MESSAGES[msgIdx]);
+    }, 2000);
+
+    try {
+      // 1. Create the draft record if not already created
+      let recordId = valutazioneId;
+      let recordSlug = valutazioneSlug;
+
+      if (!recordId) {
+        const slug = generateSlug(indirizzo);
+        const { data: inserted, error: insertError } = await supabase
+          .from('valutazioni')
+          .insert([{ ...buildDraftPayload(), stato: 'Bozza', slug }])
+          .select('id, slug')
+          .single();
+
+        if (insertError) throw new Error('Errore creazione bozza: ' + insertError.message);
+        recordId = inserted!.id;
+        recordSlug = inserted!.slug;
+        setValutazioneId(recordId);
+        setValutazioneSlug(recordSlug);
+      }
+
+      // 2. Check session before calling the edge function (verify_jwt: true requires a valid JWT)
+      const { data: sessionData } = await supabase.auth.getSession();
+      console.log('[ValuationWizard] session before invoke:', sessionData?.session?.access_token ? 'present' : 'MISSING');
+      if (!sessionData?.session) {
+        throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
+      }
+
+      // 3. Call edge function — it geocodes, fetches OMI + comparabili, runs AI, updates the record
+      const { data, error } = await supabase.functions.invoke('generate-evaluation', {
+        body: {
+          valutazione_id: recordId,
+          indirizzo: indirizzo.trim(),
+          citta: citta.trim() || 'Ranica',
+          superficie_mq: Number(superficieMq),
+          tipologia: tipologia || undefined,
+          stato_conservativo: statoConservativo || undefined,
+          piano: piano || null,
+          ascensore: comfort.ascensore,
+          ha_giardino: comfort.ha_giardino,
+          ha_box: comfort.ha_box,
+          ha_posto_auto: comfort.ha_posto_auto,
+          ha_cantina: comfort.ha_cantina,
+          num_locali: numLocali ? Number(numLocali) : null,
+          num_bagni: numBagni ? Number(numBagni) : null,
+          anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
+          classe_energetica: classeEnergetica || null,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error ?? 'Errore generazione AI');
+
+      // 4. Populate UI from the updated valutazione record
+      const v = data.valutazione;
+      if (v?.stima_min != null) setStimaMin(String(v.stima_min));
+      if (v?.stima_max != null) setStimaMax(String(v.stima_max));
+      if (v?.motivazione_ai) setMotivazioneAi(v.motivazione_ai);
+      setAiGenerated(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Errore generazione AI';
+      showError(msg);
+    } finally {
+      clearInterval(interval);
+      setLoadingMsg('');
+      setIsGenerating(false);
+    }
+  };
+
+  // ── Save ───────────────────────────────────────────────────────────────────
+
   const handleSave = async () => {
     setIsSaving(true);
-    const slug = generateSlug(indirizzo);
-    const { data: inserted, error } = await supabase
-      .from('valutazioni')
-      .insert([{
-        lead_id: leadId || null,
-        agente_id: agenteId || null,
-        indirizzo: indirizzo.trim(),
-        citta: citta.trim() || 'Ranica',
-        tipologia: tipologia || null,
-        superficie_mq: Number(superficieMq),
-        stato_conservativo: statoConservativo || null,
-        num_locali: numLocali ? Number(numLocali) : null,
-        piano: piano ? Number(piano) : null,
-        num_bagni: numBagni ? Number(numBagni) : null,
-        anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
-        classe_energetica: classeEnergetica || null,
-        ha_box: comfort.ha_box,
-        ha_posto_auto: comfort.ha_posto_auto,
-        ha_cantina: comfort.ha_cantina,
-        ha_giardino: comfort.ha_giardino,
-        ascensore: comfort.ascensore,
-        note_tecniche: noteTecniche.trim() || null,
-        stima_min: stimaMin ? Number(stimaMin) : null,
-        stima_max: stimaMax ? Number(stimaMax) : null,
-        motivazione_ai: motivazioneAi.trim() || null,
-        trend_mercato_locale: trendPrezzi || null,
-        stato: 'Bozza',
-        slug,
-      }])
-      .select('slug')
-      .single();
-    setIsSaving(false);
-    if (error) {
-      showError('Errore salvataggio: ' + error.message);
-    } else {
+    try {
+      let slug = valutazioneSlug;
+
+      if (!valutazioneId) {
+        // AI was skipped — do a plain insert
+        const newSlug = generateSlug(indirizzo);
+        const { data: inserted, error } = await supabase
+          .from('valutazioni')
+          .insert([{
+            ...buildDraftPayload(),
+            stima_min: stimaMin ? Number(stimaMin) : null,
+            stima_max: stimaMax ? Number(stimaMax) : null,
+            motivazione_ai: motivazioneAi.trim() || null,
+            stato: 'Bozza',
+            slug: newSlug,
+          }])
+          .select('slug')
+          .single();
+
+        if (error) throw new Error(error.message);
+        slug = inserted?.slug ?? null;
+      } else if (showPriceOverride) {
+        // User manually edited stima after AI ran — persist overrides
+        await supabase
+          .from('valutazioni')
+          .update({
+            stima_min: stimaMin ? Number(stimaMin) : undefined,
+            stima_max: stimaMax ? Number(stimaMax) : undefined,
+            motivazione_ai: motivazioneAi.trim() || undefined,
+          })
+          .eq('id', valutazioneId);
+      }
+
       // CRM automation — fire and forget
       if (leadId) {
         supabase.from('leads').update({ stato_venditore: 'Valutazione fatta' }).eq('id', leadId);
@@ -245,12 +312,16 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
           testo: `Valutazione AI completata — ${indirizzo.trim()} (${superficieMq} m²). Stima: €${stimaMin}–€${stimaMax}.`,
         });
       }
+
       showSuccess('Valutazione salvata');
       onSaved();
       onClose();
-      if (inserted?.slug) {
-        window.open(`/report/${inserted.slug}`, '_blank');
-      }
+      if (slug) navigate(`/report/${slug}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Errore salvataggio';
+      showError('Errore salvataggio: ' + msg);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -288,7 +359,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+      <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
         <DialogHeader className="px-8 pt-8 pb-4 border-b border-slate-100">
           <DialogTitle className="text-xl font-bold text-gray-900">Nuova Valutazione</DialogTitle>
           <StepIndicator />
@@ -443,15 +514,17 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 className="w-full h-12 rounded-xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2"
               >
                 <Sparkles size={15} />
-                {isGenerating ? 'Generazione in corso...' : 'Genera con AI ✨'}
+                {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera con AI' : 'Genera con AI ✨'}
               </Button>
 
               {/* Animated loading message */}
               {isGenerating && loadingMsg && (
-                <p className="text-center text-xs text-[#94b0ab] animate-pulse">{loadingMsg}</p>
+                <p className="text-center text-xs text-[#94b0ab] animate-pulse leading-relaxed px-2">
+                  {loadingMsg}
+                </p>
               )}
 
-              {/* AI-filled price display + editable text */}
+              {/* AI result: price preview */}
               {aiGenerated && (
                 <>
                   {(stimaMin || stimaMax) && (
@@ -500,10 +573,10 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 </>
               )}
 
-              {/* Pre-generation: manual entry fallback (no AI yet) */}
+              {/* Pre-generation hint */}
               {!aiGenerated && !isGenerating && (
                 <p className="text-xs text-gray-400 text-center italic">
-                  Clicca "Genera con AI" per ottenere la stima e l'analisi automaticamente.
+                  Clicca "Genera con AI" per ottenere la stima basata su dati OMI e transazioni reali nella zona.
                 </p>
               )}
             </>
@@ -515,6 +588,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
           {step > 1 && (
             <Button type="button" variant="outline"
               onClick={() => setStep(s => s - 1)}
+              disabled={isGenerating}
               className="rounded-xl h-11 border-gray-200 gap-1"
             >
               <ChevronLeft size={15} /> Indietro
@@ -540,7 +614,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
             <Button
               type="button"
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isGenerating}
               className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-11 px-8 font-bold"
             >
               {isSaving ? 'Salvataggio...' : 'Salva Valutazione'}
