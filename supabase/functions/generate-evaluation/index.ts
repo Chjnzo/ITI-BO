@@ -76,25 +76,41 @@ function buildPrompt(params: {
   if (params.anno_costruzione) features.push(`Anno costruzione: ${params.anno_costruzione}`);
   if (params.classe_energetica) features.push(`Classe energetica: ${params.classe_energetica}`);
 
-  let omiBlock = "Prezzi OMI zona: non disponibili.";
+  let omiBlock = `[MODALITÀ ANALISI DI MERCATO GENERALE — DATI OMI NON DISPONIBILI]
+Nessun dato OMI ufficiale è disponibile per questa zona. NON inventare codici di zona OMI (es. "BG-C1", "BG-R2") né range di prezzo specifici. Basa la stima esclusivamente sulle tendenze generali del comune di ${params.citta} e sulle caratteristiche dell'immobile.`;
   if (params.zona_omi) {
-    omiBlock = `Prezzi OMI zona (${params.zona_omi.codice_zona} – ${params.zona_omi.fascia}):
-- Minimo: €${params.zona_omi.prezzo_mq_min}/mq
-- Medio: €${params.zona_omi.prezzo_mq_medio}/mq
-- Massimo: €${params.zona_omi.prezzo_mq_max}/mq`;
+    omiBlock = `Dati OMI ufficiali (Agenzia delle Entrate):
+- Codice zona: ${params.zona_omi.codice_zona}
+- Fascia: ${params.zona_omi.fascia}
+- Zona descrizione: ${params.zona_omi.zona}
+- Comune: ${params.zona_omi.comune} (${params.zona_omi.provincia})
+- Range prezzi/mq: €${params.zona_omi.prezzo_mq_min} – €${params.zona_omi.prezzo_mq_max} (medio: €${params.zona_omi.prezzo_mq_medio}/mq)
+IMPORTANTE: Cita esplicitamente il codice zona OMI "${params.zona_omi.codice_zona}" nella motivazione.`;
   }
 
-  let comparabiliBlock = "Transazioni comparabili: nessuna disponibile nella zona.";
+  let comparabiliBlock = `[ZERO TRANSAZIONI COMPARABILI DISPONIBILI]
+Non sono disponibili dati di compravendita recenti nel raggio di 1.5km. NON inventare indirizzi, vie o prezzi di transazione. Nella motivazione scrivi ESATTAMENTE: "Dati di compravendita locali non disponibili per questo micro-settore; la stima è basata su modelli statistici OMI e benchmark qualitativi de Il Tuo Immobiliare."
+NON scrivere frasi come "in via X sono stati registrati valori di Y €/mq" se via X non compare nell'elenco comparabili sopra.`;
   if (params.comparabili.length > 0) {
     const rows = params.comparabili
       .map((c) =>
-        `  - ${c.indirizzo} (${Math.round(c.distanza_metri)}m): ${c.mq}mq, €${c.prezzo_mq}/mq, chiuso il ${c.data_chiusura}`
+        `  - ${c.indirizzo} (${Math.round(c.distanza_metri)}m di distanza): ${c.mq}mq, prezzo totale €${c.prezzo_finale.toLocaleString("it-IT")}, €${c.prezzo_mq}/mq, ${c.num_locali} locali, rogitato il ${c.data_chiusura}`
       )
       .join("\n");
-    comparabiliBlock = `Transazioni comparabili nelle vicinanze (raggio 1.5km):\n${rows}`;
+    comparabiliBlock = `Transazioni comparabili nelle vicinanze (raggio 1.5km, ${params.comparabili.length} rilevate):\n${rows}`;
   }
 
-  return `Immobile da valutare:
+  const dataMode = params.zona_omi && params.comparabili.length > 0
+    ? "MODALITÀ COMPLETA (dati OMI + comparabili disponibili)"
+    : params.zona_omi
+    ? "MODALITÀ PARZIALE (solo dati OMI, nessun comparabile)"
+    : params.comparabili.length > 0
+    ? "MODALITÀ PARZIALE (solo comparabili, nessun dato OMI)"
+    : "MODALITÀ ANALISI GENERALE (né OMI né comparabili — applica politica Verità o Silenzio)";
+
+  return `[${dataMode}]
+
+Immobile da valutare:
 - Tipo: ${params.tipologia}
 - Indirizzo: ${params.indirizzo}, ${params.citta}
 - Superficie: ${params.superficie_mq} mq
@@ -168,33 +184,64 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceKey);
 
     // -----------------------------------------------------------------------
-    // 1. Geocode via Nominatim (inline)
+    // 1. Geocode via Nominatim (inline, with fallback)
     // -----------------------------------------------------------------------
-    const address = `${indirizzo.trim()}, ${citta.trim()}`;
-    console.log("Geocoding:", address);
 
-    const nominatimParams = new URLSearchParams({ format: "json", limit: "1", addressdetails: "1", q: address });
-    const nominatimRes = await fetch(`https://nominatim.openstreetmap.org/search?${nominatimParams}`, {
-      headers: {
-        "User-Agent": "IlTuoImmobiliare-App/1.0 (info@iltuoimmobiliare.it)",
-        "Accept-Language": "it",
-      },
-    });
+    // Build a list of query candidates to try in order.
+    // Some users type neighborhoods/frazioni as the city (e.g. "Redona, Bergamo").
+    // We extract the last comma-separated token as the "main city" for the fallback.
+    const cittaRaw = citta.trim();
+    const cittaTokens = cittaRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
+    // "main" city = last token (e.g. "Bergamo" from "Redona, Bergamo")
+    const cittaMain = cittaTokens[cittaTokens.length - 1];
 
-    if (!nominatimRes.ok) {
-      console.error("Nominatim HTTP error:", nominatimRes.status);
-      return json({ error: "Nominatim non disponibile.", success: false }, 502);
+    const geocodeQueries: string[] = [];
+    // Attempt 1: full address + full city
+    geocodeQueries.push(`${indirizzo.trim()}, ${cittaRaw}`);
+    // Attempt 2: full address + main city only (drops neighborhood prefix)
+    if (cittaMain !== cittaRaw) {
+      geocodeQueries.push(`${indirizzo.trim()}, ${cittaMain}`);
+    }
+    // Attempt 3: street only + main city (drops civic number, helps with malformed numbers)
+    const indirizzoStreet = indirizzo.trim().replace(/\s+\d+[A-Za-z]?\s*$/, "").trim();
+    if (indirizzoStreet !== indirizzo.trim()) {
+      geocodeQueries.push(`${indirizzoStreet}, ${cittaMain}`);
     }
 
-    const nominatimResults = await nominatimRes.json();
-    console.log("Nominatim results count:", nominatimResults?.length ?? 0);
+    const nominatimFetch = async (q: string): Promise<{ lat: number; lng: number } | null> => {
+      const params = new URLSearchParams({ format: "json", limit: "1", addressdetails: "1", q });
+      const url = `https://nominatim.openstreetmap.org/search?${params}`;
+      console.log("Nominatim URL:", url);
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "IlTuoImmobiliare-App/1.0 (info@iltuoimmobiliare.it)",
+          "Accept-Language": "it",
+        },
+      });
+      if (!res.ok) {
+        console.error("Nominatim HTTP error:", res.status);
+        return null;
+      }
+      const results = await res.json();
+      console.log(`Nominatim results for "${q}":`, results?.length ?? 0);
+      if (!Array.isArray(results) || results.length === 0) return null;
+      return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+    };
 
-    if (!Array.isArray(nominatimResults) || nominatimResults.length === 0) {
-      return json({ error: "Nessun risultato geocoding per l'indirizzo fornito.", success: false }, 422);
+    let geoCoords: { lat: number; lng: number } | null = null;
+    for (const q of geocodeQueries) {
+      geoCoords = await nominatimFetch(q);
+      if (geoCoords) break;
     }
 
-    const lat = parseFloat(nominatimResults[0].lat);
-    const lng = parseFloat(nominatimResults[0].lon);
+    if (!geoCoords) {
+      return json({
+        error: `Nessun risultato geocoding per: "${indirizzo}, ${cittaRaw}". Controlla l'indirizzo.`,
+        success: false,
+      }, 422);
+    }
+
+    const { lat, lng } = geoCoords;
     console.log("Geocoded coords:", lat, lng);
 
     // -----------------------------------------------------------------------
@@ -251,13 +298,22 @@ Deno.serve(async (req) => {
     const comparabili: Comparabile[] = comparabiliRaw ?? [];
     console.log("Comparabili found:", comparabili.length);
 
+    if (!zona_omi && comparabili.length === 0) {
+      console.warn(`[MISSING_DATA_ALERT] No OMI or Comparables for: ${citta}, ${indirizzo}`);
+    } else if (!zona_omi) {
+      console.warn(`[MISSING_DATA_ALERT] No OMI zone for: ${citta}, ${indirizzo}`);
+    } else if (comparabili.length === 0) {
+      console.warn(`[MISSING_DATA_ALERT] No comparables for: ${citta}, ${indirizzo}`);
+    }
+
     // -----------------------------------------------------------------------
     // 4. Build prompt and call OpenAI
     // -----------------------------------------------------------------------
     const currentYear = new Date().getFullYear();
 
-    const systemPrompt = `Sei un esperto valutatore immobiliare certificato per il mercato italiano, specializzato nella provincia di Bergamo.
-Analizza i dati forniti (caratteristiche immobile, prezzi OMI ufficiali, transazioni reali comparabili) e restituisci ESCLUSIVAMENTE un oggetto JSON valido con queste chiavi:
+    const systemPrompt = `Sei il Direttore Tecnico di "Il Tuo Immobiliare", agenzia immobiliare specializzata nella provincia di Bergamo. Il tuo tono è autorevole, analitico e radicato nella conoscenza del mercato locale bergamasco. Hai accesso a dati OMI ufficiali e a transazioni reali comparabili.
+
+Analizza i dati forniti e restituisci ESCLUSIVAMENTE un oggetto JSON valido con queste chiavi:
 
 - "stima_min": intero — prezzo minimo consigliato in €
 - "stima_max": intero — prezzo massimo consigliato in €
@@ -265,27 +321,57 @@ Analizza i dati forniti (caratteristiche immobile, prezzi OMI ufficiali, transaz
   {
     "prezzo_mq_base": 2200,
     "fattori": [
-      { "nome": "Piano alto senza ascensore", "delta_percentuale": -8, "nota": "Penalizza l'accessibilità" },
-      { "nome": "Giardino privato", "delta_percentuale": 5, "nota": "Plus raro nella zona" }
+      { "nome": "Piano alto senza ascensore", "delta_percentuale": -8, "nota": "Penalizza l'accessibilità, fattore critico per famiglie con bambini e over 60 nel mercato bergamasco" },
+      { "nome": "Giardino privato", "delta_percentuale": 6, "nota": "Plus raro e molto ricercato nell'area, post-2020 la domanda di spazi esterni è aumentata del 35%" }
     ],
     "prezzo_mq_finale": 2074,
     "stima_calcolata": 124440
   }
-- "motivazione_ai": testo professionale in italiano (3-5 paragrafi) che giustifica la stima, descrive la zona, cita i comparabili utilizzati e l'andamento del mercato.
-- "trend_mercato_locale": array di oggetti {anno, prezzo_mq} dal 2018 al ${currentYear}, con valori realistici per la zona indicata.
+- "motivazione_ai": testo professionale in italiano strutturato in ESATTAMENTE 3 paragrafi separati da \\n\\n:
+  PARAGRAFO 1 — CONTESTO: Analisi approfondita della micro-zona e del trend di mercato locale. Se disponibile, cita il codice zona OMI e il range ufficiale prezzo/mq. NON scrivere frasi generiche come "la zona è ben servita": cita dati concreti (prezzi OMI, fascia, andamento storico). Se i comparabili sono presenti, riporta i valori medi di transazione reali.
+  PARAGRAFO 2 — ANALISI TECNICA: Spiega PERCHÉ hai applicato ciascun fattore correttivo specifico, collegandolo alle preferenze degli acquirenti bergamaschi. Ad esempio: ascensore assente al piano alto impatta sulla fascia d'acquirenti anziani o famiglie; giardino privato è raro e valorizzato post-pandemia; stato conservativo "da ristrutturare" può aprire a investitori ma riduce la platea di acquirenti finali. Sii specifico e tecnico.
+  PARAGRAFO 3 — CONCLUSIONE STRATEGICA: Consiglio operativo sul range di prezzo per attrarre acquirenti seri nel mercato attuale. Indica se il mercato locale è in fase espansiva, stabile o contrattiva. Se mancano comparabili, dichiaralo esplicitamente specificando che la stima si basa sui modelli statistici OMI e sugli standard valutativi de "Il Tuo Immobiliare".
+- "trend_mercato_locale": array di oggetti {anno, prezzo_mq} dal 2018 al ${currentYear}, con valori realistici e coerenti per la zona OMI indicata.
 
-Regole sui fattori correttivi:
-- Piano terra (senza giardino): -5%
-- Piano alto (>3) con ascensore: +5%
-- Piano alto senza ascensore: -8%
-- Giardino privato: +5%/+8%
-- Box auto: +3%
-- Stato "da ristrutturare": -15%/−20%
-- Stato "ottimo/ristrutturato": +10%/+15%
-- Classe energetica A/B: +5%
-- Classe energetica G: -5%
+Regole sui fattori correttivi — LEGGI CON ATTENZIONE:
+A. Includi ESCLUSIVAMENTE i fattori che modificano effettivamente il prezzo (delta_percentuale != 0).
+B. NON includere MAI un fattore con delta_percentuale uguale a 0.
+C. NON includere un fattore se la caratteristica è assente o neutra per questo immobile.
+   NON restituire MAI righe con "Non applicabile", "N/A", "Nessuno" o valori neutri. Se non hai nulla di rilevante da dire su un aspetto, semplicemente non includerlo nell'array. Esempi:
+   - Se non c'è giardino → non includere "Giardino"
+   - Se il piano è intermedio e non penalizzante → non includere un fattore piano
+   - Se la classe energetica è C (nella media) → non includere un fattore energetico
+D. Il campo "nome" deve essere SPECIFICO per questo immobile, mai generico. Esempi:
+   - NON scrivere: "Ascensore"
+   - SCRIVI invece: "Ascensore presente in edificio anni '70" oppure "Ascensore assente — penalizza l'accesso al piano 5"
+   - NON scrivere: "Giardino privato di [dimensione]mq" se la dimensione NON è nei dati forniti
+   - SCRIVI invece: "Presenza di area verde ad uso esclusivo" (termine qualitativo) quando la dimensione è sconosciuta
+   - NON assumere MAI dimensioni, esposizioni o caratteristiche non esplicitamente fornite nel prompt
+E. Il campo "nota" deve spiegare l'impatto concreto sul mercato bergamasco (acquirenti target, rarità, domanda post-pandemia, ecc.).
+F. I range orientativi (usa il valore preciso più adatto al caso specifico):
+   - Piano terra senza giardino: -5%
+   - Piano alto (>3) con ascensore: +4% a +6%
+   - Piano alto (>3) senza ascensore: -7% a -10%
+   - Giardino privato: +5% a +10% (in base a dimensioni e esposizione)
+   - Box auto: +3% a +4%
+   - Posto auto scoperto: +1% a +2%
+   - Cantina: +1%
+   - Stato "da ristrutturare": -15% a -20%
+   - Stato "ottimo" o "ristrutturato": +10% a +15%
+   - Classe energetica A o B: +5%
+   - Classe energetica G: -5%
+   - Anno di costruzione ante 1960 senza ristrutturazione: -3% a -5%
 
-Non usare markdown. Rispondi solo con il JSON.`;
+REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
+1. GROUNDING TOTALE: usa SOLO i dati forniti esplicitamente in questo prompt. Non aggiungere nulla che non sia presente nell'input.
+2. ZERO ALLUCINAZIONI SU COMPARABILI: se la lista comparabili è vuota, NON inventare indirizzi di strade, prezzi/mq o descrizioni di transazioni. Usa la frase esatta: "Dati di compravendita locali non disponibili per questo micro-settore."
+3. ZERO ALLUCINAZIONI SU OMI: se i dati OMI non sono presenti, NON inventare codici zona (es. "BG-C1"), né range di prezzo specifici. Entra in "Modalità Analisi di Mercato Generale" basata solo sulle tendenze comunali.
+4. DIMENSIONI SCONOSCIUTE: se una caratteristica è presente (es. giardino = true) ma la dimensione non è fornita, usa SOLO termini qualitativi ("presenza di area verde") — MAI assumere dimensioni.
+5. Non usare frasi generiche come "la zona è ben servita dai trasporti" senza dati a supporto.
+6. Se i comparabili sono presenti, DEVI citare almeno uno specifico (via e prezzo/mq) nella motivazione.
+7. Se i dati OMI sono presenti, DEVI citare il codice zona nella motivazione.
+8. Non usare markdown. Rispondi solo con il JSON.
+9. L'array "fattori" NON deve mai contenere oggetti con delta_percentuale = 0. Se non ci sono fattori rilevanti, restituisci un array vuoto.`;
 
     const userPrompt = buildPrompt({
       indirizzo, citta, superficie_mq, tipologia, stato_conservativo,
