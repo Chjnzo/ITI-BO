@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Check, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Check, Sparkles, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -45,6 +45,47 @@ const LOADING_MESSAGES = [
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ComfortKey = typeof COMFORT_OPTIONS[number]['key'];
+
+// ── Numeric Stepper ───────────────────────────────────────────────────────────
+
+const NumericStepper = ({
+  value,
+  onChange,
+  min = 0,
+  max = 30,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  min?: number;
+  max?: number;
+}) => {
+  const num = value === '' ? min : parseInt(value, 10);
+  const decrement = () => { if (num > min) onChange(String(num - 1)); };
+  const increment = () => { if (num < max) onChange(String(num + 1)); };
+  return (
+    <div className="flex items-center h-12 rounded-xl border border-slate-100 bg-white overflow-hidden">
+      <button
+        type="button"
+        onClick={decrement}
+        disabled={num <= min}
+        className="w-12 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-r border-slate-100"
+      >
+        <Minus size={14} />
+      </button>
+      <span className="flex-1 text-center text-base font-bold text-gray-800 tabular-nums select-none">
+        {value === '' ? '—' : num}
+      </span>
+      <button
+        type="button"
+        onClick={increment}
+        disabled={num >= max}
+        className="w-12 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-l border-slate-100"
+      >
+        <Plus size={14} />
+      </button>
+    </div>
+  );
+};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -404,8 +445,15 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Superficie m² *</Label>
-                  <Input type="number" value={superficieMq} onChange={e => setSuperficieMq(e.target.value)}
-                    placeholder="80" className="h-12 rounded-xl border-slate-100" />
+                  <Input
+                    type="number"
+                    min={1}
+                    value={superficieMq}
+                    onChange={e => { const v = e.target.value; if (v === '' || Number(v) > 0) setSuperficieMq(v); }}
+                    onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                    placeholder="80"
+                    className="h-12 rounded-xl border-slate-100"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Tipologia</Label>
@@ -431,18 +479,15 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">N° locali</Label>
-                  <Input type="number" value={numLocali} onChange={e => setNumLocali(e.target.value)}
-                    placeholder="3" className="h-12 rounded-xl border-slate-100" />
+                  <NumericStepper value={numLocali} onChange={setNumLocali} min={1} max={10} />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Piano</Label>
-                  <Input type="number" value={piano} onChange={e => setPiano(e.target.value)}
-                    placeholder="2" className="h-12 rounded-xl border-slate-100" />
+                  <NumericStepper value={piano} onChange={setPiano} min={0} max={30} />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">N° bagni</Label>
-                  <Input type="number" value={numBagni} onChange={e => setNumBagni(e.target.value)}
-                    placeholder="1" className="h-12 rounded-xl border-slate-100" />
+                  <NumericStepper value={numBagni} onChange={setNumBagni} min={1} max={5} />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Anno costruzione</Label>
