@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
@@ -85,7 +86,7 @@ const Properties = () => {
   useEffect(() => { setCurrentPage(1); }, [filter, searchQuery]);
 
   const formatPrice = (price: number) => {
-    if (!price) return 'N/D';
+    if (!price) return 'Su richiesta';
     return new Intl.NumberFormat('it-IT', {
       style: 'currency',
       currency: 'EUR',
@@ -348,16 +349,26 @@ const Properties = () => {
       </div>
 
       <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
-        <DialogContent className="max-w-4xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
+        <DialogContent
+          className="max-w-5xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]"
+          hideDefaultClose
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={fetchProperties} />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!ohProperty} onOpenChange={(open) => !open && setOhProperty(null)}>
-        <DialogContent className="max-w-3xl h-[80vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]">
-          {ohProperty && <OpenHouseManager property={ohProperty} onClose={() => setOhProperty(null)} />}
-        </DialogContent>
-      </Dialog>
+      <Sheet open={!!ohProperty} onOpenChange={(open) => !open && setOhProperty(null)}>
+        <SheetContent
+          side="right"
+          className="p-0 w-full sm:max-w-[640px] flex flex-col overflow-hidden [&>button]:hidden"
+        >
+          {ohProperty && (
+            <OpenHouseManager property={ohProperty} onClose={() => setOhProperty(null)} />
+          )}
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
         <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">

@@ -160,7 +160,7 @@ const EventFormModal = ({
       setOraFine(addOneHour(initStart));
       setNote('');
     }
-  }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, agents]);
+  }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
 
   const searchLeads = async (q: string) => {
     if (!q.trim()) { setLeadItems([]); return; }
