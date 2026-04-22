@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { showError } from '@/utils/toast';
@@ -285,6 +286,9 @@ const ValuazioneReport = () => {
 
   return (
     <div className="min-h-screen bg-[#f5f5f0]" style={{ fontFamily: "'Inter', 'Geist', sans-serif" }}>
+      <Helmet>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
 
       {/* ── Sticky top bar ─────────────────────────────────────────────────── */}
       <div className="bg-white/95 backdrop-blur-sm border-b border-gray-100 px-5 py-3.5 flex items-center justify-between sticky top-0 z-20">

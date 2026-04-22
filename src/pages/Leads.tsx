@@ -93,25 +93,14 @@ const Leads = () => {
   const [propertySearch, setPropertySearch] = useState('');
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
 
-  // Zones from DB
-  const [dbZones, setDbZones] = useState<{ id: string; nome: string }[]>([]);
-
-  // Zone di interesse — stores zone UUIDs (id), not display names
-  const [selectedZoneInteresse, setSelectedZoneInteresse] = useState<string[]>([]);
-  const [zoneSearch, setZoneSearch] = useState('');
-  const [zoneAccordionOpen, setZoneAccordionOpen] = useState(false);
-  const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
-
   // Autosave
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<{ lead: any; zones: string[] } | null>(null);
+  const pendingSaveRef = useRef<any | null>(null);
   const hasInteractedRef = useRef(false);
 
-  // Auto-match results for Acquirente/Ibrido
-  const [matchedProperties, setMatchedProperties] = useState<any[]>([]);
-  const [isLoadingMatches, setIsLoadingMatches] = useState(false);
+  const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
 
   // Notes / Storico State
   const [leadNotes, setLeadNotes] = useState<any[]>([]);
@@ -129,6 +118,7 @@ const Leads = () => {
   // Event Form Modal (for quick "Nuovo evento" from list)
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [eventModalDefaultLeadId, setEventModalDefaultLeadId] = useState<string | undefined>(undefined);
+  const [eventModalDefaultLeadName, setEventModalDefaultLeadName] = useState<string | undefined>(undefined);
   const [agentsForEventModal, setAgentsForEventModal] = useState<any[]>([]);
   const [propertiesForEventModal, setPropertiesForEventModal] = useState<any[]>([]);
 
@@ -168,12 +158,11 @@ const Leads = () => {
       .from('leads')
       .select(`
         *,
-        immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url, zone(nome)),
+        immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url),
         lead_immobili(
           id, stato_interesse, note, created_at,
-          immobili(id, titolo, prezzo, copertina_url, zone(nome))
-        ),
-        lead_zone_ricercate(zona_id)
+          immobili(id, titolo, prezzo, copertina_url)
+        )
       `)
       .eq('id', leadId)
       .single();
@@ -238,15 +227,6 @@ const Leads = () => {
   useEffect(() => {
     fetchLeads();
   }, [fetchLeads]);
-
-  // Fetch the real zones from the database once on mount
-  useEffect(() => {
-    supabase
-      .from('zone')
-      .select('id, nome')
-      .order('nome')
-      .then(({ data }) => { if (data) setDbZones(data); });
-  }, []);
 
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
@@ -314,16 +294,6 @@ const Leads = () => {
     } else {
       const { error } = await supabase.from('leads').update(payload).eq('id', selectedLead.id);
 
-      // Sync lead_zone_ricercate for Acquirente / Ibrido
-      if (!error && (selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido')) {
-        await supabase.from('lead_zone_ricercate').delete().eq('lead_id', selectedLead.id);
-        if (selectedZoneInteresse.length > 0) {
-          await supabase.from('lead_zone_ricercate').insert(
-            selectedZoneInteresse.map(zona_id => ({ lead_id: selectedLead.id, zona_id }))
-          );
-        }
-      }
-
       if (error) {
         showError("Errore nel salvataggio");
       } else {
@@ -343,7 +313,7 @@ const Leads = () => {
   };
 
   // Autosave — only fires in edit mode after the user has interacted
-  const performAutoSave = useCallback(async (lead: any, zones: string[]) => {
+  const performAutoSave = useCallback(async (lead: any) => {
     if (!lead?.id || !lead.nome?.trim() || !lead.cognome?.trim()) return;
     setAutoSaveStatus('saving');
     const payload = {
@@ -359,16 +329,9 @@ const Leads = () => {
       scadenza_esclusiva: lead.scadenza_esclusiva || null,
       motivazione_vendita: lead.motivazione_vendita || null,
       note_interne: lead.note_interne || null,
-      zona_venditore: lead.zona_venditore || null,
       stato_venditore: lead.stato_venditore || 'Nuovo',
     };
     const { error } = await supabase.from('leads').update(payload).eq('id', lead.id);
-    if (!error && (lead.tipo_cliente === 'Acquirente' || lead.tipo_cliente === 'Ibrido')) {
-      await supabase.from('lead_zone_ricercate').delete().eq('lead_id', lead.id);
-      if (zones.length > 0) {
-        await supabase.from('lead_zone_ricercate').insert(zones.map(zona_id => ({ lead_id: lead.id, zona_id })));
-      }
-    }
     if (error) {
       setAutoSaveStatus('error');
     } else {
@@ -382,15 +345,14 @@ const Leads = () => {
   useEffect(() => {
     if (!selectedLead?.id || !hasInteractedRef.current) return;
     if (!selectedLead.nome?.trim() || !selectedLead.cognome?.trim()) return;
-    pendingSaveRef.current = { lead: selectedLead, zones: selectedZoneInteresse };
+    pendingSaveRef.current = selectedLead;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       if (!pendingSaveRef.current) return;
-      const { lead, zones } = pendingSaveRef.current;
-      performAutoSave(lead, zones);
+      performAutoSave(pendingSaveRef.current);
     }, 1500);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedLead, selectedZoneInteresse, performAutoSave]);
+  }, [selectedLead, performAutoSave]);
 
   const handleUnlinkProperty = async (linkId: string) => {
     const { error } = await supabase.from('lead_immobili').delete().eq('id', linkId);
@@ -409,7 +371,7 @@ const Leads = () => {
     setIsLoadingProperties(true);
     const { data, error } = await supabase
       .from('immobili')
-      .select('id, titolo, prezzo, copertina_url, stato, zone(nome)')
+      .select('id, titolo, prezzo, copertina_url, stato')
       .neq('stato', 'Venduto')
       .order('created_at', { ascending: false });
     if (!error) setAllProperties(data || []);
@@ -440,21 +402,15 @@ const Leads = () => {
     fetchLeadDetail(selectedLead.id);
   };
 
-  // Sync zone selection with loaded detail data; reset interaction tracking on new lead
+  // Reset interaction tracking on new lead
   useEffect(() => {
     if (!selectedLead?.id) {
-      setSelectedZoneInteresse([]);
-      setMatchedProperties([]);
-      setZoneSearch('');
       hasInteractedRef.current = false;
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       setAutoSaveStatus('idle');
       return;
     }
-    if (selectedLead.lead_zone_ricercate) {
-      setSelectedZoneInteresse(selectedLead.lead_zone_ricercate.map((r: any) => r.zona_id));
-    }
-  }, [selectedLead?.id, selectedLead?.lead_zone_ricercate]);
+  }, [selectedLead?.id]);
 
   // Mark as "interacted" after detail finishes loading (so autosave ignores initial hydration)
   useEffect(() => {
@@ -533,6 +489,7 @@ const Leads = () => {
       setPropertiesForEventModal(props || []);
     }
     setEventModalDefaultLeadId(lead.id);
+    setEventModalDefaultLeadName(`${lead.nome} ${lead.cognome}`);
     setIsEventModalOpen(true);
   }, [agentsForEventModal.length]);
 
@@ -567,79 +524,12 @@ const Leads = () => {
     setIsSavingNote(false);
   };
 
-  // Auto-match: query immobili based on lead criteria
-  const fetchMatchedProperties = useCallback(async (opts: {
-    budget?: number | string | null;
-    tipologia?: string | null;
-    zoneIds?: string[];
-  }) => {
-    setIsLoadingMatches(true);
-
-    // Parse budget as number — form stores it as string
-    const budgetNum = opts.budget ? parseFloat(String(opts.budget)) : null;
-
-    // tipologia_ricerca is comma-separated (multi-select) — split into individual values
-    const tipologie = opts.tipologia
-      ? opts.tipologia.split(',').map(t => t.trim()).filter(Boolean)
-      : [];
-
-    console.log('[AutoMatch] criteria:', {
-      budget: budgetNum,
-      tipologie,
-      zoneIds: opts.zoneIds,
-    });
-
-    let query = supabase
-      .from('immobili')
-      .select('id, titolo, prezzo, copertina_url, locali, stato, zona_id, zone(id, nome)')
-      .neq('stato', 'Venduto');
-
-    if (budgetNum) query = query.lte('prezzo', budgetNum);
-
-    // OR across all selected tipologie — matched against the 'locali' column
-    if (tipologie.length === 1) {
-      query = query.ilike('locali', `%${tipologie[0]}%`);
-    } else if (tipologie.length > 1) {
-      query = query.or(tipologie.map(t => `locali.ilike.%${t}%`).join(','));
-    }
-
-    if (opts.zoneIds && opts.zoneIds.length > 0) query = query.in('zona_id', opts.zoneIds);
-
-    const { data, error } = await query.order('prezzo', { ascending: true }).limit(20);
-
-    console.log('[AutoMatch] results:', data?.length ?? 0, 'error:', error?.message ?? null);
-    if (data) {
-      data.forEach(p => {
-        const budgetOk = !budgetNum || p.prezzo <= budgetNum;
-        const tipoOk = tipologie.length === 0 || tipologie.some(t => p.locali?.toLowerCase().includes(t.toLowerCase()));
-        const zonaOk = !opts.zoneIds?.length || opts.zoneIds.includes(p.zona_id);
-        console.log(`  [${p.titolo}] prezzo=${p.prezzo} locali=${p.locali} zona_id=${p.zona_id} → budget:${budgetOk} tipo:${tipoOk} zona:${zonaOk}`);
-      });
-    }
-
-    if (!error) setMatchedProperties(data || []);
-    setIsLoadingMatches(false);
-  }, []);
-
-  // Run auto-match when lead detail finishes loading
-  useEffect(() => {
-    if (!selectedLead?.id || isLoadingDetail) return;
-    const isAcquirente = selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido';
-    if (!isAcquirente) { setMatchedProperties([]); return; }
-    const zoneIds = (selectedLead.lead_zone_ricercate || []).map((r: any) => r.zona_id);
-    fetchMatchedProperties({
-      budget: selectedLead.budget,
-      tipologia: selectedLead.tipologia_ricerca,
-      zoneIds,
-    });
-  }, [selectedLead?.id, isLoadingDetail, fetchMatchedProperties]);
 
   const filteredPickerProperties = useMemo(() => {
     const q = propertySearch.toLowerCase();
     if (!q) return allProperties;
     return allProperties.filter(p =>
-      p.titolo?.toLowerCase().includes(q) ||
-      p.zone?.nome?.toLowerCase().includes(q)
+      p.titolo?.toLowerCase().includes(q)
     );
   }, [allProperties, propertySearch]);
 
@@ -1037,93 +927,22 @@ const Leads = () => {
                             </div>
                           </div>
 
-                          {/* Row 2 — Tipologia + Zone side by side */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                            {/* Tipologia Ricercata — same Select as Zona Vendita */}
-                            <div className="space-y-2">
-                              <Label className="text-xs font-bold text-gray-500">Tipologia Ricercata</Label>
-                              <Select
-                                value={selectedLead.tipologia_ricerca || ''}
-                                onValueChange={(v) => setSelectedLead({...selectedLead, tipologia_ricerca: v})}
-                              >
-                                <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                                  <SelectValue placeholder="Seleziona..." />
-                                </SelectTrigger>
-                                <SelectContent className="rounded-xl">
-                                  {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
-                                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            {/* Zone di Interesse — floating dropdown matching Tipologia style */}
-                            <div className="space-y-2 relative">
-                              <Label className="text-xs font-bold text-gray-500">Zone di Interesse</Label>
-                              <button
-                                type="button"
-                                onClick={() => setZoneAccordionOpen(o => !o)}
-                                className="flex h-11 w-full items-center justify-between rounded-xl border border-gray-200 bg-slate-50/50 px-3 text-sm transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                              >
-                                <span className={cn("truncate", selectedZoneInteresse.length === 0 && "text-muted-foreground")}>
-                                  {selectedZoneInteresse.length === 0
-                                    ? "Seleziona zona..."
-                                    : selectedZoneInteresse.length === 1
-                                      ? dbZones.find(z => z.id === selectedZoneInteresse[0])?.nome ?? "1 zona"
-                                      : `${selectedZoneInteresse.length} zone selezionate`
-                                  }
-                                </span>
-                                <ChevronDown size={16} className={cn("shrink-0 opacity-50 transition-transform duration-200", zoneAccordionOpen && "rotate-180")} />
-                              </button>
-                              {zoneAccordionOpen && (
-                                <>
-                                  <div className="fixed inset-0 z-40" onClick={() => setZoneAccordionOpen(false)} />
-                                  <div className="absolute z-50 left-0 right-0 top-full mt-1 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
-                                    <div className="p-2 border-b border-gray-100">
-                                      <div className="relative">
-                                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                                        <Input
-                                          value={zoneSearch}
-                                          onChange={(e) => setZoneSearch(e.target.value)}
-                                          placeholder="Cerca zona..."
-                                          className="h-9 pl-8 text-xs rounded-lg border-gray-200 bg-slate-50"
-                                        />
-                                      </div>
-                                    </div>
-                                    <div className="max-h-52 overflow-y-auto">
-                                      {dbZones.length === 0 ? (
-                                        <div className="px-3 py-2 text-xs text-gray-400 italic">Caricamento zone...</div>
-                                      ) : dbZones
-                                          .filter(z => !zoneSearch || z.nome.toLowerCase().includes(zoneSearch.toLowerCase()))
-                                          .map(zona => {
-                                            const isSelected = selectedZoneInteresse.includes(zona.id);
-                                            return (
-                                              <button
-                                                key={zona.id}
-                                                type="button"
-                                                onClick={() => setSelectedZoneInteresse(prev =>
-                                                  isSelected ? prev.filter(id => id !== zona.id) : [...prev, zona.id]
-                                                )}
-                                                className={cn(
-                                                  "w-full flex items-center gap-3 px-3 py-2 text-sm text-left transition-colors min-h-[44px]",
-                                                  isSelected ? "bg-blue-50 text-blue-700 font-semibold" : "text-gray-700 hover:bg-slate-50"
-                                                )}
-                                              >
-                                                <span className={cn(
-                                                  "w-4 h-4 rounded border flex items-center justify-center shrink-0 text-[10px] font-bold transition-colors",
-                                                  isSelected ? "bg-blue-500 border-blue-500 text-white" : "border-gray-300 bg-white text-transparent"
-                                                )}>✓</span>
-                                                {zona.nome}
-                                              </button>
-                                            );
-                                          })}
-                                    </div>
-                                  </div>
-                                </>
-                              )}
-                            </div>
-
+                          {/* Tipologia Ricercata */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-bold text-gray-500">Tipologia Ricercata</Label>
+                            <Select
+                              value={selectedLead.tipologia_ricerca || ''}
+                              onValueChange={(v) => setSelectedLead({...selectedLead, tipologia_ricerca: v})}
+                            >
+                              <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
+                                <SelectValue placeholder="Seleziona..." />
+                              </SelectTrigger>
+                              <SelectContent className="rounded-xl">
+                                {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
+                                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                       </div>
@@ -1137,15 +956,6 @@ const Leads = () => {
                           <h3 className="text-sm font-semibold text-red-600 tracking-wide uppercase">Dati di Vendita</h3>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Zona Immobile</Label>
-                            <Input
-                              value={selectedLead.zona_venditore || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, zona_venditore: e.target.value})}
-                              placeholder="es. Zona Mazzini, Centro storico..."
-                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-                            />
-                          </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
                             <Input
@@ -1227,9 +1037,6 @@ const Leads = () => {
                                 <Badge className="bg-[#94b0ab] text-white text-[9px] font-black uppercase tracking-widest border-none">Primo Contatto</Badge>
                               </div>
                               <p className="font-bold text-gray-900 truncate text-sm">{selectedLead.immobile_primo_contatto.titolo}</p>
-                              {selectedLead.immobile_primo_contatto.zone?.nome && (
-                                <p className="text-xs text-gray-400 mt-0.5">{selectedLead.immobile_primo_contatto.zone.nome}</p>
-                              )}
                             </div>
                             <span className="text-base font-extrabold text-[#94b0ab] shrink-0">{formatPrice(selectedLead.immobile_primo_contatto.prezzo)}</span>
                           </div>
@@ -1237,99 +1044,6 @@ const Leads = () => {
                       </div>
                     ) : null}
 
-                    {/* ── Auto-Match Engine (Acquirente / Ibrido only) ── */}
-                    {(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Corrispondenze</h3>
-                            {!isLoadingMatches && matchedProperties.length > 0 && (
-                              <Badge className="bg-emerald-100 text-emerald-700 border-none text-[10px] font-bold px-2">{matchedProperties.length} trovate</Badge>
-                            )}
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-xs text-gray-400 hover:text-[#94b0ab] rounded-lg h-7 px-2 gap-1"
-                            onClick={() => fetchMatchedProperties({ budget: selectedLead.budget, tipologia: selectedLead.tipologia_ricerca, zoneIds: selectedZoneInteresse })}
-                          >
-                            <Search size={11} /> Aggiorna
-                          </Button>
-                        </div>
-
-                        {/* Criteria pills */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedLead.budget && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[11px] font-semibold border border-blue-100">
-                              Budget ≤ {formatPrice(selectedLead.budget)}
-                            </span>
-                          )}
-                          {selectedLead.tipologia_ricerca && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[11px] font-semibold border border-blue-100">
-                              {selectedLead.tipologia_ricerca}
-                            </span>
-                          )}
-                          {selectedZoneInteresse.map(id => {
-                            const z = dbZones.find(z => z.id === id);
-                            return z ? (
-                              <span key={id} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-[11px] font-semibold border border-blue-100">
-                                <MapPin size={9} />{z.nome}
-                              </span>
-                            ) : null;
-                          })}
-                          {!selectedLead.budget && !selectedLead.tipologia_ricerca && selectedZoneInteresse.length === 0 && (
-                            <span className="text-xs text-gray-400 italic">Nessun criterio impostato nel profilo.</span>
-                          )}
-                        </div>
-
-                        {isLoadingMatches ? (
-                          <div className="py-8 text-center text-gray-400 text-sm animate-pulse">Ricerca in corso...</div>
-                        ) : matchedProperties.length === 0 ? (
-                          <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
-                            <Search className="mx-auto text-gray-200 mb-2" size={26} />
-                            <p className="text-xs text-gray-400 italic">Nessun immobile corrisponde ai criteri del lead.</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {matchedProperties.map((prop) => {
-                              const alreadyLinked = selectedLead.lead_immobili?.some((li: any) => li.immobili?.id === prop.id || li.immobile_id === prop.id);
-                              return (
-                                <div key={prop.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-emerald-200 transition-all">
-                                  <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
-                                    {prop.copertina_url ? (
-                                      <img src={prop.copertina_url} alt={prop.titolo} className="w-full h-full object-cover min-h-[68px]" />
-                                    ) : (
-                                      <div className="w-full min-h-[68px] flex items-center justify-center text-slate-300"><HomeIcon size={20} /></div>
-                                    )}
-                                  </div>
-                                  <div className="flex-1 px-4 py-3 min-w-0">
-                                    <p className="font-bold text-gray-900 truncate text-sm leading-tight">{prop.titolo}</p>
-                                    {prop.zone?.nome && <p className="text-xs text-gray-400 mt-0.5">{prop.zone.nome}</p>}
-                                    {prop.locali && <p className="text-[11px] text-gray-400">{prop.locali}</p>}
-                                    <p className="text-sm font-bold text-[#94b0ab] mt-1">{formatPrice(prop.prezzo)}</p>
-                                  </div>
-                                  <div className="flex items-center pr-4 shrink-0">
-                                    {alreadyLinked ? (
-                                      <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">Collegato</span>
-                                    ) : (
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        className="rounded-xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold px-3 h-8 text-xs gap-1"
-                                        onClick={(e) => { e.preventDefault(); handleAssociateProperty(prop); }}
-                                      >
-                                        <Plus size={12} /> Collega
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
 
                     {/* ── Immobili Collegati Manualmente ── */}
                     <div className="space-y-3">
@@ -1364,7 +1078,6 @@ const Leads = () => {
                               </div>
                               <div className="flex-1 px-4 py-3 min-w-0">
                                 <p className="font-bold text-gray-900 truncate text-sm leading-tight">{item.immobili.titolo}</p>
-                                {item.immobili.zone?.nome && <p className="text-xs text-gray-400 mt-0.5">{item.immobili.zone.nome}</p>}
                                 <div className="flex items-center gap-2 mt-1.5">
                                   <span className="text-sm font-bold text-[#94b0ab]">{formatPrice(item.immobili.prezzo)}</span>
                                   <Badge variant="outline" className="text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 border-gray-200 text-gray-500">{item.stato_interesse}</Badge>
@@ -1778,6 +1491,7 @@ const Leads = () => {
         onClose={() => setIsEventModalOpen(false)}
         onSaved={() => setIsEventModalOpen(false)}
         defaultLeadId={eventModalDefaultLeadId}
+        defaultLeadName={eventModalDefaultLeadName}
         agents={agentsForEventModal}
         properties={propertiesForEventModal}
       />

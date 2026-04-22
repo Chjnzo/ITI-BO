@@ -10,9 +10,9 @@ import Properties from "./pages/Properties";
 import Leads from "./pages/Leads";
 import Agenda from "./pages/Agenda";
 import Tasks from "./pages/Tasks";
+import Valutazioni from "./pages/Valutazioni";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
-const Valutazioni = lazy(() => import('./pages/Valutazioni'));
 const ValuazioneReport = lazy(() => import('./pages/ValuazioneReport'));
 
 const queryClient = new QueryClient();
@@ -53,7 +53,7 @@ const App = () => (
           <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
           <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
-          <Route path="/valutazioni" element={<ProtectedRoute><Suspense fallback={<div className="h-screen flex items-center justify-center">Caricamento...</div>}><Valutazioni /></Suspense></ProtectedRoute>} />
+          <Route path="/valutazioni" element={<ProtectedRoute><Valutazioni /></ProtectedRoute>} />
           <Route path="/report/:slug" element={<Suspense fallback={<div className="h-screen flex items-center justify-center">Caricamento...</div>}><ValuazioneReport /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>

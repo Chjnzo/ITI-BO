@@ -12,7 +12,10 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Check, Sparkles, ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
+import {
+  Check, Sparkles, ChevronLeft, ChevronRight, Minus, Plus,
+  Home, Settings, Star, Euro,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -63,12 +66,12 @@ const NumericStepper = ({
   const decrement = () => { if (num > min) onChange(String(num - 1)); };
   const increment = () => { if (num < max) onChange(String(num + 1)); };
   return (
-    <div className="flex items-center h-12 rounded-xl border border-slate-100 bg-white overflow-hidden">
+    <div className="flex items-center h-14 rounded-2xl border border-gray-100 bg-white overflow-hidden">
       <button
         type="button"
         onClick={decrement}
         disabled={num <= min}
-        className="w-12 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-r border-slate-100"
+        className="w-14 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-r border-gray-100"
       >
         <Minus size={14} />
       </button>
@@ -79,7 +82,7 @@ const NumericStepper = ({
         type="button"
         onClick={increment}
         disabled={num >= max}
-        className="w-12 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-l border-slate-100"
+        className="w-14 h-full flex items-center justify-center text-gray-400 hover:bg-gray-50 hover:text-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors border-l border-gray-100"
       >
         <Plus size={14} />
       </button>
@@ -241,7 +244,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     }, 2000);
 
     try {
-      // 1. Create the draft record if not already created
       let recordId = valutazioneId;
       let recordSlug = valutazioneSlug;
 
@@ -260,14 +262,11 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
         setValutazioneSlug(recordSlug);
       }
 
-      // 2. Check session before calling the edge function (verify_jwt: true requires a valid JWT)
       const { data: sessionData } = await supabase.auth.getSession();
-      console.log('[ValuationWizard] session before invoke:', sessionData?.session?.access_token ? 'present' : 'MISSING');
       if (!sessionData?.session) {
         throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
       }
 
-      // 3. Call edge function — it geocodes, fetches OMI + comparabili, runs AI, updates the record
       const { data, error } = await supabase.functions.invoke('generate-evaluation', {
         body: {
           valutazione_id: recordId,
@@ -292,7 +291,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error ?? 'Errore generazione AI');
 
-      // 4. Populate UI from the updated valutazione record
       const v = data.valutazione;
       if (v?.stima_min != null) setStimaMin(String(v.stima_min));
       if (v?.stima_max != null) setStimaMax(String(v.stima_max));
@@ -316,7 +314,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
       let slug = valutazioneSlug;
 
       if (!valutazioneId) {
-        // AI was skipped — do a plain insert
         const newSlug = generateSlug(indirizzo);
         const { data: inserted, error } = await supabase
           .from('valutazioni')
@@ -334,7 +331,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
         if (error) throw new Error(error.message);
         slug = inserted?.slug ?? null;
       } else if (showPriceOverride) {
-        // User manually edited stima after AI ran — persist overrides
         await supabase
           .from('valutazioni')
           .update({
@@ -366,53 +362,56 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     }
   };
 
-  // ── Step Indicator ──────────────────────────────────────────────────────────
-
-  const StepIndicator = () => (
-    <div className="flex items-center justify-center gap-3 pt-2 pb-1">
-      {STEP_LABELS.map((label, i) => {
-        const n = i + 1;
-        const isActive = n === step;
-        const isDone = n < step;
-        return (
-          <div key={n} className="flex flex-col items-center gap-1">
-            <div className={cn(
-              'w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all',
-              isActive ? 'bg-[#94b0ab] text-white shadow-md shadow-[#94b0ab]/30' :
-              isDone   ? 'bg-emerald-500 text-white' :
-                         'bg-gray-100 text-gray-400',
-            )}>
-              {isDone ? <Check size={13} /> : n}
-            </div>
-            <span className={cn(
-              'text-[10px] font-semibold',
-              isActive ? 'text-[#94b0ab]' : isDone ? 'text-emerald-500' : 'text-gray-300',
-            )}>
-              {label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
-        <DialogHeader className="px-8 pt-8 pb-4 border-b border-slate-100">
-          <DialogTitle className="text-xl font-bold text-gray-900">Nuova Valutazione</DialogTitle>
-          <StepIndicator />
+      <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
+
+        {/* Header */}
+        <DialogHeader className="px-10 py-7 border-b border-gray-100 shrink-0 bg-white">
+          <div className="flex justify-between items-center">
+            <div>
+              <DialogTitle className="text-3xl font-bold text-[#1a1a1a]">
+                Nuova Valutazione
+              </DialogTitle>
+              <p className="text-sm text-gray-500 mt-1">
+                Stai compilando lo step {step} di 4 — {STEP_LABELS[step - 1]}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {[1, 2, 3, 4].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => s <= step && setStep(s)}
+                  className={cn(
+                    "h-2 rounded-full transition-all duration-300",
+                    step === s
+                      ? "w-12 bg-[#94b0ab]"
+                      : s < step
+                      ? "w-6 bg-[#94b0ab]/40 cursor-pointer hover:bg-[#94b0ab]/60"
+                      : "w-6 bg-gray-100 cursor-default"
+                  )}
+                />
+              ))}
+            </div>
+          </div>
         </DialogHeader>
 
-        <div className="px-8 py-6 space-y-5 overflow-y-auto max-h-[55vh]">
+        {/* Content */}
+        <div className="px-10 py-7 space-y-7">
 
           {/* ── STEP 1: Lead ─────────────────────────────────────────────── */}
           {step === 1 && (
-            <>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Lead collegato</Label>
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <Home size={22} className="text-[#94b0ab]" /> Lead Collegato
+                </h2>
+                <p className="text-sm text-gray-400">Associa la valutazione a un contatto esistente (opzionale).</p>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead</Label>
                 <Combobox
                   items={leadItems}
                   value={leadId}
@@ -421,99 +420,129 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                   placeholder="Cerca lead per nome... (opzionale)"
                   searchPlaceholder="Nome o cognome..."
                   emptyMessage="Nessun lead trovato."
+                  className="rounded-2xl h-14 border-gray-100"
                 />
               </div>
               <p className="text-xs text-gray-400 italic">
-                Il lead è opzionale. Puoi creare una valutazione anche senza associarla a un contatto.
+                Puoi creare una valutazione anche senza associarla a un contatto.
               </p>
-            </>
+            </div>
           )}
 
           {/* ── STEP 2: Dati Immobile ─────────────────────────────────────── */}
           {step === 2 && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2 col-span-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Indirizzo *</Label>
-                  <Input value={indirizzo} onChange={e => setIndirizzo(e.target.value)}
-                    placeholder="Via Roma 12" className="h-12 rounded-xl border-slate-100" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Città</Label>
-                  <Input value={citta} onChange={e => setCitta(e.target.value)}
-                    placeholder="Ranica" className="h-12 rounded-xl border-slate-100" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Superficie m² *</Label>
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <Settings size={22} className="text-[#94b0ab]" /> Dati dell'Immobile
+                </h2>
+                <p className="text-sm text-gray-400">Inserisci le caratteristiche tecniche per la stima.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-5">
+                <div className="space-y-3 col-span-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Indirizzo *</Label>
                   <Input
-                    type="number"
-                    min={1}
-                    value={superficieMq}
-                    onChange={e => { const v = e.target.value; if (v === '' || Number(v) > 0) setSuperficieMq(v); }}
-                    onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
-                    placeholder="80"
-                    className="h-12 rounded-xl border-slate-100"
+                    value={indirizzo}
+                    onChange={e => setIndirizzo(e.target.value)}
+                    placeholder="Via Roma 12"
+                    className="h-14 rounded-2xl border-gray-100"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Tipologia</Label>
+                <div className="space-y-3 col-span-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>
+                  <Input
+                    value={citta}
+                    onChange={e => setCitta(e.target.value)}
+                    placeholder="Ranica"
+                    className="h-14 rounded-2xl border-gray-100"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Superficie m² *</Label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min={1}
+                      value={superficieMq}
+                      onChange={e => { const v = e.target.value; if (v === '' || Number(v) > 0) setSuperficieMq(v); }}
+                      onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                      onWheel={e => e.currentTarget.blur()}
+                      placeholder="80"
+                      className="h-14 rounded-2xl border-gray-100"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
                   <Select value={tipologia} onValueChange={setTipologia}>
-                    <SelectTrigger className="h-12 rounded-xl border-slate-100">
+                    <SelectTrigger className="h-14 rounded-2xl border-gray-100">
                       <SelectValue placeholder="Seleziona..." />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl">
+                    <SelectContent className="rounded-2xl">
                       {TIPOLOGIE.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Stato conservativo</Label>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stato conservativo</Label>
                   <Select value={statoConservativo} onValueChange={setStatoConservativo}>
-                    <SelectTrigger className="h-12 rounded-xl border-slate-100">
+                    <SelectTrigger className="h-14 rounded-2xl border-gray-100">
                       <SelectValue placeholder="Seleziona..." />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl">
+                    <SelectContent className="rounded-2xl">
                       {STATI_CONSERVATIVI.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">N° locali</Label>
-                  <NumericStepper value={numLocali} onChange={setNumLocali} min={1} max={10} />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Piano</Label>
-                  <NumericStepper value={piano} onChange={setPiano} min={0} max={30} />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">N° bagni</Label>
-                  <NumericStepper value={numBagni} onChange={setNumBagni} min={1} max={5} />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Anno costruzione</Label>
-                  <Input type="number" value={annoCostruzione} onChange={e => setAnnoCostruzione(e.target.value)}
-                    placeholder="1995" className="h-12 rounded-xl border-slate-100" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Classe energetica</Label>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Classe energetica</Label>
                   <Select value={classeEnergetica} onValueChange={setClasseEnergetica}>
-                    <SelectTrigger className="h-12 rounded-xl border-slate-100">
+                    <SelectTrigger className="h-14 rounded-2xl border-gray-100">
                       <SelectValue placeholder="Seleziona..." />
                     </SelectTrigger>
-                    <SelectContent className="rounded-xl">
+                    <SelectContent className="rounded-2xl">
                       {CLASSI_ENERGETICHE.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">N° locali</Label>
+                  <NumericStepper value={numLocali} onChange={setNumLocali} min={1} max={10} />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
+                  <NumericStepper value={piano} onChange={setPiano} min={0} max={30} />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">N° bagni</Label>
+                  <NumericStepper value={numBagni} onChange={setNumBagni} min={1} max={5} />
+                </div>
+                <div className="space-y-3 col-span-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Anno costruzione</Label>
+                  <Input
+                    type="number"
+                    value={annoCostruzione}
+                    onChange={e => setAnnoCostruzione(e.target.value)}
+                    onWheel={e => e.currentTarget.blur()}
+                    placeholder="1995"
+                    className="h-14 rounded-2xl border-gray-100 max-w-[200px]"
+                  />
+                </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ── STEP 3: Comfort ───────────────────────────────────────────── */}
           {step === 3 && (
-            <>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Dotazioni</Label>
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <Star size={22} className="text-[#94b0ab]" /> Comfort e Dotazioni
+                </h2>
+                <p className="text-sm text-gray-400">Seleziona i servizi presenti nell'immobile.</p>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Dotazioni</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {COMFORT_OPTIONS.map(({ key, label }) => {
                     const isActive = comfort[key];
@@ -536,46 +565,50 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                   })}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Note tecniche</Label>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Note tecniche</Label>
                 <Textarea
                   value={noteTecniche}
                   onChange={e => setNoteTecniche(e.target.value)}
                   placeholder="Dettagli aggiuntivi sull'immobile..."
-                  className="rounded-xl border-slate-100 min-h-[80px] resize-none"
+                  className="rounded-2xl border-gray-100 min-h-[100px] resize-none p-4"
                 />
               </div>
-            </>
+            </div>
           )}
 
           {/* ── STEP 4: Stima & AI ────────────────────────────────────────── */}
           {step === 4 && (
-            <>
-              {/* Primary CTA */}
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <Sparkles size={22} className="text-[#94b0ab]" /> Stima & Intelligenza Artificiale
+                </h2>
+                <p className="text-sm text-gray-400">Genera la stima con AI basata su dati OMI e transazioni reali.</p>
+              </div>
+
               <Button
                 type="button"
                 onClick={handleGenerateAI}
                 disabled={isGenerating}
-                className="w-full h-12 rounded-xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2"
+                className="w-full h-14 rounded-2xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2 shadow-lg shadow-[#94b0ab]/20"
               >
-                <Sparkles size={15} />
+                <Sparkles size={18} />
                 {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera con AI' : 'Genera con AI ✨'}
               </Button>
 
-              {/* Animated loading message */}
               {isGenerating && loadingMsg && (
                 <p className="text-center text-xs text-[#94b0ab] animate-pulse leading-relaxed px-2">
                   {loadingMsg}
                 </p>
               )}
 
-              {/* AI result: price preview */}
               {aiGenerated && (
                 <>
                   {(stimaMin || stimaMax) && (
-                    <div className="rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-5 py-4">
+                    <div className="rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-6 py-5">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Stima suggerita</p>
-                      <p className="text-xl font-black text-[#94b0ab]">
+                      <p className="text-2xl font-black text-[#94b0ab]">
                         {stimaMin ? `€${Number(stimaMin).toLocaleString('it-IT')}` : ''}
                         {stimaMin && stimaMax && <span className="text-gray-300 mx-2">–</span>}
                         {stimaMax ? `€${Number(stimaMax).toLocaleString('it-IT')}` : ''}
@@ -583,17 +616,16 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                     </div>
                   )}
 
-                  <div className="space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Motivazione AI</Label>
+                  <div className="space-y-3">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Motivazione AI</Label>
                     <Textarea
                       value={motivazioneAi}
                       onChange={e => setMotivazioneAi(e.target.value)}
                       placeholder="Il testo generato dall'AI apparirà qui..."
-                      className="rounded-xl border-slate-100 min-h-[150px] resize-none"
+                      className="rounded-2xl border-gray-100 min-h-[140px] resize-none p-4"
                     />
                   </div>
 
-                  {/* Override prices (collapsible) */}
                   <button
                     type="button"
                     onClick={() => setShowPriceOverride(p => !p)}
@@ -602,69 +634,86 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                     {showPriceOverride ? 'Nascondi modifica stima' : 'Modifica stima manualmente'}
                   </button>
                   {showPriceOverride && (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Stima minima €</Label>
-                        <Input type="number" value={stimaMin} onChange={e => setStimaMin(e.target.value)}
-                          placeholder="200000" className="h-12 rounded-xl border-slate-100" />
+                    <div className="grid grid-cols-2 gap-5">
+                      <div className="space-y-3">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima minima €</Label>
+                        <div className="relative">
+                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                          <Input
+                            type="number"
+                            value={stimaMin}
+                            onChange={e => setStimaMin(e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="200000"
+                            className="h-14 rounded-2xl border-gray-100 pl-12"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Stima massima €</Label>
-                        <Input type="number" value={stimaMax} onChange={e => setStimaMax(e.target.value)}
-                          placeholder="250000" className="h-12 rounded-xl border-slate-100" />
+                      <div className="space-y-3">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima massima €</Label>
+                        <div className="relative">
+                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                          <Input
+                            type="number"
+                            value={stimaMax}
+                            onChange={e => setStimaMax(e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="250000"
+                            className="h-14 rounded-2xl border-gray-100 pl-12"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
                 </>
               )}
 
-              {/* Pre-generation hint */}
               {!aiGenerated && !isGenerating && (
                 <p className="text-xs text-gray-400 text-center italic">
                   Clicca "Genera con AI" per ottenere la stima basata su dati OMI e transazioni reali nella zona.
                 </p>
               )}
-            </>
+            </div>
           )}
         </div>
 
         {/* ── Footer navigation ──────────────────────────────────────────── */}
-        <DialogFooter className="px-8 py-5 border-t border-slate-100 bg-slate-50/50 flex items-center gap-3">
-          {step > 1 && (
-            <Button type="button" variant="outline"
-              onClick={() => setStep(s => s - 1)}
-              disabled={isGenerating}
-              className="rounded-xl h-11 border-gray-200 gap-1"
-            >
-              <ChevronLeft size={15} /> Indietro
-            </Button>
-          )}
+        <DialogFooter className="px-10 py-6 border-t border-gray-100 bg-white shrink-0 flex items-center justify-between sm:justify-between">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => step > 1 ? setStep(s => s - 1) : onClose()}
+            disabled={isGenerating}
+            className="rounded-2xl h-14 px-8 text-gray-500 font-bold hover:bg-gray-50"
+          >
+            {step === 1 ? "Annulla" : <><ChevronLeft className="mr-2" size={18} /> Indietro</>}
+          </Button>
 
-          <div className="flex-1" />
+          <div className="flex gap-3">
+            {step < 4 && (
+              <Button
+                type="button"
+                onClick={() => {
+                  if (step === 2) { handleNextFromStep2(); return; }
+                  setStep(s => s + 1);
+                }}
+                className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl h-14 px-10 font-bold shadow-lg shadow-[#94b0ab]/20 gap-1"
+              >
+                Avanti <ChevronRight size={18} />
+              </Button>
+            )}
 
-          {step < 4 && (
-            <Button
-              type="button"
-              onClick={() => {
-                if (step === 2) { handleNextFromStep2(); return; }
-                setStep(s => s + 1);
-              }}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-11 px-6 font-bold gap-1"
-            >
-              Avanti <ChevronRight size={15} />
-            </Button>
-          )}
-
-          {step === 4 && (
-            <Button
-              type="button"
-              onClick={handleSave}
-              disabled={isSaving || isGenerating}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-11 px-8 font-bold"
-            >
-              {isSaving ? 'Salvataggio...' : 'Salva Valutazione'}
-            </Button>
-          )}
+            {step === 4 && (
+              <Button
+                type="button"
+                onClick={handleSave}
+                disabled={isSaving || isGenerating}
+                className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl h-14 px-10 font-bold shadow-lg shadow-[#94b0ab]/20"
+              >
+                {isSaving ? 'Salvataggio...' : 'Salva Valutazione'}
+              </Button>
+            )}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
