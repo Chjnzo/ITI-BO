@@ -9,13 +9,23 @@ import { supabase } from "@/lib/supabase";
 import { Mail, Phone, User, Copy, Check } from "lucide-react";
 import { showSuccess } from "@/utils/toast";
 
+interface Attendee {
+  id: string;
+  open_house_id: string;
+  nome: string;
+  email: string;
+  telefono?: string | null;
+  orario_scelto?: string | null;
+  created_at: string;
+}
+
 interface AttendeesSheetProps {
   openHouseId: string;
   propertyTitle: string;
 }
 
 const AttendeesSheet = ({ openHouseId, propertyTitle }: AttendeesSheetProps) => {
-  const [attendees, setAttendees] = useState<any[]>([]);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 

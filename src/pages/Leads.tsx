@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
-import { format, parseISO, isFuture, parseISO as dateFnsParseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,13 +24,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Phone, Home as HomeIcon,
-  User, Search, MessageSquare, Save,
+  User, Search, Save,
   Calendar, CalendarPlus, Plus, ExternalLink,
-  TrendingUp, History, Heart, UserCheck, Briefcase, Send, MapPin, ChevronDown, Trash2,
+  TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
   CheckSquare, Clock,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
-import EventFormModal from '@/components/agenda/EventFormModal';
+import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
@@ -102,12 +102,6 @@ const Leads = () => {
 
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
 
-  // Notes / Storico State
-  const [leadNotes, setLeadNotes] = useState<any[]>([]);
-  const [newNoteText, setNewNoteText] = useState('');
-  const [newNoteAutore, setNewNoteAutore] = useState(AGENTS[0]);
-  const [isSavingNote, setIsSavingNote] = useState(false);
-
   // Tasks State
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
   const [isLeadTaskModalOpen, setIsLeadTaskModalOpen] = useState(false);
@@ -121,6 +115,7 @@ const Leads = () => {
   const [eventModalDefaultLeadName, setEventModalDefaultLeadName] = useState<string | undefined>(undefined);
   const [agentsForEventModal, setAgentsForEventModal] = useState<any[]>([]);
   const [propertiesForEventModal, setPropertiesForEventModal] = useState<any[]>([]);
+  const [editingLeadEvent, setEditingLeadEvent] = useState<any | null>(null);
 
   // Quick task from list row
   const [quickTaskLeadId, setQuickTaskLeadId] = useState<string | undefined>(undefined);
@@ -419,23 +414,6 @@ const Leads = () => {
     return () => clearTimeout(t);
   }, [selectedLead?.id, isLoadingDetail]);
 
-  // Fetch notes whenever a different lead is opened
-  useEffect(() => {
-    if (!selectedLead?.id) {
-      setLeadNotes([]);
-      setNewNoteText('');
-      return;
-    }
-    (async () => {
-      const { data, error } = await supabase
-        .from('lead_notes')
-        .select('*')
-        .eq('lead_id', selectedLead.id)
-        .order('created_at', { ascending: true });
-      if (!error) setLeadNotes(data || []);
-    })();
-  }, [selectedLead?.id]);
-
   // Fetch tasks whenever a different lead is opened
   useEffect(() => {
     if (!selectedLead?.id) { setLeadTasks([]); return; }
@@ -503,27 +481,6 @@ const Leads = () => {
       setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
     }
   };
-
-  const handleAddNote = async () => {
-    if (!newNoteText.trim() || !selectedLead) return;
-    setIsSavingNote(true);
-    const { error } = await supabase
-      .from('lead_notes')
-      .insert({ lead_id: selectedLead.id, testo: newNoteText.trim(), autore: newNoteAutore });
-    if (error) {
-      showError("Errore nel salvataggio della nota");
-    } else {
-      setNewNoteText('');
-      const { data } = await supabase
-        .from('lead_notes')
-        .select('*')
-        .eq('lead_id', selectedLead.id)
-        .order('created_at', { ascending: true });
-      if (data) setLeadNotes(data);
-    }
-    setIsSavingNote(false);
-  };
-
 
   const filteredPickerProperties = useMemo(() => {
     const q = propertySearch.toLowerCase();
@@ -796,8 +753,11 @@ const Leads = () => {
                             <Heart size={15} /> Immobili
                           </TabsTrigger>
                         )}
-                        <TabsTrigger value="attivita" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
-                          <History size={15} /> Attività
+                        <TabsTrigger value="eventi" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <Calendar size={15} /> Eventi
+                          {leadEvents.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadEvents.length}</span>
+                          )}
                         </TabsTrigger>
                         <TabsTrigger value="task" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <CheckSquare size={15} /> Task
@@ -1117,164 +1077,64 @@ const Leads = () => {
 
                   </TabsContent>
 
-                  {/* ── ATTIVITÀ TAB ── (note + task + eventi cronologici) */}
-                  <TabsContent value="attivita" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
-
-                    {/* Original message */}
-                    {selectedLead.messaggio && (
-                      <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-2.5">
-                          <MessageSquare size={13} className="text-amber-600 shrink-0" />
-                          <span className="text-xs font-black text-amber-700 uppercase tracking-widest">Messaggio di Primo Contatto</span>
-                          <span className="text-[10px] text-amber-500 ml-auto font-medium shrink-0">
-                            {safeFormat(selectedLead.created_at, "d MMM yyyy", { locale: it })}
-                          </span>
-                        </div>
-                        <p className="text-sm text-amber-900 leading-relaxed italic">"{selectedLead.messaggio}"</p>
-                      </div>
-                    )}
-
-                    {/* Unified chronological timeline */}
-                    {(() => {
-                      const allItems = [
-                        ...leadNotes.map((n: any) => ({ type: 'nota', date: n.created_at, data: n })),
-                        ...leadTasks.map((t: any) => ({ type: 'task', date: t.data + 'T' + (t.ora || '00:00'), data: t })),
-                        ...leadEvents.map((e: any) => ({ type: 'evento', date: e.data + 'T' + (e.ora_inizio || '00:00'), data: e })),
-                      ].sort((a, b) => a.date.localeCompare(b.date));
-
-                      if (allItems.length === 0) return (
-                        <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200">
-                          <History className="mx-auto text-gray-200 mb-2" size={26} />
-                          <p className="text-xs text-gray-400 italic">Nessuna attività registrata ancora.</p>
-                        </div>
-                      );
-
-                      return (
-                        <div className="space-y-2">
-                          {allItems.map((item, idx) => {
-                            if (item.type === 'nota') {
-                              const note = item.data;
-                              return (
-                                <div key={`nota-${note.id}`} className="flex gap-3">
-                                  <div className="w-7 h-7 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20 shrink-0 mt-0.5">
-                                    {note.autore?.charAt(0)?.toUpperCase() || '?'}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-baseline gap-2 mb-1">
-                                      <span className="text-xs font-bold text-gray-800">{note.autore}</span>
-                                      <span className="text-[10px] text-gray-400">{safeFormat(note.created_at, "d MMM yyyy, HH:mm", { locale: it })}</span>
-                                    </div>
-                                    <div className="bg-white border border-gray-100 rounded-xl rounded-tl-sm px-4 py-3 shadow-sm">
-                                      <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-                            if (item.type === 'task') {
-                              const task = item.data;
-                              const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
-                              const Icon = cfg?.icon;
-                              return (
-                                <div key={`task-${task.id}`} className="flex gap-3 items-start">
-                                  <div className={cn("w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5", cfg ? cfg.bg : 'bg-gray-100')}>
-                                    {Icon ? <Icon size={13} className={cfg!.color} /> : <CheckSquare size={13} className="text-gray-400" />}
-                                  </div>
-                                  <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                      <span className="text-xs font-bold text-gray-700">{task.titolo || task.tipologia || 'Task'}</span>
-                                      <span className="text-[10px] text-gray-400">{task.data}{task.ora ? ` — ${task.ora.slice(0,5)}` : ''}</span>
-                                      <span className={cn("ml-auto text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border",
-                                        task.stato === 'Completata' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                        task.stato === 'In corso' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                        'bg-amber-100 text-amber-700 border-amber-200'
-                                      )}>{task.stato}</span>
-                                    </div>
-                                    {task.nota && <p className="text-xs text-gray-500">{task.nota}</p>}
-                                  </div>
-                                </div>
-                              );
-                            }
-                            if (item.type === 'evento') {
-                              const event = item.data;
-                              return (
-                                <div key={`evento-${event.id}`} className="flex gap-3 items-start">
-                                  <div className="w-7 h-7 rounded-full bg-purple-50 flex items-center justify-center shrink-0 mt-0.5">
-                                    <Calendar size={13} className="text-purple-500" />
-                                  </div>
-                                  <div className="flex-1 min-w-0 bg-white border border-gray-100 rounded-xl px-4 py-3 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-0.5">
-                                      <span className="text-xs font-bold text-gray-700">{event.tipologia}</span>
-                                      <span className="text-[10px] text-gray-400">{event.data}{event.ora_inizio ? ` — ${event.ora_inizio.slice(0,5)}` : ''}</span>
-                                    </div>
-                                    {event.note && <p className="text-xs text-gray-500">{event.note}</p>}
-                                  </div>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Agenda futura */}
-                    {(() => {
-                      const futureEvents = leadEvents.filter(e => {
-                        try { return isFuture(dateFnsParseISO(e.data)); } catch { return false; }
-                      });
-                      if (futureEvents.length === 0) return null;
-                      return (
-                        <div className="space-y-2 pt-2">
-                          <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">Prossimi appuntamenti</p>
-                          {futureEvents.map((e: any) => (
-                            <div key={e.id} className="bg-white border border-[#94b0ab]/20 rounded-xl px-4 py-3 flex items-center gap-3">
-                              <Clock size={13} className="text-[#94b0ab] shrink-0" />
-                              <div>
-                                <p className="text-sm font-bold text-gray-800">{e.tipologia}</p>
-                                <p className="text-xs text-gray-400">{format(dateFnsParseISO(e.data), 'EEEE d MMMM yyyy', { locale: it })}{e.ora_inizio ? ` — ${e.ora_inizio.slice(0,5)}` : ''}</p>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Add note input */}
-                    <div className="bg-white border rounded-xl shadow-sm p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] flex items-center justify-center text-[10px] font-black border border-[#94b0ab]/20 shrink-0">
-                          {newNoteAutore.charAt(0)}
-                        </div>
-                        <Select value={newNoteAutore} onValueChange={setNewNoteAutore}>
-                          <SelectTrigger className="h-8 w-36 rounded-lg border-gray-200 text-xs font-bold bg-slate-50">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            {AGENTS.map(a => <SelectItem key={a} value={a} className="text-xs font-medium">{a}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                        <span className="text-xs text-gray-400">sta scrivendo una nota...</span>
-                      </div>
-                      <div className="flex gap-2 items-end">
-                        <Textarea
-                          value={newNoteText}
-                          onChange={(e) => setNewNoteText(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAddNote(); }}
-                          placeholder="Scrivi una nota (⌘↵ per salvare)..."
-                          className="flex-1 min-h-[80px] max-h-[140px] rounded-xl border-gray-200 bg-slate-50 text-sm resize-none focus:ring-[#94b0ab] p-3"
-                        />
-                        <Button
-                          type="button"
-                          disabled={isSavingNote || !newNoteText.trim()}
-                          onClick={handleAddNote}
-                          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-10 px-4 font-bold shrink-0 gap-1.5 transition-all disabled:opacity-40"
-                        >
-                          {isSavingNote ? "..." : <><Send size={14} /> Aggiungi</>}
-                        </Button>
-                      </div>
+                  {/* ── EVENTI TAB ── */}
+                  <TabsContent value="eventi" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
+                        Appuntamenti ({leadEvents.length})
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => { setEditingLeadEvent(null); openEventForLead(selectedLead); }}
+                        className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-3 text-xs font-bold gap-1.5"
+                      >
+                        <Plus size={13} /> Nuovo Evento
+                      </Button>
                     </div>
 
+                    {leadEvents.length === 0 ? (
+                      <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
+                        <Calendar className="mx-auto text-gray-200 mb-2" size={26} />
+                        <p className="text-xs text-gray-400 italic">Nessun appuntamento per questo lead.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {leadEvents.map((evt: any) => {
+                          const colors = TIPOLOGIA_COLORS[evt.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+                          const isPast = evt.data < new Date().toISOString().slice(0, 10);
+                          return (
+                            <button
+                              key={evt.id}
+                              type="button"
+                              onClick={() => { setEditingLeadEvent(evt); setIsEventModalOpen(true); }}
+                              className="w-full text-left bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-start gap-3 hover:border-[#94b0ab]/30 transition-all"
+                            >
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                                style={{ backgroundColor: colors.bg, border: `1px solid ${colors.border}` }}
+                              >
+                                <Calendar size={14} style={{ color: colors.text }} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                                  <span className="text-xs font-bold text-gray-800">{evt.tipologia}</span>
+                                  {isPast && (
+                                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 border border-gray-200">Passato</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  {format(parseISO(evt.data), 'EEEE d MMMM yyyy', { locale: it })}
+                                  {evt.ora_inizio ? ` — ${evt.ora_inizio.slice(0, 5)}` : ''}
+                                  {evt.ora_fine ? ` → ${evt.ora_fine.slice(0, 5)}` : ''}
+                                </p>
+                                {evt.note && <p className="text-xs text-gray-400 mt-1 truncate">{evt.note}</p>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </TabsContent>
 
                   {/* ── TASK TAB ── */}
@@ -1485,13 +1345,26 @@ const Leads = () => {
         onSaved={() => { setIsQuickTaskModalOpen(false); fetchLeads(); }}
       />
 
-      {/* Event Form Modal (from list row CalendarPlus) */}
+      {/* Event Form Modal */}
       <EventFormModal
         open={isEventModalOpen}
-        onClose={() => setIsEventModalOpen(false)}
-        onSaved={() => setIsEventModalOpen(false)}
-        defaultLeadId={eventModalDefaultLeadId}
-        defaultLeadName={eventModalDefaultLeadName}
+        onClose={() => { setIsEventModalOpen(false); setEditingLeadEvent(null); }}
+        onSaved={async () => {
+          setIsEventModalOpen(false);
+          setEditingLeadEvent(null);
+          if (selectedLead?.id) {
+            const { data } = await supabase
+              .from('appuntamenti')
+              .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id')
+              .eq('lead_id', selectedLead.id)
+              .order('data', { ascending: true })
+              .order('ora_inizio', { ascending: true });
+            setLeadEvents(data || []);
+          }
+        }}
+        event={editingLeadEvent ?? undefined}
+        defaultLeadId={editingLeadEvent ? undefined : eventModalDefaultLeadId}
+        defaultLeadName={editingLeadEvent ? undefined : eventModalDefaultLeadName}
         agents={agentsForEventModal}
         properties={propertiesForEventModal}
       />

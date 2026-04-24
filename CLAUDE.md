@@ -83,3 +83,40 @@ The `/valutazioni` module calls a Supabase Edge Function that uses OpenAI. The k
 ### Related repo
 
 `ITI2.0` (sibling directory) — public property website. Its `ContactForm.tsx` calls `upsert_lead` on this Supabase project.
+
+## Security
+
+### RLS policies
+
+| Table | Operation | Allowed roles | Notes |
+|---|---|---|---|
+| `leads` | SELECT | `authenticated` | CRM agents only |
+| `leads` | INSERT | `anon`, `authenticated` | Public contact form via `upsert_lead` SECURITY DEFINER RPC only |
+| `leads` | UPDATE | `authenticated` | CRM agents only |
+| `immobili` | SELECT | `anon`, `authenticated` | Public listing site reads |
+| `immobili` | ALL | `authenticated` | CRM agents only for write ops |
+| `open_houses` | SELECT | `anon`, `authenticated` | Public event listing |
+| `open_houses` | INSERT/UPDATE/DELETE | `authenticated` | CRM agents only |
+| `prenotazioni_oh` | SELECT | `anon`, `authenticated` | Public read for booking confirmation |
+| `prenotazioni_oh` | INSERT | `anon`, `authenticated` | Public booking form |
+| `prenotazioni_oh` | DELETE | `authenticated` | **Agents only** — never expose to anon |
+| `tasks`, `valutazioni`, `lead_notes`, `lead_immobili`, `lead_zone_ricercate` | ALL | `authenticated` | Internal CRM only |
+| `zone_omi` | SELECT | `anon`, `authenticated` | OMI data is public |
+| `zone_omi` | ALL | `service_role` | Edge Functions / admin scripts only |
+| `transazioni_chiuse` | SELECT/INSERT/UPDATE | `authenticated` | Agents + own-row write |
+| `transazioni_chiuse` | ALL | `service_role` | Edge Functions retain full access |
+
+### upsert_lead RPC hardening
+
+- **SECURITY DEFINER** + `SET search_path TO 'public'` — prevents search_path injection
+- **Email regex validation** — rejects malformed email before any DB write
+- **24-hour duplicate guard** — if the same email was used to create a lead in the last 24 h, the call is silently ignored (prevents contact-form spam flooding `note_interne`)
+- **Deduplication** — looks up existing lead by email OR phone; updates instead of inserting a second row
+- The old unsafe overload `upsert_lead(p_nome, p_email, p_telefono, p_messaggio, ...)` (no cognome, plain INSERT, no dedup, no search_path) has been dropped
+
+### ITI2.0 ContactForm — required client-side hardening (TODO)
+
+The public contact form in the `ITI2.0` sibling repo should implement:
+- **30-second submit cooldown** after a successful submission (disable button, show toast)
+- **Email regex validation** before calling the RPC (fail fast on the client)
+These are defence-in-depth measures; the DB-level guards above remain the authoritative enforcement layer.
