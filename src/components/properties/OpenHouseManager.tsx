@@ -15,16 +15,41 @@ import { showError, showSuccess } from "@/utils/toast";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
+interface Property {
+  id: string;
+  titolo: string;
+  proprietario?: string;
+}
+
+interface OpenHouse {
+  id: string;
+  immobile_id: string;
+  data_evento: string;
+  ora_inizio: string;
+  ora_fine: string;
+  posti_totali: number;
+}
+
+interface Attendee {
+  id: string;
+  open_house_id: string;
+  nome: string;
+  email: string;
+  telefono?: string | null;
+  orario_scelto?: string | null;
+  created_at: string;
+}
+
 interface OpenHouseManagerProps {
-  property: any;
+  property: Property;
   onClose: () => void;
 }
 
 const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [openHouse, setOpenHouse] = useState<any>(null);
-  const [attendees, setAttendees] = useState<any[]>([]);
+  const [openHouse, setOpenHouse] = useState<OpenHouse | null>(null);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
 
   // Form State
   const [date, setDate] = useState<Date | undefined>(undefined);
@@ -61,7 +86,7 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
         if (attError) throw attError;
         setAttendees(attData || []);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error("Errore fetch OH:", error);
     } finally {
       setLoading(false);
@@ -104,8 +129,8 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
         showSuccess("Open House creato");
       }
       fetchData();
-    } catch (error: any) {
-      showError("Errore salvataggio: " + error.message);
+    } catch (error) {
+      showError("Errore salvataggio: " + (error instanceof Error ? error.message : String(error)));
       console.error("Errore salvataggio OH:", error);
     } finally {
       setSaving(false);
@@ -127,8 +152,8 @@ const OpenHouseManager = ({ property, onClose }: OpenHouseManagerProps) => {
       setOpenHouse(null);
       setDate(undefined);
       setAttendees([]);
-    } catch (error: any) {
-      showError("Errore eliminazione: " + error.message);
+    } catch (error) {
+      showError("Errore eliminazione: " + (error instanceof Error ? error.message : String(error)));
     } finally {
       setSaving(false);
     }
