@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react';
 import { AlertCircle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Sentry } from '@/lib/sentry';
 
 interface Props {
   children: ReactNode;
@@ -25,6 +26,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
+    Sentry.captureException(error, { contexts: { react: errorInfo as unknown as Record<string, unknown> } });
   }
 
   render() {

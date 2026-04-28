@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
+import { z } from 'zod';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -241,12 +242,26 @@ const Leads = () => {
 
 
 
+  const LeadValidationSchema = z.object({
+    nome: z.string().min(2, 'Nome: min 2 caratteri').max(100),
+    cognome: z.string().min(2, 'Cognome: min 2 caratteri').max(100),
+    email: z.string().email('Email non valida').optional().or(z.literal('')),
+    telefono: z.string().regex(/^\+?[\d\s\-()]+$/, 'Telefono non valido').optional().or(z.literal('')),
+  });
+
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLead) return;
 
-    if (!selectedLead.nome?.trim() || !selectedLead.cognome?.trim()) {
-      showError("Nome e Cognome sono obbligatori");
+    const validation = LeadValidationSchema.safeParse({
+      nome: selectedLead.nome?.trim() ?? '',
+      cognome: selectedLead.cognome?.trim() ?? '',
+      email: selectedLead.email ?? '',
+      telefono: selectedLead.telefono ?? '',
+    });
+
+    if (!validation.success) {
+      showError(validation.error.errors[0].message);
       return;
     }
 

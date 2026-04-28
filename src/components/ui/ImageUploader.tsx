@@ -24,8 +24,15 @@ const ImageUploader = ({
   const [preview, setPreview] = useState<string | null>(defaultValue || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
   const handleUpload = async (file: File) => {
     if (!file) return;
+
+    if (file.size > MAX_FILE_SIZE) {
+      showError(`Immagine troppo grande (max 5MB, ricevuto ${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+      return;
+    }
 
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
@@ -139,7 +146,7 @@ const ImageUploader = ({
               </div>
               <div className="text-center px-6">
                 <p className="font-bold text-gray-900">{label}</p>
-                <p className="text-xs text-gray-400 mt-1 uppercase tracking-tighter">PNG, JPG fino a 10MB</p>
+                <p className="text-xs text-gray-400 mt-1 uppercase tracking-tighter">PNG, JPG fino a 5MB</p>
               </div>
             </>
           )}

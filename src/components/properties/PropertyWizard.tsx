@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
+import { z } from 'zod';
+import { PropertySchema } from '@/schemas';
 
 interface PropertyWizardProps {
   initialData?: any;
@@ -259,9 +261,20 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   };
 
   const handleSubmit = async () => {
-    if (!formData.titolo || (!prezzoSuRichiesta && !formData.prezzo)) {
-      showError("Titolo e Prezzo sono obbligatori");
-      setStep(1);
+    const parseResult = PropertySchema.safeParse({
+      ...formData,
+      prezzo: prezzoSuRichiesta ? undefined : (parseFloat(formData.prezzo) || undefined),
+      mq: parseInt(formData.mq) || 0,
+      bagni: formData.bagni,
+      spese_condominiali: parseFloat(formData.spese_condominiali) || undefined,
+      anno_costruzione: parseInt(formData.anno_costruzione) || new Date().getFullYear(),
+    });
+
+    if (!parseResult.success) {
+      const firstError = parseResult.error.errors[0];
+      const field = firstError.path.join('.');
+      showError(`${field ? field + ': ' : ''}${firstError.message}`);
+      if (['titolo', 'prezzo', 'mq', 'citta'].includes(firstError.path[0] as string)) setStep(1);
       return;
     }
 
