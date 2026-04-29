@@ -380,7 +380,12 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-2xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
+      <DialogContent
+        className="max-w-2xl max-h-[90vh] flex flex-col rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden"
+        aria-describedby={undefined}
+        onInteractOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
 
         {/* Header */}
         <DialogHeader className="px-10 py-7 border-b border-gray-100 shrink-0 bg-white">
@@ -413,7 +418,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
         </DialogHeader>
 
         {/* Content */}
-        <div className="px-10 py-7 space-y-7">
+        <div className="flex-1 overflow-y-auto px-10 py-7 space-y-7">
 
           {/* ── STEP 1: Lead ─────────────────────────────────────────────── */}
           {step === 1 && (
