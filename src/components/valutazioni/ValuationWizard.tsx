@@ -175,13 +175,22 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     });
   }, [open]);
 
+  const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
+
   const searchLeads = async (q: string) => {
     if (!q.trim()) { setLeadItems([]); return; }
+    searchLeadsAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchLeadsAbortRef.current = controller;
+
+    const escaped = q.replace(/[%_\\]/g, '\\$&');
     const { data: rows } = await supabase
       .from('leads')
       .select('id, nome, cognome, telefono')
-      .or(`nome.ilike.%${q}%,cognome.ilike.%${q}%`)
+      .or(`nome.ilike.%${escaped}%,cognome.ilike.%${escaped}%`)
       .limit(8);
+
+    if (controller.signal.aborted) return;
     setLeadItems((rows ?? []).map(r => ({
       id: r.id,
       label: `${r.nome} ${r.cognome}`,
@@ -262,9 +271,14 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
         setValutazioneSlug(recordSlug);
       }
 
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
+      }
+      // Verify the token is still accepted by the server (not just cached locally)
+      const { error: tokenError } = await supabase.from('profili_agenti').select('id').limit(1);
+      if (tokenError?.message?.includes('JWT') || tokenError?.code === 'PGRST301') {
+        throw new Error('Token scaduto. Effettua nuovamente il login e riprova.');
       }
 
       const { data, error } = await supabase.functions.invoke('generate-evaluation', {

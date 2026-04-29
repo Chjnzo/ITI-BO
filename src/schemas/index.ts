@@ -6,7 +6,7 @@ export const PropertySchema = z.object({
   mq: z.number().positive('MQ deve essere positivo'),
   locali: z.string().min(1),
   citta: z.string().min(2),
-  indirizzo: z.string().min(3),
+  indirizzo: z.string().optional(),
   piano: z.string().optional(),
   bagni: z.number().int().min(1).max(10),
   classe_energetica: z.enum(['A1', 'A2', 'B', 'C', 'D', 'E', 'F', 'G']),

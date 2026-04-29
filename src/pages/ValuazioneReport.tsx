@@ -284,10 +284,24 @@ const ValuazioneReport = () => {
 
   // ── Report ─────────────────────────────────────────────────────────────────
 
+  const pageTitle = val
+    ? `Valutazione ${val.indirizzo} – Il Tuo Immobiliare`
+    : 'Valutazione Immobiliare – Il Tuo Immobiliare';
+  const pageDesc = val
+    ? `Stima professionale AI per ${val.indirizzo}, ${val.citta}. Superficie: ${val.superficie_mq} m². Valore stimato: ${val.stima_min ? `€${val.stima_min.toLocaleString('it-IT')} – €${val.stima_max?.toLocaleString('it-IT')}` : 'in elaborazione'}.`
+    : 'Report di valutazione immobiliare generato con AI da Il Tuo Immobiliare.';
+
   return (
     <div className="min-h-screen bg-[#f5f5f0]" style={{ fontFamily: "'Inter', 'Geist', sans-serif" }}>
       <Helmet>
-        <meta name="robots" content="noindex, nofollow" />
+        <title>{pageTitle}</title>
+        <meta name="description" content={pageDesc} />
+        <meta property="og:title" content={pageTitle} />
+        <meta property="og:description" content={pageDesc} />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content={pageTitle} />
+        <meta name="twitter:description" content={pageDesc} />
       </Helmet>
 
       {/* ── Sticky top bar ─────────────────────────────────────────────────── */}

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { z } from 'zod';
 import { format, parseISO } from 'date-fns';
+import { logAudit } from '@/lib/auditLogger';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -101,6 +102,10 @@ const Leads = () => {
   const pendingSaveRef = useRef<any | null>(null);
   const hasInteractedRef = useRef(false);
 
+  const [totalLeadsCount, setTotalLeadsCount] = useState(0);
+  const [leadsPage, setLeadsPage] = useState(1);
+  const LEADS_PAGE_SIZE = 50;
+
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
 
   // Tasks State
@@ -124,16 +129,23 @@ const Leads = () => {
   const [isQuickTaskModalOpen, setIsQuickTaskModalOpen] = useState(false);
 
   // Slim query — only fields needed to render the board/list cards
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const { data, error } = await supabase
+    const from = (leadsPage - 1) * LEADS_PAGE_SIZE;
+    const to = from + LEADS_PAGE_SIZE - 1;
+
+    const { data, count, error } = await supabase
       .from('leads')
       .select(`
         id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
         assegnato_a, telefono, email,
         lead_immobili(immobili(titolo))
-      `)
-      .order('created_at', { ascending: false });
+      `, { count: 'exact' })
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (signal?.aborted) return;
 
     if (error) {
       showError("Errore nel caricamento CRM");
@@ -143,9 +155,10 @@ const Leads = () => {
         stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
       }));
       setLeads(sanitized);
+      setTotalLeadsCount(count ?? 0);
     }
     setLoading(false);
-  }, []);
+  }, [leadsPage]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
@@ -154,6 +167,7 @@ const Leads = () => {
       .from('leads')
       .select(`
         *,
+        _version,
         immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url),
         lead_immobili(
           id, stato_interesse, note, created_at,
@@ -221,8 +235,12 @@ const Leads = () => {
   }, [updateSellerState]);
 
   useEffect(() => {
-    fetchLeads();
+    const controller = new AbortController();
+    fetchLeads(controller.signal);
+    return () => controller.abort();
   }, [fetchLeads]);
+
+  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter]);
 
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
@@ -288,13 +306,6 @@ const Leads = () => {
     if (isCreateMode) {
       const { error } = await supabase.from('leads').insert({ ...payload, stato: 'Nuovo' });
       if (error) {
-        console.log('[Supabase INSERT leads] error', {
-          message: error?.message,
-          details: (error as any)?.details,
-          hint: (error as any)?.hint,
-          code: (error as any)?.code,
-          payload: { ...payload, stato: 'Nuovo' },
-        });
         showError("Errore nella creazione: " + error.message);
       } else {
         showSuccess("Contatto creato correttamente");
@@ -302,12 +313,22 @@ const Leads = () => {
         setSelectedLead(null);
       }
     } else {
-      const { error } = await supabase.from('leads').update(payload).eq('id', selectedLead.id);
+      const version = selectedLead._version ?? 1;
+      const { data: updated, error } = await supabase
+        .from('leads')
+        .update({ ...payload, _version: version + 1 })
+        .eq('id', selectedLead.id)
+        .eq('_version', version)
+        .select('_version');
 
       if (error) {
         showError("Errore nel salvataggio");
+      } else if (!updated || updated.length === 0) {
+        showError('Conflitto: il lead è stato modificato da un altro utente. Ricaricamento...');
+        fetchLeadDetail(selectedLead.id);
       } else {
         showSuccess("Scheda cliente aggiornata");
+        logAudit(selectedLead.id, payload, 'Agente');
         setLeads(prev => prev.map(l => l.id === selectedLead.id ? {
           ...l,
           nome: selectedLead.nome.trim(),
@@ -326,6 +347,7 @@ const Leads = () => {
   const performAutoSave = useCallback(async (lead: any) => {
     if (!lead?.id || !lead.nome?.trim() || !lead.cognome?.trim()) return;
     setAutoSaveStatus('saving');
+    const version = lead._version ?? 1;
     const payload = {
       nome: lead.nome.trim(),
       cognome: lead.cognome.trim(),
@@ -340,17 +362,29 @@ const Leads = () => {
       motivazione_vendita: lead.motivazione_vendita || null,
       note_interne: lead.note_interne || null,
       stato_venditore: lead.stato_venditore || 'Nuovo',
+      _version: version + 1,
     };
-    const { error } = await supabase.from('leads').update(payload).eq('id', lead.id);
+    const { data: updated, error } = await supabase
+      .from('leads')
+      .update(payload)
+      .eq('id', lead.id)
+      .eq('_version', version)
+      .select('_version');
+
     if (error) {
       setAutoSaveStatus('error');
+    } else if (!updated || updated.length === 0) {
+      showError('Il lead è stato modificato da un altro utente. Ricaricamento...');
+      setAutoSaveStatus('error');
+      fetchLeadDetail(lead.id);
     } else {
+      setSelectedLead((prev: any) => prev?.id === lead.id ? { ...prev, _version: updated[0]._version } : prev);
       setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, nome: lead.nome.trim(), cognome: lead.cognome.trim(), tipo_cliente: lead.tipo_cliente, assegnato_a: payload.assegnato_a } : l));
       setAutoSaveStatus('saved');
       if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current);
       autoSaveStatusTimerRef.current = setTimeout(() => setAutoSaveStatus('idle'), 2000);
     }
-  }, []);
+  }, [fetchLeadDetail]);
 
   useEffect(() => {
     if (!selectedLead?.id || !hasInteractedRef.current) return;
@@ -572,7 +606,18 @@ const Leads = () => {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {loading ? (
-                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 animate-pulse">Caricamento...</td></tr>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={i} className="border-b border-gray-50">
+                      <td className="px-8 py-5">
+                        <div className="h-4 bg-gray-100 rounded-lg animate-pulse w-40 mb-1.5" />
+                        <div className="h-3 bg-gray-50 rounded-lg animate-pulse w-24" />
+                      </td>
+                      <td className="px-8 py-5"><div className="h-5 bg-gray-100 rounded-full animate-pulse w-20" /></td>
+                      <td className="px-8 py-5"><div className="h-3 bg-gray-50 rounded-lg animate-pulse w-32" /></td>
+                      <td className="px-8 py-5"><div className="h-3 bg-gray-50 rounded-lg animate-pulse w-20" /></td>
+                      <td className="px-8 py-5"><div className="h-8 bg-gray-50 rounded-xl animate-pulse w-16 ml-auto" /></td>
+                    </tr>
+                  ))
                 ) : filteredLeads.length === 0 ? (
                   <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun lead trovato</td></tr>
                 ) : filteredLeads.map((lead) => (
@@ -675,6 +720,35 @@ const Leads = () => {
           </div>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalLeadsCount > LEADS_PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 shrink-0">
+          <p className="text-xs text-gray-400 font-medium">
+            {(leadsPage - 1) * LEADS_PAGE_SIZE + 1}–{Math.min(leadsPage * LEADS_PAGE_SIZE, totalLeadsCount)} di {totalLeadsCount}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={leadsPage === 1}
+              onClick={() => setLeadsPage(p => p - 1)}
+              className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
+            >
+              ← Precedente
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={leadsPage * LEADS_PAGE_SIZE >= totalLeadsCount}
+              onClick={() => setLeadsPage(p => p + 1)}
+              className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
+            >
+              Successiva →
+            </Button>
+          </div>
+        </div>
+      )}
       </div>
 
       {/* Unified Lead Dialog (create + edit) */}

@@ -72,21 +72,22 @@ const Dashboard = () => {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
+    let aborted = false;
     const fetchAll = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user || aborted) { setLoading(false); return; }
 
       setUserId(user.id);
 
       const { data: prof } = await supabase
         .from('profili_agenti')
-        .select('id, nome_completo, colore_calendario, avatar_url')
+        .select('id, nome_completo, colore_calendario, avatar_url, is_admin')
         .eq('id', user.id)
         .single();
 
-      const profileData = prof as AgentProfile | null;
+      const profileData = prof as (AgentProfile & { is_admin?: boolean }) | null;
       setProfile(profileData);
-      const admin = profileData?.nome_completo?.toLowerCase().includes('marco') ?? false;
+      const admin = profileData?.is_admin ?? false;
       setIsAdmin(admin);
 
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -144,6 +145,7 @@ const Dashboard = () => {
         recentLeadsQuery,
       ]);
 
+      if (aborted) return;
       setStats({
         activeLeads: activeLeadsCount ?? 0,
         todayAppointments: todayAppCount ?? 0,
@@ -155,6 +157,7 @@ const Dashboard = () => {
       setLoading(false);
     };
     fetchAll();
+    return () => { aborted = true; };
   }, []);
 
   const toggleTaskComplete = async (task: PendingTask) => {

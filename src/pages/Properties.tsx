@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,16 +32,15 @@ import OpenHouseManager from '@/components/properties/OpenHouseManager';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
+import { useProperties } from '@/hooks/useProperties';
+import { useQueryClient } from '@tanstack/react-query';
 
 const PAGE_SIZE = 10;
 
 const Properties = () => {
-  const [properties, setProperties] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("active"); // "active" | "sold"
+  const [filter, setFilter] = useState<'active' | 'sold'>('active');
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<any>(null);
@@ -49,39 +48,12 @@ const Properties = () => {
 
   const [ohProperty, setOhProperty] = useState<any>(null);
 
-  const fetchProperties = useCallback(async () => {
-    setLoading(true);
-    const from = (currentPage - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+  const queryClient = useQueryClient();
+  const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, searchQuery);
+  const properties = (propertiesData?.data ?? []) as any[];
+  const totalCount = propertiesData?.count ?? 0;
 
-    let query = supabase
-      .from('immobili')
-      .select('*', { count: 'exact' });
-
-    if (filter === "active") {
-      query = query.neq('stato', 'Venduto');
-    } else {
-      query = query.eq('stato', 'Venduto');
-    }
-
-    if (searchQuery) {
-      query = query.or(`titolo.ilike.%${searchQuery}%,zona.ilike.%${searchQuery}%,indirizzo.ilike.%${searchQuery}%,citta.ilike.%${searchQuery}%`);
-    }
-
-    const { data, count, error } = await query
-      .order('created_at', { ascending: false })
-      .range(from, to);
-
-    if (error) {
-      showError("Errore nel caricamento immobili");
-    } else {
-      setProperties(data || []);
-      setTotalCount(count || 0);
-    }
-    setLoading(false);
-  }, [currentPage, filter, searchQuery]);
-
-  useEffect(() => { fetchProperties(); }, [fetchProperties]);
+  const refetchProperties = () => queryClient.invalidateQueries({ queryKey: ['properties'] });
 
   useEffect(() => { setCurrentPage(1); }, [filter, searchQuery]);
 
@@ -97,33 +69,28 @@ const Properties = () => {
   const handleDelete = async () => {
     if (!propertyToDelete) return;
     const targetId = propertyToDelete.id;
-
-    setProperties(prev => prev.filter(p => p.id !== targetId));
-    setTotalCount(prev => prev - 1);
     setPropertyToDelete(null);
 
-    const { error } = await supabase.from('immobili').delete().eq('id', targetId);
+    const { error } = await supabase
+      .from('immobili')
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq('id', targetId);
     if (error) {
       showError("Errore nell'eliminazione.");
-      fetchProperties();
     } else {
       showSuccess("Immobile rimosso.");
+      refetchProperties();
     }
   };
 
   const toggleStatus = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === 'Venduto' ? 'Disponibile' : 'Venduto';
-    setProperties(prev => prev.map(p => p.id === id ? { ...p, stato: newStatus } : p));
-
     const { error } = await supabase.from('immobili').update({ stato: newStatus }).eq('id', id);
     if (error) {
       showError("Sincronizzazione fallita.");
-      fetchProperties();
     } else {
       showSuccess(`Stato: ${newStatus}`);
-      if ((filter === "active" && newStatus === 'Venduto') || (filter === "sold" && newStatus !== 'Venduto')) {
-        fetchProperties();
-      }
+      refetchProperties();
     }
   };
 
@@ -132,14 +99,14 @@ const Properties = () => {
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
         showError("Massimo 3 immobili in evidenza su questa vista.");
+        return;
       }
     }
-
-    setProperties(prev => prev.map(p => p.id === id ? { ...p, in_evidenza: !currentFeatured } : p));
     const { error } = await supabase.from('immobili').update({ in_evidenza: !currentFeatured }).eq('id', id);
     if (error) {
       showError("Errore evidenza.");
-      fetchProperties();
+    } else {
+      refetchProperties();
     }
   };
 
@@ -203,7 +170,22 @@ const Properties = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {loading ? (
-                    <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium">Caricamento...</td></tr>
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} className="border-b border-gray-50">
+                        <td className="px-8 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className="w-16 h-12 rounded-xl bg-gray-100 animate-pulse shrink-0" />
+                            <div className="space-y-1.5 flex-1 min-w-0">
+                              <div className="h-3.5 bg-gray-100 rounded-lg animate-pulse w-3/4" />
+                              <div className="h-3 bg-gray-50 rounded-lg animate-pulse w-1/2" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-5"><div className="h-4 bg-gray-100 rounded-lg animate-pulse w-24" /></td>
+                        <td className="px-8 py-5 text-center"><div className="h-6 bg-gray-100 rounded-full animate-pulse w-20 mx-auto" /></td>
+                        <td className="px-8 py-5"><div className="h-4 bg-gray-50 rounded-lg animate-pulse w-16 ml-auto" /></td>
+                      </tr>
+                    ))
                   ) : properties.length === 0 ? (
                     <tr><td colSpan={4} className="px-8 py-20 text-center text-gray-400 font-medium italic">Nessun immobile trovato.</td></tr>
                   ) : properties.map((prop) => (
@@ -355,7 +337,7 @@ const Properties = () => {
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
-          <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={fetchProperties} />
+          <PropertyWizard initialData={editingProperty} onClose={() => setIsWizardOpen(false)} onSuccess={refetchProperties} />
         </DialogContent>
       </Dialog>
 

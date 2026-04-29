@@ -80,13 +80,22 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     }
   }, [open, defaultLeadId, defaultLeadName]);
 
+  const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
+
   const searchLeads = async (q: string) => {
     if (!q.trim()) { setLeadItems([]); return; }
+    searchLeadsAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchLeadsAbortRef.current = controller;
+
+    const escaped = q.replace(/[%_\\]/g, '\\$&');
     const { data: rows } = await supabase
       .from('leads')
       .select('id, nome, cognome, telefono')
-      .or(`nome.ilike.%${q}%,cognome.ilike.%${q}%`)
+      .or(`nome.ilike.%${escaped}%,cognome.ilike.%${escaped}%`)
       .limit(8);
+
+    if (controller.signal.aborted) return;
     setLeadItems((rows ?? []).map(r => ({
       id: r.id,
       label: `${r.nome} ${r.cognome}`,
@@ -120,7 +129,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     });
     setIsSaving(false);
     if (error) {
-      console.error('[TaskModal] insert error', error);
+      if (import.meta.env.DEV) console.error('[TaskModal] insert error', error);
       showError('Errore: ' + error.message);
     } else {
       showSuccess('Task creata');

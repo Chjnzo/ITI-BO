@@ -65,7 +65,7 @@ const ImageUploader = ({
       setPreview(imageUrl);
       onUploadSuccess(imageUrl);
     } catch (error) {
-      console.error("Cloudinary Upload Error:", error);
+      if (import.meta.env.DEV) console.error("Cloudinary Upload Error:", error);
       showError("Caricamento fallito. Riprova.");
     } finally {
       setIsUploading(false);

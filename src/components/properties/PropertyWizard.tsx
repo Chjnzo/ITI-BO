@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
+import { Sentry } from '@/lib/sentry';
 import { compressCopertina, compressGalleria } from '@/utils/imageCompression';
 import { cn } from '@/lib/utils';
 import {
@@ -78,6 +79,15 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   const [galleryImages, setGalleryImages] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
+  const objectUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      objectUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
+      objectUrlsRef.current.clear();
+    };
+  }, []);
+
   useEffect(() => {
     supabase
       .from('leads')
@@ -119,7 +129,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
         anno_costruzione: initialData.anno_costruzione?.toString() || '',
         caratteristiche: initialData.caratteristiche || [],
         descrizione: initialData.descrizione || '',
-        stato: initialData.stato || 'Disponibile',
+        stato: (initialData.stato === 'Bozza' || !initialData.stato) ? 'Disponibile' : initialData.stato,
         link_immobiliare: initialData.link_immobiliare || '',
         proprietario: initialData.proprietario || '',
       });
@@ -152,8 +162,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     };
   };
 
-  const autoSave = (targetId: string) => {
-    supabase.from('immobili').update(buildPayload()).eq('id', targetId);
+  const autoSave = async (targetId: string) => {
+    const { error } = await supabase.from('immobili').update(buildPayload()).eq('id', targetId);
+    if (error) showError('Errore auto-salvataggio: ' + error.message);
   };
 
   const handleNextStep = async () => {
@@ -172,7 +183,6 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
         if (error) throw error;
         setDraftId(inserted.id);
       } catch (err: any) {
-        console.error("Supabase Error Details:", err.message, err.details, err.hint);
         showError("Errore nel salvataggio bozza: " + err.message);
         setLoading(false);
         return;
@@ -180,7 +190,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       setLoading(false);
     } else {
       const targetId = draftId || initialData?.id;
-      if (targetId) autoSave(targetId);
+      if (targetId) await autoSave(targetId);
     }
     setStep(s => s + 1);
   };
@@ -239,8 +249,14 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       const file = e.target.files[0];
+      if (coverPreview && objectUrlsRef.current.has(coverPreview)) {
+        URL.revokeObjectURL(coverPreview);
+        objectUrlsRef.current.delete(coverPreview);
+      }
+      const newUrl = URL.createObjectURL(file);
+      objectUrlsRef.current.add(newUrl);
       setCoverImage(file);
-      setCoverPreview(URL.createObjectURL(file));
+      setCoverPreview(newUrl);
     }
   };
 
@@ -248,7 +264,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     if (e.target.files) {
       const newFiles = Array.from(e.target.files);
       setGalleryImages(prev => [...prev, ...newFiles]);
-      const newPreviews = newFiles.map(file => URL.createObjectURL(file));
+      const newPreviews = newFiles.map(file => {
+        const url = URL.createObjectURL(file);
+        objectUrlsRef.current.add(url);
+        return url;
+      });
       setGalleryPreviews(prev => [...prev, ...newPreviews]);
     }
   };
@@ -339,7 +359,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       if (error) throw error;
 
       if (proprietarioLeadId) {
-        supabase.from('leads').update({ stato_venditore: 'Chiuso' }).eq('id', proprietarioLeadId);
+        const { error: propErr } = await supabase
+          .from('leads')
+          .update({ stato_venditore: 'Chiuso' })
+          .eq('id', proprietarioLeadId);
+        if (propErr) Sentry.captureException(propErr, { tags: { feature: 'proprietario_state_update' } });
       }
 
       showSuccess(initialData ? "Immobile aggiornato correttamente" : "Immobile pubblicato con successo");
@@ -347,6 +371,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       if (leadId && onLeadLinked) onLeadLinked(leadId, immobileId);
       onClose();
     } catch (error: any) {
+      Sentry.captureException(error, { tags: { feature: initialData ? 'property_update' : 'property_creation' } });
       showError(error.message);
     } finally {
       setLoading(false);
@@ -462,6 +487,10 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>
                 <Input placeholder="Bergamo" value={formData.citta} onChange={(e) => setFormData({...formData, citta: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Indirizzo</Label>
+                <Input placeholder="Es: Via Roma 12" value={formData.indirizzo} onChange={(e) => setFormData({...formData, indirizzo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
               <div className="space-y-3 col-span-full">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Proprietario</Label>
