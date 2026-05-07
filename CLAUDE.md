@@ -16,7 +16,7 @@ No test suite configured.
 
 ## Architecture
 
-React 19 SPA — Vite + TypeScript + Tailwind + shadcn/ui. CRM for ITI Bologna real estate agency. All routing is client-side via `react-router-dom` v6.
+React 19 SPA — Vite + TypeScript + Tailwind + shadcn/ui. CRM for ITI (Il Tuo Immobiliare), a real estate agency based in Bergamo. "BO" stands for Back Office. All routing is client-side via `react-router-dom` v6.
 
 ### Entry points
 - `src/App.tsx` — router, `ProtectedRoute` auth guard, all route declarations

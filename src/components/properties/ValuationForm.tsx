@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
-  Sparkles, ChevronLeft, Euro, Home, Check, AlertCircle
+  Sparkles, ChevronLeft, Euro, Home, Check, AlertCircle, Calculator
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
@@ -410,9 +410,9 @@ const ValuationForm = ({ onClose, onSuccess }: ValuationFormProps) => {
           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="space-y-1">
               <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                <Sparkles size={22} className="text-[#94b0ab]" /> Valutazione Generata
+                <Calculator size={22} className="text-[#94b0ab]" /> Valutazione Generata
               </h2>
-              <p className="text-sm text-gray-400">La valutazione è stata generata con successo da OpenAI.</p>
+              <p className="text-sm text-gray-400">La valutazione è stata generata con successo.</p>
             </div>
 
             <div className="space-y-6">
@@ -470,7 +470,7 @@ const ValuationForm = ({ onClose, onSuccess }: ValuationFormProps) => {
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex gap-3">
                 <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
                 <p className="text-sm text-blue-800">
-                  Questa valutazione è generata da AI e non vincolante. Rivedi attentamente i dati inseriti prima di salvare.
+                  Questa valutazione è indicativa e non vincolante. Rivedi attentamente i dati inseriti prima di salvare.
                 </p>
               </div>
             </div>

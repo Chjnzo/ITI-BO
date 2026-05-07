@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -65,9 +66,11 @@ const StatoBadge = ({ stato }: { stato: string }) => {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const Valutazioni = () => {
+  const location = useLocation();
   const [valutazioni, setValutazioni] = useState<Valutazione[]>([]);
   const [loading, setLoading] = useState(true);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizardLeadId, setWizardLeadId] = useState<string | undefined>(undefined);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Edit modal
@@ -92,6 +95,15 @@ const Valutazioni = () => {
   }, []);
 
   useEffect(() => { fetchValutazioni(); }, [fetchValutazioni]);
+
+  useEffect(() => {
+    const state = location.state as { openWizard?: boolean; leadId?: string } | null;
+    if (state?.openWizard) {
+      setWizardLeadId(state.leadId);
+      setIsWizardOpen(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -361,8 +373,9 @@ const Valutazioni = () => {
       {/* Wizard */}
       <ValuationWizard
         open={isWizardOpen}
-        onClose={() => setIsWizardOpen(false)}
-        onSaved={() => { setIsWizardOpen(false); fetchValutazioni(); }}
+        initialLeadId={wizardLeadId}
+        onClose={() => { setIsWizardOpen(false); setWizardLeadId(undefined); }}
+        onSaved={() => { setIsWizardOpen(false); setWizardLeadId(undefined); fetchValutazioni(); }}
       />
 
       {/* ── Edit Modal ──────────────────────────────────────────────────────── */}
@@ -411,7 +424,7 @@ const Valutazioni = () => {
             {/* AI text */}
             <div className="space-y-2">
               <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                Analisi del mercato (testo AI)
+                Analisi del mercato
               </Label>
               <Textarea
                 value={editMotivazione}

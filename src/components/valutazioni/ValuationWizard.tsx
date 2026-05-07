@@ -13,8 +13,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  Check, Sparkles, ChevronLeft, ChevronRight, Minus, Plus,
-  Home, Settings, Star, Euro,
+  Check, ChevronLeft, ChevronRight, Minus, Plus,
+  Home, Settings, Star, Euro, Calculator, X, TrendingUp,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -26,6 +26,7 @@ import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 const TIPOLOGIE = ['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico'];
 const STATI_CONSERVATIVI = ['Da ristrutturare', 'Discreto', 'Buono', 'Ottimo', 'Nuova Costruzione'];
 const CLASSI_ENERGETICHE = ['A4', 'A3', 'A2', 'A1', 'B', 'C', 'D', 'E', 'F', 'G'];
+const TIPI_RISCALDAMENTO = ['Autonomo', 'Centralizzato', 'Teleriscaldamento', 'Assente'];
 
 const COMFORT_OPTIONS = [
   { key: 'ha_box',        label: 'Box auto' },
@@ -35,7 +36,8 @@ const COMFORT_OPTIONS = [
   { key: 'ascensore',     label: 'Ascensore' },
 ] as const;
 
-const STEP_LABELS = ['Lead', 'Immobile', 'Comfort', 'Stima & AI'];
+const STEP_LABELS = ['Lead', 'Immobile', 'Comfort', 'Stima & AI', 'Mercato'];
+const TOTAL_STEPS = 5;
 
 const LOADING_MESSAGES = [
   "L'intelligenza artificiale sta analizzando i dati OMI e i comparabili di zona...",
@@ -48,6 +50,14 @@ const LOADING_MESSAGES = [
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ComfortKey = typeof COMFORT_OPTIONS[number]['key'];
+
+interface ComparabileAttivo {
+  url: string;
+  titolo: string;
+  prezzo: string;
+}
+
+const emptyComparabileAttivo = (): ComparabileAttivo => ({ url: '', titolo: '', prezzo: '' });
 
 // ── Numeric Stepper ───────────────────────────────────────────────────────────
 
@@ -96,9 +106,10 @@ interface ValuationWizardProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
+  initialLeadId?: string;
 }
 
-const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
+const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWizardProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
@@ -121,10 +132,12 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
   const [tipologia, setTipologia] = useState('');
   const [statoConservativo, setStatoConservativo] = useState('');
   const [numLocali, setNumLocali] = useState('');
+  const [numCamere, setNumCamere] = useState('');
   const [piano, setPiano] = useState('');
   const [numBagni, setNumBagni] = useState('');
   const [annoCostruzione, setAnnoCostruzione] = useState('');
   const [classeEnergetica, setClasseEnergetica] = useState('');
+  const [tipoRiscaldamento, setTipoRiscaldamento] = useState('');
 
   // Step 3 — Comfort
   const [comfort, setComfort] = useState<Record<ComfortKey, boolean>>({
@@ -143,6 +156,9 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
   const [loadingMsg, setLoadingMsg] = useState('');
   const [showPriceOverride, setShowPriceOverride] = useState(false);
 
+  // Step 5 — Mercato
+  const [comparabiliAttivi, setComparabiliAttivi] = useState<ComparabileAttivo[]>([emptyComparabileAttivo()]);
+
   // Reset on open
   useEffect(() => {
     if (!open) return;
@@ -158,10 +174,12 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     setTipologia('');
     setStatoConservativo('');
     setNumLocali('');
+    setNumCamere('');
     setPiano('');
     setNumBagni('');
     setAnnoCostruzione('');
     setClasseEnergetica('');
+    setTipoRiscaldamento('');
     setComfort({ ha_box: false, ha_posto_auto: false, ha_cantina: false, ha_giardino: false, ascensore: false });
     setNoteTecniche('');
     setStimaMin('');
@@ -169,11 +187,26 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     setMotivazioneAi('');
     setLoadingMsg('');
     setShowPriceOverride(false);
+    setComparabiliAttivi([emptyComparabileAttivo()]);
 
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setAgenteId(user.id);
     });
-  }, [open]);
+
+    if (initialLeadId) {
+      supabase
+        .from('leads')
+        .select('id, nome, cognome, telefono')
+        .eq('id', initialLeadId)
+        .single()
+        .then(({ data: row }) => {
+          if (row) {
+            setLeadId(row.id);
+            setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
+          }
+        });
+    }
+  }, [open, initialLeadId]);
 
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
@@ -220,6 +253,16 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     return `${base}-${uid}`;
   };
 
+  const getComparabiliAttiviPayload = () => {
+    return comparabiliAttivi
+      .filter(c => c.url.trim())
+      .map(c => ({
+        url: c.url.trim(),
+        ...(c.titolo.trim() ? { titolo: c.titolo.trim() } : {}),
+        ...(c.prezzo.trim() && !isNaN(Number(c.prezzo)) ? { prezzo: Number(c.prezzo) } : {}),
+      }));
+  };
+
   const buildDraftPayload = () => ({
     lead_id: leadId || null,
     agente_id: agenteId || null,
@@ -229,17 +272,35 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
     superficie_mq: Number(superficieMq),
     stato_conservativo: statoConservativo || null,
     num_locali: numLocali ? Number(numLocali) : null,
+    num_camere: numCamere ? Number(numCamere) : null,
     piano: piano || null,
     num_bagni: numBagni ? Number(numBagni) : null,
     anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
     classe_energetica: classeEnergetica || null,
+    tipo_riscaldamento: tipoRiscaldamento || null,
     ha_box: comfort.ha_box,
     ha_posto_auto: comfort.ha_posto_auto,
     ha_cantina: comfort.ha_cantina,
     ha_giardino: comfort.ha_giardino,
     ascensore: comfort.ascensore,
     note_tecniche: noteTecniche.trim() || null,
+    comparabili_attivi: getComparabiliAttiviPayload().length > 0 ? getComparabiliAttiviPayload() : null,
   });
+
+  // ── Comparabili Attivi helpers ──────────────────────────────────────────────
+
+  const addComparabileAttivo = () => {
+    if (comparabiliAttivi.length >= 3) return;
+    setComparabiliAttivi(prev => [...prev, emptyComparabileAttivo()]);
+  };
+
+  const removeComparabileAttivo = (idx: number) => {
+    setComparabiliAttivi(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const updateComparabileAttivo = (idx: number, field: keyof ComparabileAttivo, value: string) => {
+    setComparabiliAttivi(prev => prev.map((c, i) => i === idx ? { ...c, [field]: value } : c));
+  };
 
   // ── AI Generation ──────────────────────────────────────────────────────────
 
@@ -275,7 +336,6 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
       if (!session) {
         throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
       }
-      // Verify the token is still accepted by the server (not just cached locally)
       const { error: tokenError } = await supabase.from('profili_agenti').select('id').limit(1);
       if (tokenError?.message?.includes('JWT') || tokenError?.code === 'PGRST301') {
         throw new Error('Token scaduto. Effettua nuovamente il login e riprova.');
@@ -296,9 +356,12 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
           ha_posto_auto: comfort.ha_posto_auto,
           ha_cantina: comfort.ha_cantina,
           num_locali: numLocali ? Number(numLocali) : null,
+          num_camere: numCamere ? Number(numCamere) : null,
           num_bagni: numBagni ? Number(numBagni) : null,
           anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
           classe_energetica: classeEnergetica || null,
+          tipo_riscaldamento: tipoRiscaldamento || null,
+          comparabili_attivi: getComparabiliAttiviPayload(),
         },
       });
 
@@ -344,15 +407,16 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
 
         if (error) throw new Error(error.message);
         slug = inserted?.slug ?? null;
-      } else if (showPriceOverride) {
-        await supabase
-          .from('valutazioni')
-          .update({
-            stima_min: stimaMin ? Number(stimaMin) : undefined,
-            stima_max: stimaMax ? Number(stimaMax) : undefined,
-            motivazione_ai: motivazioneAi.trim() || undefined,
-          })
-          .eq('id', valutazioneId);
+      } else {
+        const updates: Record<string, unknown> = {
+          comparabili_attivi: getComparabiliAttiviPayload().length > 0 ? getComparabiliAttiviPayload() : null,
+        };
+        if (showPriceOverride) {
+          updates.stima_min = stimaMin ? Number(stimaMin) : undefined;
+          updates.stima_max = stimaMax ? Number(stimaMax) : undefined;
+          updates.motivazione_ai = motivazioneAi.trim() || undefined;
+        }
+        await supabase.from('valutazioni').update(updates).eq('id', valutazioneId);
       }
 
       // CRM automation — fire and forget
@@ -395,11 +459,11 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 Nuova Valutazione
               </DialogTitle>
               <p className="text-sm text-gray-500 mt-1">
-                Stai compilando lo step {step} di 4 — {STEP_LABELS[step - 1]}
+                Stai compilando lo step {step} di {TOTAL_STEPS} — {STEP_LABELS[step - 1]}
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {[1, 2, 3, 4].map((s) => (
+              {Array.from({ length: TOTAL_STEPS }, (_, i) => i + 1).map((s) => (
                 <button
                   key={s}
                   onClick={() => s <= step && setStep(s)}
@@ -529,12 +593,27 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                   <NumericStepper value={numLocali} onChange={setNumLocali} min={1} max={10} />
                 </div>
                 <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">N° camere</Label>
+                  <NumericStepper value={numCamere} onChange={setNumCamere} min={1} max={8} />
+                </div>
+                <div className="space-y-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
                   <NumericStepper value={piano} onChange={setPiano} min={0} max={30} />
                 </div>
                 <div className="space-y-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">N° bagni</Label>
                   <NumericStepper value={numBagni} onChange={setNumBagni} min={1} max={5} />
+                </div>
+                <div className="space-y-3 col-span-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Riscaldamento</Label>
+                  <Select value={tipoRiscaldamento} onValueChange={setTipoRiscaldamento}>
+                    <SelectTrigger className="h-14 rounded-2xl border-gray-100">
+                      <SelectValue placeholder="Seleziona..." />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl">
+                      {TIPI_RISCALDAMENTO.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-3 col-span-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Anno costruzione</Label>
@@ -601,9 +680,9 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
             <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="space-y-1">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                  <Sparkles size={22} className="text-[#94b0ab]" /> Stima & Intelligenza Artificiale
+                  <Calculator size={22} className="text-[#94b0ab]" /> Stima & Analisi
                 </h2>
-                <p className="text-sm text-gray-400">Genera la stima con AI basata su dati OMI e transazioni reali.</p>
+                <p className="text-sm text-gray-400">Genera la stima basata su dati OMI e transazioni reali.</p>
               </div>
 
               <Button
@@ -612,8 +691,8 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                 disabled={isGenerating}
                 className="w-full h-14 rounded-2xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2 shadow-lg shadow-[#94b0ab]/20"
               >
-                <Sparkles size={18} />
-                {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera con AI' : 'Genera con AI ✨'}
+                <Calculator size={18} />
+                {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera stima' : 'Genera stima'}
               </Button>
 
               {isGenerating && loadingMsg && (
@@ -636,11 +715,11 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
                   )}
 
                   <div className="space-y-3">
-                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Motivazione AI</Label>
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Analisi e motivazione</Label>
                     <Textarea
                       value={motivazioneAi}
                       onChange={e => setMotivazioneAi(e.target.value)}
-                      placeholder="Il testo generato dall'AI apparirà qui..."
+                      placeholder="Il testo dell'analisi apparirà qui..."
                       className="rounded-2xl border-gray-100 min-h-[140px] resize-none p-4"
                     />
                   </div>
@@ -689,9 +768,89 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
 
               {!aiGenerated && !isGenerating && (
                 <p className="text-xs text-gray-400 text-center italic">
-                  Clicca "Genera con AI" per ottenere la stima basata su dati OMI e transazioni reali nella zona.
+                  Clicca "Genera stima" per ottenere la valutazione basata su dati OMI e transazioni reali nella zona.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* ── STEP 5: Mercato ───────────────────────────────────────────── */}
+          {step === 5 && (
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <TrendingUp size={22} className="text-[#94b0ab]" /> Analisi di Mercato
+                </h2>
+                <p className="text-sm text-gray-400">
+                  Aggiungi i link di immobili simili attualmente in vendita nella zona (opzionale, max 3).
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Comparabili attivi sul mercato
+                </Label>
+
+                {comparabiliAttivi.map((c, idx) => (
+                  <div key={idx} className="rounded-2xl border border-gray-100 bg-[#f9f9f7] p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                        Comparabile {idx + 1}
+                      </span>
+                      {comparabiliAttivi.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeComparabileAttivo(idx)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors"
+                        >
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Input
+                        value={c.url}
+                        onChange={e => updateComparabileAttivo(idx, 'url', e.target.value)}
+                        placeholder="https://www.immobiliare.it/annunci/..."
+                        className="h-11 rounded-xl border-gray-200 bg-white text-sm"
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          value={c.titolo}
+                          onChange={e => updateComparabileAttivo(idx, 'titolo', e.target.value)}
+                          placeholder="Titolo (opz.)"
+                          className="h-11 rounded-xl border-gray-200 bg-white text-sm"
+                        />
+                        <div className="relative">
+                          <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
+                          <Input
+                            type="number"
+                            value={c.prezzo}
+                            onChange={e => updateComparabileAttivo(idx, 'prezzo', e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="Prezzo richiesto"
+                            className="h-11 rounded-xl border-gray-200 bg-white text-sm pl-9"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {comparabiliAttivi.length < 3 && (
+                  <button
+                    type="button"
+                    onClick={addComparabileAttivo}
+                    className="w-full h-11 rounded-2xl border border-dashed border-gray-200 text-sm text-gray-400 font-semibold hover:border-[#94b0ab] hover:text-[#94b0ab] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={14} /> Aggiungi comparabile
+                  </button>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-400 italic leading-relaxed">
+                Questi dati vengono passati all'AI per calibrare il posizionamento competitivo dell'immobile e appariranno nel report.
+              </p>
             </div>
           )}
         </div>
@@ -709,7 +868,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
           </Button>
 
           <div className="flex gap-3">
-            {step < 4 && (
+            {step < TOTAL_STEPS && (
               <Button
                 type="button"
                 onClick={() => {
@@ -722,7 +881,7 @@ const ValuationWizard = ({ open, onClose, onSaved }: ValuationWizardProps) => {
               </Button>
             )}
 
-            {step === 4 && (
+            {step === TOTAL_STEPS && (
               <Button
                 type="button"
                 onClick={handleSave}

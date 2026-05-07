@@ -40,7 +40,7 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa] p-4">
       <Card className="w-full max-w-md border-none shadow-xl bg-white/80 backdrop-blur-sm">
         <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl font-bold text-[#1a1a1a]">Admin OS</CardTitle>
+          <CardTitle className="text-2xl font-bold text-[#1a1a1a]">ITI Gestionale</CardTitle>
           <CardDescription>Inserisci le tue credenziali per accedere al backoffice</CardDescription>
         </CardHeader>
         <CardContent>

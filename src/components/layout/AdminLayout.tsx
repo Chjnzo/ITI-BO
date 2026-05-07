@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, MessageSquare, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator } from 'lucide-react';
+import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -36,7 +36,7 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
     { icon: Home, label: 'Immobili', path: '/immobili' },
     { icon: Calculator, label: 'Valutazioni', path: '/valutazioni' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
-    { icon: MessageSquare, label: 'Lead', path: '/leads' },
+    { icon: Users, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
   ];
 
@@ -54,10 +54,10 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
           title={collapsed ? "Espandi sidebar" : "Comprimi sidebar"}
         >
           {collapsed ? (
-            <span className="text-xl font-bold text-[#94b0ab]">A</span>
+            <span className="text-xl font-bold text-[#94b0ab]">ITI</span>
           ) : (
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-[#94b0ab]">Admin OS</h1>
+              <h1 className="text-xl font-bold tracking-tight text-[#94b0ab]">ITI Gestionale</h1>
               <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Il Tuo Immobiliare</p>
             </div>
           )}
@@ -169,7 +169,7 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
           >
             <Menu size={22} />
           </button>
-          <span className="text-base font-bold text-[#94b0ab]">Admin OS</span>
+          <span className="text-base font-bold text-[#94b0ab]">ITI Gestionale</span>
         </div>
 
         {fullHeight ? (

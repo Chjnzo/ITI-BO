@@ -29,7 +29,7 @@ import {
   User, Search, Save,
   Calendar, CalendarPlus, Plus, ExternalLink,
   TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
-  CheckSquare, Clock,
+  CheckSquare, Clock, Calculator,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
@@ -1187,7 +1187,19 @@ const Leads = () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Valutazione Stimata (€)</Label>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-bold text-gray-500">Valutazione Stimata (€)</Label>
+                              {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate('/valutazioni', { state: { openWizard: true, leadId: selectedLead.id } })}
+                                  className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
+                                >
+                                  <Calculator size={12} />
+                                  Crea valutazione
+                                </button>
+                              )}
+                            </div>
                             <Input
                               type="number"
                               value={selectedLead.valutazione_stimata || ''}

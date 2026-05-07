@@ -33,12 +33,25 @@ interface Comparabile {
   distanza_metri: number;
 }
 
+interface ComparabileAttivo {
+  url: string;
+  titolo?: string;
+  prezzo?: number;
+}
+
 interface AiResult {
   stima_min: number;
   stima_max: number;
   stima_breakdown: Record<string, unknown>;
   motivazione_ai: string;
   trend_mercato_locale: Array<{ anno: number; prezzo_mq: number }>;
+  descrizione_zona: string;
+  stima_ristrutturato_min: number;
+  stima_ristrutturato_max: number;
+  costo_stima_lavori: number;
+  tempo_mercato: string;
+  identikit_compratore: string;
+  narrativa_dotazioni: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -58,11 +71,15 @@ function buildPrompt(params: {
   ha_posto_auto: boolean | null;
   ha_cantina: boolean | null;
   num_locali: number | null;
+  num_camere: number | null;
   num_bagni: number | null;
   anno_costruzione: number | null;
   classe_energetica: string | null;
+  tipo_riscaldamento: string | null;
   zona_omi: ZonaOmi | null;
   comparabili: Comparabile[];
+  poi_summary: string | null;
+  comparabili_attivi: ComparabileAttivo[];
 }): string {
   const features: string[] = [];
   if (params.piano) features.push(`Piano: ${params.piano}`);
@@ -72,9 +89,11 @@ function buildPrompt(params: {
   if (params.ha_posto_auto) features.push("Con posto auto");
   if (params.ha_cantina) features.push("Con cantina");
   if (params.num_locali) features.push(`${params.num_locali} locali`);
+  if (params.num_camere) features.push(`${params.num_camere} camere da letto`);
   if (params.num_bagni) features.push(`${params.num_bagni} bagni`);
   if (params.anno_costruzione) features.push(`Anno costruzione: ${params.anno_costruzione}`);
   if (params.classe_energetica) features.push(`Classe energetica: ${params.classe_energetica}`);
+  if (params.tipo_riscaldamento) features.push(`Riscaldamento: ${params.tipo_riscaldamento}`);
 
   let omiBlock = `[MODALITÀ ANALISI DI MERCATO GENERALE — DATI OMI NON DISPONIBILI]
 Nessun dato OMI ufficiale è disponibile per questa zona. NON inventare codici di zona OMI (es. "BG-C1", "BG-R2") né range di prezzo specifici. Basa la stima esclusivamente sulle tendenze generali del comune di ${params.citta} e sulle caratteristiche dell'immobile.`;
@@ -85,7 +104,7 @@ Nessun dato OMI ufficiale è disponibile per questa zona. NON inventare codici d
 - Zona descrizione: ${params.zona_omi.zona}
 - Comune: ${params.zona_omi.comune} (${params.zona_omi.provincia})
 - Range prezzi/mq: €${params.zona_omi.prezzo_mq_min} – €${params.zona_omi.prezzo_mq_max} (medio: €${params.zona_omi.prezzo_mq_medio}/mq)
-IMPORTANTE: Cita esplicitamente il codice zona OMI "${params.zona_omi.codice_zona}" nella motivazione.`;
+IMPORTANTE: Cita esplicitamente il codice zona OMI "${params.zona_omi.codice_zona}" nella motivazione e nella descrizione_zona.`;
   }
 
   let comparabiliBlock = `[ZERO TRANSAZIONI COMPARABILI DISPONIBILI]
@@ -98,6 +117,22 @@ NON scrivere frasi come "in via X sono stati registrati valori di Y €/mq" se v
       )
       .join("\n");
     comparabiliBlock = `Transazioni comparabili nelle vicinanze (raggio 1.5km, ${params.comparabili.length} rilevate):\n${rows}`;
+  }
+
+  let comparabiliAttiviBlock = "";
+  if (params.comparabili_attivi.length > 0) {
+    const rows = params.comparabili_attivi.map((c, i) => {
+      let row = `  ${i + 1}. URL: ${c.url}`;
+      if (c.titolo) row += ` — "${c.titolo}"`;
+      if (c.prezzo) row += ` — prezzo richiesto: €${c.prezzo.toLocaleString("it-IT")}`;
+      return row;
+    }).join("\n");
+    comparabiliAttiviBlock = `\nConcorrenza attiva sul mercato (annunci attuali forniti dall'agente):\n${rows}\nUsa questi prezzi di lista come riferimento per calibrare il posizionamento competitivo.`;
+  }
+
+  let poiBlock = "";
+  if (params.poi_summary) {
+    poiBlock = `\nServizi nelle vicinanze (raggio 500m — OpenStreetMap): ${params.poi_summary}`;
   }
 
   const dataMode = params.zona_omi && params.comparabili.length > 0
@@ -116,10 +151,70 @@ Immobile da valutare:
 - Superficie: ${params.superficie_mq} mq
 - Stato conservativo: ${params.stato_conservativo}
 ${features.length > 0 ? `- Caratteristiche: ${features.join(", ")}` : ""}
-
+${poiBlock}
 ${omiBlock}
 
-${comparabiliBlock}`;
+${comparabiliBlock}
+${comparabiliAttiviBlock}`;
+}
+
+// ---------------------------------------------------------------------------
+// Overpass API — POI entro 500m
+// ---------------------------------------------------------------------------
+
+async function fetchPoiSummary(lat: number, lng: number): Promise<string | null> {
+  try {
+    const query = `[out:json][timeout:10];(node["amenity"="school"](around:500,${lat},${lng});node["amenity"="bus_stop"](around:500,${lat},${lng});node["leisure"="park"](around:500,${lat},${lng});node["shop"="supermarket"](around:500,${lat},${lng}););out count;`;
+    const res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as { elements?: Array<{ tags?: { total?: string; amenity?: string; shop?: string; leisure?: string } }> };
+    const tags = json?.elements?.[0]?.tags;
+    if (!tags) return null;
+    const total = parseInt(tags.total ?? "0", 10);
+    if (total === 0) return null;
+
+    // Re-query per categoria per avere counts separati
+    const queryDetail = `[out:json][timeout:10];(node["amenity"="school"](around:500,${lat},${lng}););out count;`;
+    const queryBus = `[out:json][timeout:10];(node["amenity"="bus_stop"](around:500,${lat},${lng}););out count;`;
+    const queryPark = `[out:json][timeout:10];(node["leisure"="park"](around:500,${lat},${lng}););out count;`;
+    const querySuper = `[out:json][timeout:10];(node["shop"="supermarket"](around:500,${lat},${lng}););out count;`;
+
+    const fetchCount = async (q: string): Promise<number> => {
+      try {
+        const r = await fetch("https://overpass-api.de/api/interpreter", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `data=${encodeURIComponent(q)}`,
+          signal: AbortSignal.timeout(8000),
+        });
+        const j = await r.json() as { elements?: Array<{ tags?: { total?: string } }> };
+        return parseInt(j?.elements?.[0]?.tags?.total ?? "0", 10);
+      } catch { return 0; }
+    };
+
+    const [schools, buses, parks, supers] = await Promise.all([
+      fetchCount(queryDetail),
+      fetchCount(queryBus),
+      fetchCount(queryPark),
+      fetchCount(querySuper),
+    ]);
+
+    const parts: string[] = [];
+    if (schools > 0) parts.push(`${schools} ${schools === 1 ? "scuola" : "scuole"}`);
+    if (buses > 0) parts.push(`${buses} ${buses === 1 ? "fermata bus" : "fermate bus"}`);
+    if (parks > 0) parts.push(`${parks} ${parks === 1 ? "parco" : "parchi"}`);
+    if (supers > 0) parts.push(`${supers} ${supers === 1 ? "supermercato" : "supermercati"}`);
+
+    return parts.length > 0 ? parts.join(", ") + " entro 500m" : null;
+  } catch (err) {
+    console.warn("Overpass API error (non-critical):", err instanceof Error ? err.message : String(err));
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -160,9 +255,12 @@ Deno.serve(async (req) => {
       ha_posto_auto = null,
       ha_cantina = null,
       num_locali = null,
+      num_camere = null,
       num_bagni = null,
       anno_costruzione = null,
       classe_energetica = null,
+      tipo_riscaldamento = null,
+      comparabili_attivi = [],
     } = await req.json();
 
     console.log("Starting evaluation for:", valutazione_id, "| indirizzo:", indirizzo, "| citta:", citta, "| mq:", superficie_mq, "| tipologia:", tipologia);
@@ -187,22 +285,15 @@ Deno.serve(async (req) => {
     // 1. Geocode via Nominatim (inline, with fallback)
     // -----------------------------------------------------------------------
 
-    // Build a list of query candidates to try in order.
-    // Some users type neighborhoods/frazioni as the city (e.g. "Redona, Bergamo").
-    // We extract the last comma-separated token as the "main city" for the fallback.
     const cittaRaw = citta.trim();
     const cittaTokens = cittaRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
-    // "main" city = last token (e.g. "Bergamo" from "Redona, Bergamo")
     const cittaMain = cittaTokens[cittaTokens.length - 1];
 
     const geocodeQueries: string[] = [];
-    // Attempt 1: full address + full city
     geocodeQueries.push(`${indirizzo.trim()}, ${cittaRaw}`);
-    // Attempt 2: full address + main city only (drops neighborhood prefix)
     if (cittaMain !== cittaRaw) {
       geocodeQueries.push(`${indirizzo.trim()}, ${cittaMain}`);
     }
-    // Attempt 3: street only + main city (drops civic number, helps with malformed numbers)
     const indirizzoStreet = indirizzo.trim().replace(/\s+\d+[A-Za-z]?\s*$/, "").trim();
     if (indirizzoStreet !== indirizzo.trim()) {
       geocodeQueries.push(`${indirizzoStreet}, ${cittaMain}`);
@@ -245,57 +336,55 @@ Deno.serve(async (req) => {
     console.log("Geocoded coords:", lat, lng);
 
     // -----------------------------------------------------------------------
-    // 2. Nearest OMI zone (inline RPC)
+    // 2. POI da Overpass (parallelo con OMI lookup)
     // -----------------------------------------------------------------------
-    console.log("Calling nearest_zona_omi RPC — p_lon:", lng, "p_lat:", lat, "p_comune:", citta);
+    const [poiResult, zonaIdResult, comparabiliRawResult] = await Promise.allSettled([
+      fetchPoiSummary(lat, lng),
+      supabase.rpc("nearest_zona_omi", { p_lon: lng, p_lat: lat, p_comune: citta ?? null }),
+      supabase.rpc("comparabili_vicini", { p_lon: lng, p_lat: lat, p_raggio_m: 1500, p_limit: 10 }),
+    ]);
 
-    const { data: zonaId, error: rpcError } = await supabase.rpc("nearest_zona_omi", {
-      p_lon: lng,
-      p_lat: lat,
-      p_comune: citta ?? null,
-    });
+    const poi_summary: string | null = poiResult.status === "fulfilled" ? poiResult.value : null;
+    console.log("POI summary:", poi_summary);
 
-    if (rpcError) {
-      console.error("nearest_zona_omi error:", rpcError.message);
-      return json({ error: `Errore RPC nearest_zona_omi: ${rpcError.message}`, success: false }, 500);
-    }
-
-    console.log("nearest_zona_omi returned zonaId:", zonaId);
-
+    // -----------------------------------------------------------------------
+    // 3. Nearest OMI zone
+    // -----------------------------------------------------------------------
+    console.log("nearest_zona_omi result:", zonaIdResult.status);
     let zona_omi: ZonaOmi | null = null;
-    if (zonaId) {
-      const { data: zonaData, error: zonaError } = await supabase
-        .from("zone_omi")
-        .select("id, codice_zona, comune, provincia, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio")
-        .eq("id", zonaId)
-        .single();
 
-      if (zonaError) {
-        console.error("zone_omi fetch error:", zonaError.message);
+    if (zonaIdResult.status === "fulfilled") {
+      const { data: zonaId, error: rpcError } = zonaIdResult.value;
+      if (rpcError) {
+        console.error("nearest_zona_omi error:", rpcError.message);
       } else {
-        zona_omi = zonaData as ZonaOmi;
-        console.log("Zona OMI:", zona_omi?.codice_zona, "medio:", zona_omi?.prezzo_mq_medio);
+        console.log("nearest_zona_omi returned zonaId:", zonaId);
+        if (zonaId) {
+          const { data: zonaData, error: zonaError } = await supabase
+            .from("zone_omi")
+            .select("id, codice_zona, comune, provincia, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio")
+            .eq("id", zonaId)
+            .single();
+
+          if (zonaError) {
+            console.error("zone_omi fetch error:", zonaError.message);
+          } else {
+            zona_omi = zonaData as ZonaOmi;
+            console.log("Zona OMI:", zona_omi?.codice_zona, "medio:", zona_omi?.prezzo_mq_medio);
+          }
+        }
       }
     }
 
     // -----------------------------------------------------------------------
-    // 3. Comparabili vicini (inline RPC)
+    // 4. Comparabili vicini
     // -----------------------------------------------------------------------
-    console.log("Calling comparabili_vicini RPC");
-
-    const { data: comparabiliRaw, error: compError } = await supabase.rpc("comparabili_vicini", {
-      p_lon: lng,
-      p_lat: lat,
-      p_raggio_m: 1500,
-      p_limit: 10,
-    });
-
-    if (compError) {
-      console.error("comparabili_vicini error:", compError.message);
-      // Non-fatal — proceed without comparabili
+    let comparabili: Comparabile[] = [];
+    if (comparabiliRawResult.status === "fulfilled") {
+      const { data: comparabiliRaw, error: compError } = comparabiliRawResult.value;
+      if (compError) console.error("comparabili_vicini error:", compError.message);
+      comparabili = comparabiliRaw ?? [];
     }
-
-    const comparabili: Comparabile[] = comparabiliRaw ?? [];
     console.log("Comparabili found:", comparabili.length);
 
     if (!zona_omi && comparabili.length === 0) {
@@ -307,9 +396,10 @@ Deno.serve(async (req) => {
     }
 
     // -----------------------------------------------------------------------
-    // 4. Build prompt and call OpenAI
+    // 5. Build prompt and call OpenAI
     // -----------------------------------------------------------------------
     const currentYear = new Date().getFullYear();
+    const isGiaOttimo = ["Ottimo", "Nuova Costruzione"].includes(stato_conservativo ?? "");
 
     const systemPrompt = `Sei il Direttore Tecnico di "Il Tuo Immobiliare", agenzia immobiliare specializzata nella provincia di Bergamo. Il tuo tono è autorevole, analitico e radicato nella conoscenza del mercato locale bergamasco. Hai accesso a dati OMI ufficiali e a transazioni reali comparabili.
 
@@ -317,7 +407,7 @@ Analizza i dati forniti e restituisci ESCLUSIVAMENTE un oggetto JSON valido con 
 
 - "stima_min": intero — prezzo minimo consigliato in €
 - "stima_max": intero — prezzo massimo consigliato in €
-- "stima_breakdown": oggetto con i fattori correttivi applicati al prezzo/mq base. Esempio:
+- "stima_breakdown": oggetto con i fattori correttivi applicati al prezzo/mq base. Schema:
   {
     "prezzo_mq_base": 2200,
     "fattori": [
@@ -328,31 +418,45 @@ Analizza i dati forniti e restituisci ESCLUSIVAMENTE un oggetto JSON valido con 
     "stima_calcolata": 124440
   }
 - "motivazione_ai": testo professionale in italiano strutturato in ESATTAMENTE 3 paragrafi separati da \\n\\n:
-  PARAGRAFO 1 — CONTESTO: Analisi approfondita della micro-zona e del trend di mercato locale. Se disponibile, cita il codice zona OMI e il range ufficiale prezzo/mq. NON scrivere frasi generiche come "la zona è ben servita": cita dati concreti (prezzi OMI, fascia, andamento storico). Se i comparabili sono presenti, riporta i valori medi di transazione reali.
-  PARAGRAFO 2 — ANALISI TECNICA: Spiega PERCHÉ hai applicato ciascun fattore correttivo specifico, collegandolo alle preferenze degli acquirenti bergamaschi. Ad esempio: ascensore assente al piano alto impatta sulla fascia d'acquirenti anziani o famiglie; giardino privato è raro e valorizzato post-pandemia; stato conservativo "da ristrutturare" può aprire a investitori ma riduce la platea di acquirenti finali. Sii specifico e tecnico.
-  PARAGRAFO 3 — CONCLUSIONE STRATEGICA: Consiglio operativo sul range di prezzo per attrarre acquirenti seri nel mercato attuale. Indica se il mercato locale è in fase espansiva, stabile o contrattiva. Se mancano comparabili, dichiaralo esplicitamente specificando che la stima si basa sui modelli statistici OMI e sugli standard valutativi de "Il Tuo Immobiliare".
+  PARAGRAFO 1 — CONTESTO: Analisi approfondita della micro-zona e del trend di mercato locale. Se disponibile, cita il codice zona OMI e il range ufficiale prezzo/mq. NON scrivere frasi generiche: cita dati concreti. Se i comparabili sono presenti, riporta i valori medi di transazione reali.
+  PARAGRAFO 2 — ANALISI TECNICA: Spiega PERCHÉ hai applicato ciascun fattore correttivo specifico, collegandolo alle preferenze degli acquirenti bergamaschi. Sii specifico e tecnico.
+  PARAGRAFO 3 — CONCLUSIONE STRATEGICA: Consiglio operativo sul range di prezzo per attrarre acquirenti seri nel mercato attuale. Indica se il mercato locale è in fase espansiva, stabile o contrattiva.
 - "trend_mercato_locale": array di oggetti {anno, prezzo_mq} dal 2018 al ${currentYear}, con valori realistici e coerenti per la zona OMI indicata.
+- "descrizione_zona": testo professionale in italiano strutturato in ESATTAMENTE 2 paragrafi separati da \\n\\n:
+  PARAGRAFO 1 — CARATTERISTICHE DELLA ZONA: Descrizione geografica e vocazionale precisa della zona/quartiere. Usa il nome della zona OMI se disponibile. Se sono disponibili dati POI (servizi vicini), integrali nella descrizione.
+  PARAGRAFO 2 — MERCATO IMMOBILIARE: Andamento del mercato specifico di questa zona. Se disponibili i dati OMI, cita obbligatoriamente il range ufficiale €/mq e il codice zona. Descrivi il trend degli ultimi anni.
+- "stima_ristrutturato_min": intero — valore stimato DOPO un intervento di restyling/ristrutturazione in €. ${isGiaOttimo ? "L'immobile è già in stato ottimo, imposta uguale a stima_min." : "Calcola il valore potenziale ipotizzando un intervento di restyling completo."}
+- "stima_ristrutturato_max": intero — come stima_ristrutturato_min ma valore massimo. ${isGiaOttimo ? "Imposta uguale a stima_max." : ""}
+- "costo_stima_lavori": intero — costo indicativo dell'intervento in €. ${isGiaOttimo ? "Imposta 0 (immobile già ottimo)." : "Stima realistica basata su superficie e tipologia di intervento (restyling leggero vs ristrutturazione totale)."}
+- "tempo_mercato": stringa — tempo stimato per vendere questo immobile in questa zona (es. "1-2 mesi", "2-4 mesi", "4-6 mesi", "6-12 mesi"). Basati su tipologia, zona OMI, stato e dati di mercato.
+- "identikit_compratore": testo in italiano di 2-4 frasi — profilo demografico e comportamentale dell'acquirente tipo per questo immobile specifico (es. fascia d'età, nucleo familiare, motivazione d'acquisto, priorità nella scelta).
+- "narrativa_dotazioni": testo in italiano di 2-3 frasi discorsive e persuasive che descrivono come le dotazioni presenti (${["ha_box", "ha_posto_auto", "ha_cantina", "ha_giardino", "ascensore"].join(", ")}) valorizzano concretamente la vita quotidiana in questo immobile. Sii specifico, evita frasi generiche.
 
-Regole sui fattori correttivi — LEGGI CON ATTENZIONE:
+REGOLA MATEMATICA OBBLIGATORIA per stima_breakdown:
+prezzo_mq_finale = prezzo_mq_base × (1 + SOMMA_ALGEBRICA(tutti i delta_percentuale) / 100)
+Somma TUTTI i delta_percentuale algebricamente PRIMA di moltiplicare. NON applicarli in cascata uno per uno.
+Esempio CORRETTO: base=2200, fattori=[+10%, +5%, +5%] → somma=+20% → finale=2200×1.20=2640
+Esempio SBAGLIATO: 2200×1.10×1.05×1.05=2668 (cascata — VIETATO)
+stima_calcolata = prezzo_mq_finale × superficie_mq
+stima_min = ROUND(stima_calcolata × 0.95, -3) (arrotondato al migliaio)
+stima_max = ROUND(stima_calcolata × 1.05, -3) (arrotondato al migliaio)
+
+REGOLA CONGRUENZA OBBLIGATORIA:
+Ogni difetto o pregio citato esplicitamente in motivazione_ai DEVE avere un corrispondente entry in stima_breakdown.fattori con delta_percentuale non zero.
+Ogni entry in stima_breakdown.fattori DEVE essere menzionato nella motivazione_ai.
+Zero contraddizioni testo↔numeri. Se citi "mancanza ascensore" nel testo, deve esserci il fattore "Assenza ascensore" con delta negativo.
+
+Regole sui fattori correttivi:
 A. Includi ESCLUSIVAMENTE i fattori che modificano effettivamente il prezzo (delta_percentuale != 0).
 B. NON includere MAI un fattore con delta_percentuale uguale a 0.
 C. NON includere un fattore se la caratteristica è assente o neutra per questo immobile.
-   NON restituire MAI righe con "Non applicabile", "N/A", "Nessuno" o valori neutri. Se non hai nulla di rilevante da dire su un aspetto, semplicemente non includerlo nell'array. Esempi:
-   - Se non c'è giardino → non includere "Giardino"
-   - Se il piano è intermedio e non penalizzante → non includere un fattore piano
-   - Se la classe energetica è C (nella media) → non includere un fattore energetico
-D. Il campo "nome" deve essere SPECIFICO per questo immobile, mai generico. Esempi:
-   - NON scrivere: "Ascensore"
-   - SCRIVI invece: "Ascensore presente in edificio anni '70" oppure "Ascensore assente — penalizza l'accesso al piano 5"
-   - NON scrivere: "Giardino privato di [dimensione]mq" se la dimensione NON è nei dati forniti
-   - SCRIVI invece: "Presenza di area verde ad uso esclusivo" (termine qualitativo) quando la dimensione è sconosciuta
-   - NON assumere MAI dimensioni, esposizioni o caratteristiche non esplicitamente fornite nel prompt
-E. Il campo "nota" deve spiegare l'impatto concreto sul mercato bergamasco (acquirenti target, rarità, domanda post-pandemia, ecc.).
-F. I range orientativi (usa il valore preciso più adatto al caso specifico):
+D. Il campo "nome" deve essere SPECIFICO per questo immobile, mai generico.
+E. Il campo "nota" deve spiegare l'impatto concreto sul mercato bergamasco.
+F. Range orientativi (usa il valore preciso più adatto al caso specifico):
    - Piano terra senza giardino: -5%
    - Piano alto (>3) con ascensore: +4% a +6%
    - Piano alto (>3) senza ascensore: -7% a -10%
-   - Giardino privato: +5% a +10% (in base a dimensioni e esposizione)
+   - Giardino privato: +5% a +10%
    - Box auto: +3% a +4%
    - Posto auto scoperto: +1% a +2%
    - Cantina: +1%
@@ -361,23 +465,25 @@ F. I range orientativi (usa il valore preciso più adatto al caso specifico):
    - Classe energetica A o B: +5%
    - Classe energetica G: -5%
    - Anno di costruzione ante 1960 senza ristrutturazione: -3% a -5%
+   - Riscaldamento autonomo vs centralizzato: +2% a +3%
 
 REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
-1. GROUNDING TOTALE: usa SOLO i dati forniti esplicitamente in questo prompt. Non aggiungere nulla che non sia presente nell'input.
-2. ZERO ALLUCINAZIONI SU COMPARABILI: se la lista comparabili è vuota, NON inventare indirizzi di strade, prezzi/mq o descrizioni di transazioni. Usa la frase esatta: "Dati di compravendita locali non disponibili per questo micro-settore."
-3. ZERO ALLUCINAZIONI SU OMI: se i dati OMI non sono presenti, NON inventare codici zona (es. "BG-C1"), né range di prezzo specifici. Entra in "Modalità Analisi di Mercato Generale" basata solo sulle tendenze comunali.
-4. DIMENSIONI SCONOSCIUTE: se una caratteristica è presente (es. giardino = true) ma la dimensione non è fornita, usa SOLO termini qualitativi ("presenza di area verde") — MAI assumere dimensioni.
-5. Non usare frasi generiche come "la zona è ben servita dai trasporti" senza dati a supporto.
-6. Se i comparabili sono presenti, DEVI citare almeno uno specifico (via e prezzo/mq) nella motivazione.
-7. Se i dati OMI sono presenti, DEVI citare il codice zona nella motivazione.
+1. GROUNDING TOTALE: usa SOLO i dati forniti esplicitamente in questo prompt.
+2. ZERO ALLUCINAZIONI SU COMPARABILI: se la lista comparabili è vuota, NON inventare indirizzi, prezzi/mq o descrizioni di transazioni.
+3. ZERO ALLUCINAZIONI SU OMI: se i dati OMI non sono presenti, NON inventare codici zona né range di prezzo specifici.
+4. DIMENSIONI SCONOSCIUTE: usa SOLO termini qualitativi per caratteristiche presenti ma senza dimensione fornita.
+5. Non usare frasi generiche senza dati a supporto.
+6. Se i comparabili sono presenti, DEVI citare almeno uno specifico nella motivazione.
+7. Se i dati OMI sono presenti, DEVI citare il codice zona sia nella motivazione che nella descrizione_zona.
 8. Non usare markdown. Rispondi solo con il JSON.
-9. L'array "fattori" NON deve mai contenere oggetti con delta_percentuale = 0. Se non ci sono fattori rilevanti, restituisci un array vuoto.`;
+9. L'array "fattori" NON deve mai contenere oggetti con delta_percentuale = 0.`;
 
     const userPrompt = buildPrompt({
       indirizzo, citta, superficie_mq, tipologia, stato_conservativo,
       piano, ascensore, ha_giardino, ha_box, ha_posto_auto, ha_cantina,
-      num_locali, num_bagni, anno_costruzione, classe_energetica,
-      zona_omi, comparabili,
+      num_locali, num_camere, num_bagni, anno_costruzione, classe_energetica,
+      tipo_riscaldamento, zona_omi, comparabili, poi_summary,
+      comparabili_attivi: comparabili_attivi ?? [],
     });
 
     console.log("Calling OpenAI...");
@@ -417,10 +523,14 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
       return json({ error: "Risposta AI non valida (JSON malformato).", success: false }, 502);
     }
 
-    const { stima_min, stima_max, stima_breakdown, motivazione_ai, trend_mercato_locale } = aiResult;
+    const {
+      stima_min, stima_max, stima_breakdown, motivazione_ai, trend_mercato_locale, descrizione_zona,
+      stima_ristrutturato_min, stima_ristrutturato_max, costo_stima_lavori,
+      tempo_mercato, identikit_compratore, narrativa_dotazioni,
+    } = aiResult;
 
     // -----------------------------------------------------------------------
-    // 5. Update valutazioni record
+    // 6. Update valutazioni record
     // -----------------------------------------------------------------------
     const updatePayload: Record<string, unknown> = {
       latitudine: lat,
@@ -430,6 +540,14 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
       stima_breakdown,
       motivazione_ai,
       trend_mercato_locale,
+      descrizione_zona: descrizione_zona ?? null,
+      stima_ristrutturato_min: stima_ristrutturato_min ?? null,
+      stima_ristrutturato_max: stima_ristrutturato_max ?? null,
+      costo_stima_lavori: costo_stima_lavori ?? null,
+      tempo_mercato: tempo_mercato ?? null,
+      identikit_compratore: identikit_compratore ?? null,
+      narrativa_dotazioni: narrativa_dotazioni ?? null,
+      poi_summary: poi_summary ?? null,
       stato: "Completata",
       updated_at: new Date().toISOString(),
     };
@@ -454,7 +572,7 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
     }
 
     // -----------------------------------------------------------------------
-    // 6. Link comparabili
+    // 7. Link comparabili
     // -----------------------------------------------------------------------
     if (comparabili.length > 0) {
       const rows = comparabili.map((c) => ({

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import {
   FileDown, Home, ShieldCheck, TrendingUp,
   MapPin, Ruler, Building2, Wrench, ArrowUpRight, ArrowDownRight,
-  Printer, Star, ChevronDown, Lock,
+  Printer, Star, ChevronDown, Lock, Info, Clock, User,
+  ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
@@ -31,6 +32,12 @@ interface StimaBreakdown {
   stima_calcolata: number;
 }
 
+interface ComparabileAttivoItem {
+  url: string;
+  titolo?: string;
+  prezzo?: number;
+}
+
 interface ValutazioneDetail {
   id: string;
   indirizzo: string;
@@ -39,10 +46,12 @@ interface ValutazioneDetail {
   superficie_mq: number;
   piano: number | null;
   num_locali: number | null;
+  num_camere: number | null;
   num_bagni: number | null;
   anno_costruzione: number | null;
   stato_conservativo: string | null;
   classe_energetica: string | null;
+  tipo_riscaldamento: string | null;
   ha_box: boolean;
   ha_posto_auto: boolean;
   ha_cantina: boolean;
@@ -54,6 +63,17 @@ interface ValutazioneDetail {
   stima_breakdown: StimaBreakdown | null;
   motivazione_ai: string | null;
   trend_mercato_locale: Array<{ anno: number; prezzo_mq: number }> | string | null;
+  descrizione_zona: string | null;
+  stima_ristrutturato_min: number | null;
+  stima_ristrutturato_max: number | null;
+  costo_stima_lavori: number | null;
+  tempo_mercato: string | null;
+  identikit_compratore: string | null;
+  narrativa_dotazioni: string | null;
+  poi_summary: string | null;
+  comparabili_attivi: ComparabileAttivoItem[] | null;
+  latitudine: number | null;
+  longitudine: number | null;
   stato: string;
   created_at: string;
   leads?: { nome: string; cognome: string } | null;
@@ -101,7 +121,6 @@ const parseBreakdown = (raw: unknown): StimaBreakdown | null => {
 };
 
 const parseAiParagraphs = (text: string): string[] => {
-  // Try double-newline split first (matches our AI prompt output format)
   const byDouble = text.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
   if (byDouble.length >= 2) return byDouble;
   return text.split('\n').map(p => p.trim()).filter(Boolean);
@@ -135,6 +154,47 @@ const ChartTooltip = ({ active, payload, label }: {
   );
 };
 
+// ── Gauge Chart ───────────────────────────────────────────────────────────────
+
+const GaugeBar = ({ min, max }: { min: number; max: number }) => {
+  const low = Math.round(min * 0.95);
+  const high = Math.round(max * 1.05);
+  const totalRange = high - low;
+  const leftPct = ((min - low) / totalRange) * 100;
+  const rightPct = ((max - low) / totalRange) * 100;
+
+  return (
+    <div className="mt-4 select-none">
+      <div className="relative h-3 rounded-full bg-gray-100 overflow-hidden">
+        <div
+          className="absolute h-full rounded-full bg-gradient-to-r from-[#94b0ab]/40 via-[#94b0ab] to-[#94b0ab]/40"
+          style={{ left: `${leftPct}%`, width: `${rightPct - leftPct}%` }}
+        />
+      </div>
+      <div className="relative mt-1.5" style={{ height: '28px' }}>
+        <div className="absolute text-[10px] font-semibold text-gray-400" style={{ left: '0%' }}>
+          Vendita rapida
+        </div>
+        <div
+          className="absolute text-[10px] font-bold text-[#94b0ab] -translate-x-1/2"
+          style={{ left: `${leftPct}%` }}
+        >
+          {fmtEuro(min)}
+        </div>
+        <div
+          className="absolute text-[10px] font-bold text-[#94b0ab] -translate-x-1/2"
+          style={{ left: `${rightPct}%` }}
+        >
+          {fmtEuro(max)}
+        </div>
+        <div className="absolute text-[10px] font-semibold text-gray-400 right-0">
+          Per amatori
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const ValuazioneReport = () => {
@@ -150,7 +210,6 @@ const ValuazioneReport = () => {
   useEffect(() => {
     if (!slug) { setNotFound(true); setLoading(false); return; }
 
-    // Check if there is an active session (admin view)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAdmin(!!session?.user);
     });
@@ -222,7 +281,6 @@ const ValuazioneReport = () => {
     );
   }
 
-  // Draft guard — non-admin visitors cannot see reports still in Bozza
   if (val.stato === 'Bozza' && !isAdmin) {
     return (
       <div className="min-h-screen bg-[#f5f5f0] flex flex-col items-center justify-center px-6 text-center">
@@ -257,15 +315,12 @@ const ValuazioneReport = () => {
     : null;
   const aiParagraphs = val.motivazione_ai ? parseAiParagraphs(val.motivazione_ai) : [];
 
-  // ── Confidence score ────────────────────────────────────────────────────────
   const hasOmi = !!val.zone_omi;
   const hasComparabili = comparabili.length > 0;
   const confidenceScore = hasOmi && hasComparabili ? 95 : hasOmi ? 75 : hasComparabili ? 70 : 45;
   const confidenceLow = confidenceScore < 60;
-  const confidenceStars = Math.round(confidenceScore / 20); // 1–5
+  const confidenceStars = Math.round(confidenceScore / 20);
 
-  // ── Sanity-filter breakdown factors ─────────────────────────────────────────
-  // Remove any factor that references a boolean feature absent from this property.
   const FEATURE_GUARDS: { key: keyof ValutazioneDetail; keywords: string[] }[] = [
     { key: 'ha_giardino',   keywords: ['giardino', 'area verde', 'garden'] },
     { key: 'ha_box',        keywords: ['box auto', 'box garage', 'autorimessa'] },
@@ -282,14 +337,20 @@ const ValuazioneReport = () => {
     return true;
   });
 
-  // ── Report ─────────────────────────────────────────────────────────────────
+  // Calcola delta potenziale ristrutturazione
+  const hasDoppioScenario = val.stima_ristrutturato_min != null && val.stima_ristrutturato_max != null
+    && val.stima_min != null
+    && (val.stima_ristrutturato_min > val.stima_min);
+  const deltaRistrutturato = hasDoppioScenario && val.stima_ristrutturato_max && val.stima_max
+    ? Math.round(((val.stima_ristrutturato_max - val.stima_max) / val.stima_max) * 100)
+    : null;
 
   const pageTitle = val
     ? `Valutazione ${val.indirizzo} – Il Tuo Immobiliare`
     : 'Valutazione Immobiliare – Il Tuo Immobiliare';
   const pageDesc = val
-    ? `Stima professionale AI per ${val.indirizzo}, ${val.citta}. Superficie: ${val.superficie_mq} m². Valore stimato: ${val.stima_min ? `€${val.stima_min.toLocaleString('it-IT')} – €${val.stima_max?.toLocaleString('it-IT')}` : 'in elaborazione'}.`
-    : 'Report di valutazione immobiliare generato con AI da Il Tuo Immobiliare.';
+    ? `Stima professionale per ${val.indirizzo}, ${val.citta}. Superficie: ${val.superficie_mq} m². Valore stimato: ${val.stima_min ? `€${val.stima_min.toLocaleString('it-IT')} – €${val.stima_max?.toLocaleString('it-IT')}` : 'in elaborazione'}.`
+    : 'Report di valutazione immobiliare di Il Tuo Immobiliare.';
 
   return (
     <div className="min-h-screen bg-[#f5f5f0]" style={{ fontFamily: "'Inter', 'Geist', sans-serif" }}>
@@ -302,10 +363,43 @@ const ValuazioneReport = () => {
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:title" content={pageTitle} />
         <meta name="twitter:description" content={pageDesc} />
+        <style>{`
+          @media print {
+            @page { size: A4; margin: 12mm 15mm; }
+
+            body, * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+              color-adjust: exact !important;
+            }
+
+            .no-print { display: none !important; }
+
+            /* Prevent cards from splitting across page breaks */
+            .print-card {
+              break-inside: avoid;
+              page-break-inside: avoid;
+            }
+
+            /* Remove sticky positioning so top bar doesn't bleed into print */
+            .sticky { position: static !important; }
+
+            /* Recharts SVG: prevent clipping */
+            .recharts-wrapper, .recharts-surface {
+              overflow: visible !important;
+            }
+
+            /* Remove box-shadow and backdrop blur (not supported in print) */
+            * { box-shadow: none !important; backdrop-filter: none !important; }
+
+            /* Full-width container */
+            .print-container { max-width: 100% !important; }
+          }
+        `}</style>
       </Helmet>
 
       {/* ── Sticky top bar ─────────────────────────────────────────────────── */}
-      <div className="bg-white/95 backdrop-blur-sm border-b border-gray-100 px-5 py-3.5 flex items-center justify-between sticky top-0 z-20">
+      <div className="no-print bg-white/95 backdrop-blur-sm border-b border-gray-100 px-5 py-3.5 flex items-center justify-between sticky top-0 z-20">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-[#94b0ab] flex items-center justify-center flex-shrink-0">
             <Home size={13} className="text-white" />
@@ -338,10 +432,10 @@ const ValuazioneReport = () => {
         </div>
       </div>
 
-      <div className="max-w-[900px] mx-auto px-4 py-8 space-y-5 pb-16">
+      <div className="print-container max-w-[900px] mx-auto px-4 py-8 space-y-5 pb-16">
 
         {/* ── Hero Card ──────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
+        <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
 
           {/* Gradient header band */}
           <div className="bg-gradient-to-br from-[#94b0ab] via-[#88a5a0] to-[#6e8c87] px-8 pt-8 pb-9">
@@ -376,13 +470,13 @@ const ValuazioneReport = () => {
               </span>
             </div>
 
-            {/* Valuation range */}
+            {/* Valuation range + Gauge */}
             {(val.stima_min || val.stima_max) && (
               <div>
                 <p className="text-white/55 text-[10px] font-bold uppercase tracking-widest mb-2">
                   Valore di Mercato Stimato
                 </p>
-                <div className="flex items-end gap-3 flex-wrap">
+                <div className="flex items-end gap-3 flex-wrap mb-1">
                   <p className="text-white font-black tracking-tight leading-none" style={{ fontSize: 'clamp(2rem, 7vw, 2.75rem)' }}>
                     {fmtEuro(val.stima_min)}
                     {val.stima_min && val.stima_max && (
@@ -396,13 +490,18 @@ const ValuazioneReport = () => {
                     </p>
                   )}
                 </div>
+                {val.stima_min && val.stima_max && (
+                  <div className="mt-3">
+                    <GaugeBar min={val.stima_min} max={val.stima_max} />
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Affidabilità badge */}
+          {/* Affidabilità badge + tempo mercato */}
           <div className={cn(
-            'px-8 py-4 flex items-center justify-between gap-3',
+            'px-8 py-4 flex items-center justify-between gap-3 flex-wrap',
             confidenceLow ? 'border-b-0' : 'border-b border-gray-100',
           )}>
             <div className="flex items-center gap-2.5">
@@ -419,36 +518,44 @@ const ValuazioneReport = () => {
                   : 'dati OMI e comparabili non disponibili per questa micro-zona'}
               </p>
             </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <div className="flex items-center gap-0.5">
-                {[1, 2, 3, 4, 5].map(n => (
-                  <Star
-                    key={n}
-                    size={12}
-                    className={n <= confidenceStars
-                      ? (confidenceLow ? 'fill-amber-400 text-amber-400' : 'fill-[#94b0ab] text-[#94b0ab]')
-                      : 'fill-gray-200 text-gray-200'}
-                  />
-                ))}
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {val.tempo_mercato && (
+                <div className="flex items-center gap-1.5 bg-[#f5f5f0] rounded-xl px-3 py-1.5">
+                  <Clock size={12} className="text-[#94b0ab]" />
+                  <span className="text-xs font-bold text-gray-700">{val.tempo_mercato}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <Star
+                      key={n}
+                      size={12}
+                      className={n <= confidenceStars
+                        ? (confidenceLow ? 'fill-amber-400 text-amber-400' : 'fill-[#94b0ab] text-[#94b0ab]')
+                        : 'fill-gray-200 text-gray-200'}
+                    />
+                  ))}
+                </div>
+                <span className={cn(
+                  'text-[10px] font-bold tabular-nums',
+                  confidenceLow ? 'text-amber-500' : 'text-[#94b0ab]',
+                )}>
+                  {confidenceScore}%
+                </span>
               </div>
-              <span className={cn(
-                'text-[10px] font-bold tabular-nums',
-                confidenceLow ? 'text-amber-500' : 'text-[#94b0ab]',
-              )}>
-                {confidenceScore}%
-              </span>
             </div>
           </div>
 
-          {/* Low-confidence warning banner */}
+          {/* Low-confidence: reframed as "Valutazione su Base Statistica" */}
           {confidenceLow && (
-            <div className="mx-8 mb-4 flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-              <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                <span className="font-bold">Stima a bassa confidenza.</span>{' '}
-                Dati OMI e transazioni comparabili non disponibili per questa micro-zona.
-                Il valore indicato è basato su modelli statistici generali e potrebbe discostarsi dal mercato reale.
-                Si consiglia un sopralluogo e una verifica manuale prima di utilizzare questa stima.
+            <div className="mx-8 mb-4 flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3">
+              <Info size={14} className="text-blue-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-blue-700 leading-relaxed">
+                <span className="font-bold">Valutazione su Base Statistica.</span>{' '}
+                In assenza di rogiti recenti nella micro-area, il sistema ha applicato algoritmi predittivi
+                basati sul mercato macro-locale. Il range indicato è indicativo — si consiglia verifica
+                sul campo prima dell'utilizzo commerciale.
               </p>
             </div>
           )}
@@ -459,9 +566,11 @@ const ValuazioneReport = () => {
               { icon: <Ruler size={13} />,    label: 'Superficie',  value: `${val.superficie_mq} m²` },
               { icon: <Building2 size={13} />, label: 'Tipologia',   value: val.tipologia ?? '—' },
               { icon: <Home size={13} />,      label: 'Locali',      value: val.num_locali ? `${val.num_locali} locali` : '—' },
+              ...(val.num_camere ? [{ icon: <Home size={13} />, label: 'Camere', value: `${val.num_camere} camere` }] : []),
               { icon: <Wrench size={13} />,    label: 'Condizioni',  value: val.stato_conservativo ?? '—' },
               ...(val.piano != null ? [{ icon: <Building2 size={13} />, label: 'Piano', value: `Piano ${val.piano}` }] : []),
               ...(val.classe_energetica ? [{ icon: <TrendingUp size={13} />, label: 'Classe en.', value: val.classe_energetica }] : []),
+              ...(val.tipo_riscaldamento ? [{ icon: <Wrench size={13} />, label: 'Riscaldamento', value: val.tipo_riscaldamento }] : []),
             ].map(({ icon, label, value }) => (
               <div key={label} className="flex items-start gap-2.5 bg-[#f5f5f0] rounded-2xl p-3">
                 <span className="text-[#94b0ab] mt-0.5 flex-shrink-0">{icon}</span>
@@ -486,15 +595,12 @@ const ValuazioneReport = () => {
 
         {/* ── Valuation Breakdown ─────────────────────────────────────────────── */}
         {breakdown && filteredFattori !== undefined && (
-          <div className="bg-white rounded-[2rem] shadow-sm overflow-hidden">
-
-            {/* Section header */}
+          <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
             <div className="px-8 pt-7 pb-5 border-b border-gray-100">
               <h2 className="text-base font-bold text-gray-900 mb-0.5">Fattori di Correzione</h2>
               <p className="text-xs text-gray-400">Aggiustamenti metodologici applicati al prezzo/m² OMI di zona</p>
             </div>
 
-            {/* Base price — anchor row */}
             <div className="flex items-center justify-between px-8 py-4 bg-[#f5f5f0]">
               <div className="flex items-center gap-2.5">
                 <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />
@@ -505,7 +611,6 @@ const ValuazioneReport = () => {
               </span>
             </div>
 
-            {/* Factors — sanity-filtered, only non-zero, bespoke items */}
             {filteredFattori.length > 0 ? (
               <div className="px-8 divide-y divide-gray-50">
                 {filteredFattori.map((f, i) => {
@@ -544,14 +649,12 @@ const ValuazioneReport = () => {
               </p>
             )}
 
-            {/* Notice if any factors were removed by sanity filter */}
             {isAdmin && breakdown.fattori && breakdown.fattori.length > filteredFattori.length && (
               <p className="px-8 pb-3 text-[11px] text-amber-500 italic">
                 ⚠ {breakdown.fattori.length - filteredFattori.length} fattore/i rimosso/i dalla validazione (riferimento a caratteristiche non presenti nell'input).
               </p>
             )}
 
-            {/* Final price — conclusion row */}
             <div className="mx-8 mb-7 mt-2 flex items-center justify-between bg-[#94b0ab]/10 rounded-2xl px-5 py-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-[#94b0ab] mb-0.5">
@@ -569,9 +672,116 @@ const ValuazioneReport = () => {
           </div>
         )}
 
+        {/* ── Doppio Scenario ─────────────────────────────────────────────────── */}
+        {hasDoppioScenario && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
+            <div className="px-8 pt-7 pb-5 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900 mb-0.5">Potenziale Non Espresso</h2>
+              <p className="text-xs text-gray-400">Confronto tra valore attuale e valore dopo un intervento di restyling</p>
+            </div>
+            <div className="px-8 py-6 grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <div className="bg-[#f5f5f0] rounded-2xl p-5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Stato attuale</p>
+                <p className="text-xl font-black text-gray-800 tabular-nums">
+                  {fmtEuro(val.stima_min)}
+                  <span className="text-gray-300 mx-1.5 font-light">–</span>
+                  {fmtEuro(val.stima_max)}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">{val.stato_conservativo}</p>
+              </div>
+              <div className="bg-[#94b0ab]/10 border border-[#94b0ab]/25 rounded-2xl p-5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] mb-2">Dopo restyling</p>
+                <p className="text-xl font-black text-[#94b0ab] tabular-nums">
+                  {fmtEuro(val.stima_ristrutturato_min)}
+                  <span className="text-[#94b0ab]/40 mx-1.5 font-light">–</span>
+                  {fmtEuro(val.stima_ristrutturato_max)}
+                </p>
+                {deltaRistrutturato != null && (
+                  <p className="text-xs font-bold text-[#94b0ab] mt-1">+{deltaRistrutturato}% vs. stato attuale</p>
+                )}
+              </div>
+              <div className="bg-[#f5f5f0] rounded-2xl p-5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Costo stimato lavori</p>
+                <p className="text-xl font-black text-gray-800 tabular-nums">
+                  {val.costo_stima_lavori ? `~${fmtEuro(val.costo_stima_lavori)}` : '—'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">Stima indicativa</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Descrizione della Zona ──────────────────────────────────────────── */}
+        {(val.descrizione_zona || val.zone_omi || val.poi_summary || (val.latitudine && val.longitudine)) && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
+            <div className="px-8 pt-7 pb-5 border-b border-gray-100 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#94b0ab]/10 flex items-center justify-center flex-shrink-0">
+                <MapPin size={16} className="text-[#94b0ab]" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">Descrizione della Zona</h2>
+                {val.zone_omi && (
+                  <p className="text-[10px] text-[#94b0ab] font-bold uppercase tracking-widest mt-0.5">
+                    Zona OMI {val.zone_omi.codice_zona} · {val.zone_omi.fascia}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {val.zone_omi && (
+              <div className="px-8 py-4 bg-[#f5f5f0] flex flex-wrap gap-4 border-b border-gray-100">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Zona</p>
+                  <p className="text-sm font-semibold text-gray-800 mt-0.5">{val.zone_omi.zona}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Range OMI ufficiale</p>
+                  <p className="text-sm font-semibold text-gray-800 mt-0.5">
+                    €{val.zone_omi.prezzo_mq_min.toLocaleString('it-IT')} – €{val.zone_omi.prezzo_mq_max.toLocaleString('it-IT')}/m²
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Prezzo medio</p>
+                  <p className="text-sm font-bold text-[#94b0ab] mt-0.5">€{val.zone_omi.prezzo_mq_medio.toLocaleString('it-IT')}/m²</p>
+                </div>
+              </div>
+            )}
+
+            {/* Mappa OpenStreetMap — nascosta in stampa (la mappa Mapbox è nel PDF generato) */}
+            {val.latitudine && val.longitudine && (
+              <div className="no-print border-b border-gray-100 overflow-hidden" style={{ height: '260px' }}>
+                <iframe
+                  title="Mappa immobile"
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${val.longitudine - 0.006},${val.latitudine - 0.004},${val.longitudine + 0.006},${val.latitudine + 0.004}&layer=mapnik&marker=${val.latitudine},${val.longitudine}`}
+                  style={{ width: '100%', height: '260px', border: 'none' }}
+                  loading="lazy"
+                />
+              </div>
+            )}
+
+            {/* POI */}
+            {val.poi_summary && (
+              <div className="px-8 py-3 bg-[#f5f5f0] border-b border-gray-100 flex items-center gap-2">
+                <MapPin size={12} className="text-[#94b0ab] flex-shrink-0" />
+                <p className="text-xs text-gray-600">
+                  <span className="font-semibold">Servizi vicini:</span> {val.poi_summary}
+                </p>
+              </div>
+            )}
+
+            {val.descrizione_zona && (
+              <div className="px-8 py-6 space-y-4">
+                {val.descrizione_zona.split(/\n\n+/).map((para, i) => (
+                  <p key={i} className="text-sm text-gray-600 leading-relaxed">{para.trim()}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── AI Analysis ─────────────────────────────────────────────────────── */}
         {aiParagraphs.length > 0 && (
-          <div className="bg-white rounded-[2rem] shadow-sm p-8">
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
             <div className="flex items-center gap-3 mb-7">
               <div className="w-9 h-9 rounded-xl bg-[#94b0ab]/10 flex items-center justify-center flex-shrink-0">
                 <span className="text-lg">✦</span>
@@ -610,9 +820,27 @@ const ValuazioneReport = () => {
           </div>
         )}
 
+        {/* ── Identikit Compratore ────────────────────────────────────────────── */}
+        {val.identikit_compratore && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 rounded-xl bg-[#94b0ab]/10 flex items-center justify-center flex-shrink-0">
+                <User size={16} className="text-[#94b0ab]" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-gray-900 leading-tight">Identikit del Compratore Ideale</h2>
+                <p className="text-[10px] text-[#94b0ab] font-bold uppercase tracking-widest mt-0.5">
+                  Profilo target · Analisi AI
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600 leading-relaxed">{val.identikit_compratore}</p>
+          </div>
+        )}
+
         {/* ── Comparables Grid ────────────────────────────────────────────────── */}
         {comparabili.length > 0 && (
-          <div className="bg-white rounded-[2rem] shadow-sm p-8">
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
             <h2 className="text-base font-bold text-gray-900 mb-1">
               Transazioni Comparabili
             </h2>
@@ -625,11 +853,7 @@ const ValuazioneReport = () => {
                 const t = c.transazioni_chiuse;
                 if (!t) return null;
                 return (
-                  <div
-                    key={i}
-                    className="bg-[#f5f5f0] rounded-2xl p-4 flex flex-col gap-3"
-                  >
-                    {/* Price/sqm */}
+                  <div key={i} className="bg-[#f5f5f0] rounded-2xl p-4 flex flex-col gap-3">
                     <div>
                       <p className="text-2xl font-black text-[#94b0ab] leading-none tabular-nums">
                         €{t.prezzo_mq.toLocaleString('it-IT')}
@@ -639,16 +863,10 @@ const ValuazioneReport = () => {
                         {fmtEuro(t.prezzo_finale)} totali
                       </p>
                     </div>
-
-                    {/* Divider */}
                     <div className="h-px bg-gray-200" />
-
-                    {/* Address */}
                     <p className="text-sm font-semibold text-gray-800 leading-snug line-clamp-2">
                       {t.indirizzo}
                     </p>
-
-                    {/* Meta */}
                     <div className="flex flex-wrap gap-1.5 text-[11px] text-gray-500 font-medium">
                       <span className="bg-white rounded-lg px-2 py-0.5">{t.mq} m²</span>
                       {t.num_locali && (
@@ -670,9 +888,43 @@ const ValuazioneReport = () => {
           </div>
         )}
 
+        {/* ── Comparabili Attivi ──────────────────────────────────────────────── */}
+        {val.comparabili_attivi && val.comparabili_attivi.length > 0 && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
+            <h2 className="text-base font-bold text-gray-900 mb-1">Concorrenza Attiva</h2>
+            <p className="text-xs text-gray-400 mb-5">Immobili simili attualmente in vendita nella zona</p>
+            <div className="space-y-3">
+              {val.comparabili_attivi.map((c, i) => (
+                <a
+                  key={i}
+                  href={c.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between gap-4 p-4 bg-[#f5f5f0] rounded-2xl hover:bg-[#94b0ab]/8 transition-colors group"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">
+                      {c.titolo || new URL(c.url).hostname.replace('www.', '')}
+                    </p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">{c.url}</p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {c.prezzo && (
+                      <span className="text-sm font-black text-gray-700 tabular-nums">
+                        {fmtEuro(c.prezzo)}
+                      </span>
+                    )}
+                    <ExternalLink size={14} className="text-gray-300 group-hover:text-[#94b0ab] transition-colors" />
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Market Trend Chart ──────────────────────────────────────────────── */}
         {trendData.length > 0 && (
-          <div className="bg-white rounded-[2rem] shadow-sm p-8">
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
             <div className="flex items-start justify-between gap-3 mb-6">
               <div>
                 <h2 className="text-base font-bold text-gray-900 leading-tight">Andamento Prezzi di Zona</h2>
@@ -718,20 +970,25 @@ const ValuazioneReport = () => {
         )}
 
         {/* ── Dotazioni ───────────────────────────────────────────────────────── */}
-        {activeComfort.length > 0 && (
-          <div className="bg-white rounded-[2rem] shadow-sm p-8">
+        {(activeComfort.length > 0 || val.narrativa_dotazioni) && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
             <h2 className="text-base font-bold text-gray-900 mb-4">Dotazioni</h2>
-            <div className="flex flex-wrap gap-2">
-              {activeComfort.map(c => (
-                <span
-                  key={c.key}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 text-[#94b0ab] text-sm font-semibold"
-                >
-                  <span>{c.icon}</span>
-                  {c.label}
-                </span>
-              ))}
-            </div>
+            {val.narrativa_dotazioni && (
+              <p className="text-sm text-gray-600 leading-relaxed mb-4">{val.narrativa_dotazioni}</p>
+            )}
+            {activeComfort.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {activeComfort.map(c => (
+                  <span
+                    key={c.key}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 text-[#94b0ab] text-sm font-semibold"
+                  >
+                    <span>{c.icon}</span>
+                    {c.label}
+                  </span>
+                ))}
+              </div>
+            )}
             {val.note_tecniche && (
               <p className="text-sm text-gray-500 mt-4 leading-relaxed border-t border-gray-100 pt-4">
                 {val.note_tecniche}
@@ -741,7 +998,7 @@ const ValuazioneReport = () => {
         )}
 
         {/* ── CTA Footer ──────────────────────────────────────────────────────── */}
-        <div className="bg-gradient-to-br from-[#94b0ab] via-[#88a5a0] to-[#6e8c87] rounded-[2rem] p-8 text-center">
+        <div className="no-print bg-gradient-to-br from-[#94b0ab] via-[#88a5a0] to-[#6e8c87] rounded-[2rem] p-8 text-center">
           <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center mx-auto mb-4">
             <FileDown size={20} className="text-white" />
           </div>
@@ -771,7 +1028,7 @@ const ValuazioneReport = () => {
 
         {/* ── Admin: Dati Tecnici di Origine ──────────────────────────────── */}
         {isAdmin && (
-          <div className="border border-dashed border-gray-200 rounded-[2rem] overflow-hidden">
+          <div className="no-print border border-dashed border-gray-200 rounded-[2rem] overflow-hidden">
             <button
               type="button"
               onClick={() => setDebugOpen(o => !o)}
@@ -791,7 +1048,6 @@ const ValuazioneReport = () => {
             {debugOpen && (
               <div className="px-6 pb-6 space-y-5 border-t border-dashed border-gray-200">
 
-                {/* OMI zone */}
                 <div className="pt-4">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Zona OMI rilevata</p>
                   {val.zone_omi ? (
@@ -818,7 +1074,6 @@ const ValuazioneReport = () => {
                   )}
                 </div>
 
-                {/* Raw comparabili */}
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                     Comparabili grezzi ({comparabili.length})
@@ -862,7 +1117,6 @@ const ValuazioneReport = () => {
           </div>
         )}
 
-        {/* Legal footer */}
         <p className="text-center text-[11px] text-gray-400 pb-4">
           Documento generato da Il Tuo Immobiliare · {format(parseISO(val.created_at), 'd MMMM yyyy', { locale: it })}
           {' '}· La stima è indicativa e non costituisce perizia legale
