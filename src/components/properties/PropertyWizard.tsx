@@ -545,6 +545,17 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Indirizzo</Label>
                 <Input placeholder="Es: Via Roma 12" value={formData.indirizzo} onChange={(e) => setFormData({...formData, indirizzo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
+                <Select value={formData.piano || ''} onValueChange={(v) => setFormData({...formData, piano: v})}>
+                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                  <SelectContent className="rounded-2xl">
+                    {['Piano Terra','1° Piano','2° Piano','3° Piano','4° Piano','5° Piano','6° Piano','7° Piano','8° Piano','9° Piano','10° Piano+'].map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="space-y-3 col-span-full">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Proprietario</Label>
                 <Combobox
