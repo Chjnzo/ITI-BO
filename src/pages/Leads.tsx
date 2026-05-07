@@ -128,37 +128,70 @@ const Leads = () => {
   const [quickTaskLeadName, setQuickTaskLeadName] = useState<string | undefined>(undefined);
   const [isQuickTaskModalOpen, setIsQuickTaskModalOpen] = useState(false);
 
+  // Autocomplete suggestions for zone_ricercate (distinct values from all leads)
+  const [zoneSuggestions, setZoneSuggestions] = useState<string[]>([]);
+  const [zoneInput, setZoneInput] = useState('');
+
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const from = (leadsPage - 1) * LEADS_PAGE_SIZE;
-    const to = from + LEADS_PAGE_SIZE - 1;
 
-    const { data, count, error } = await supabase
-      .from('leads')
-      .select(`
-        id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-        assegnato_a, telefono, email,
-        lead_immobili(immobili(titolo))
-      `, { count: 'exact' })
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    if (searchQuery.trim()) {
+      // Search mode: load all leads with full search fields, no pagination
+      const { data, error } = await supabase
+        .from('leads')
+        .select(`
+          id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
+          assegnato_a, telefono, email, budget, tipologia_ricerca, zone_ricercate,
+          zona_venditore, note_interne,
+          lead_immobili(immobili(titolo))
+        `)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(500);
 
-    if (signal?.aborted) return;
-
-    if (error) {
-      showError("Errore nel caricamento CRM");
+      if (signal?.aborted) return;
+      if (error) {
+        showError("Errore nella ricerca");
+      } else {
+        const sanitized = (data || []).map(l => ({
+          ...l,
+          stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
+        }));
+        setLeads(sanitized);
+        setTotalLeadsCount(sanitized.length);
+      }
     } else {
-      const sanitized = (data || []).map(l => ({
-        ...l,
-        stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
-      }));
-      setLeads(sanitized);
-      setTotalLeadsCount(count ?? 0);
+      // Normal paginated mode
+      const from = (leadsPage - 1) * LEADS_PAGE_SIZE;
+      const to = from + LEADS_PAGE_SIZE - 1;
+
+      const { data, count, error } = await supabase
+        .from('leads')
+        .select(`
+          id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
+          assegnato_a, telefono, email,
+          lead_immobili(immobili(titolo))
+        `, { count: 'exact' })
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (signal?.aborted) return;
+      if (error) {
+        showError("Errore nel caricamento CRM");
+      } else {
+        const sanitized = (data || []).map(l => ({
+          ...l,
+          stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
+        }));
+        setLeads(sanitized);
+        setTotalLeadsCount(count ?? 0);
+      }
     }
+
     setLoading(false);
-  }, [leadsPage]);
+  }, [leadsPage, searchQuery]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
@@ -194,6 +227,7 @@ const Leads = () => {
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
     setSelectedLead({ nome: '', cognome: '', email: '', telefono: '', tipo_cliente: 'Acquirente', stato: 'Nuovo', created_at: new Date().toISOString() });
+    setZoneInput('');
   }, []);
 
   // ── Seller state helpers ────────────────────────────────────────────────────
@@ -242,19 +276,42 @@ const Leads = () => {
 
   useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter]);
 
-  const filteredLeads = useMemo(() => {
-    return leads.filter(lead => {
-      const matchesSearch =
-        `${lead.nome} ${lead.cognome}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        lead.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        lead.telefono?.includes(searchQuery);
+  // Load distinct zone names used across all leads for autocomplete
+  useEffect(() => {
+    supabase
+      .from('leads')
+      .select('zone_ricercate')
+      .not('zone_ricercate', 'is', null)
+      .then(({ data }) => {
+        if (!data) return;
+        const unique = Array.from(
+          new Set(data.flatMap((r: any) => r.zone_ricercate ?? []))
+        ).sort() as string[];
+        setZoneSuggestions(unique);
+      });
+  }, []);
 
+  const filteredLeads = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return leads.filter(lead => {
       const matchesTipo =
         tipoClienteFilter === 'Tutti' ||
         (tipoClienteFilter === 'Acquirenti' && (lead.tipo_cliente === 'Acquirente' || lead.tipo_cliente === 'Ibrido')) ||
         (tipoClienteFilter === 'Proprietari' && (lead.tipo_cliente === 'Proprietario' || lead.tipo_cliente === 'Ibrido'));
 
-      return matchesSearch && matchesTipo;
+      if (!matchesTipo) return false;
+      if (!q) return true;
+
+      return (
+        `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
+        lead.email?.toLowerCase().includes(q) ||
+        lead.telefono?.includes(q) ||
+        (lead.budget != null && String(lead.budget).includes(q)) ||
+        (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
+        (lead.zone_ricercate ?? []).some((z: string) => z.toLowerCase().includes(q)) ||
+        lead.zona_venditore?.toLowerCase().includes(q) ||
+        lead.note_interne?.toLowerCase().includes(q)
+      );
     });
   }, [leads, searchQuery, tipoClienteFilter]);
 
@@ -292,7 +349,8 @@ const Leads = () => {
       assegnato_a: selectedLead.assegnato_a && selectedLead.assegnato_a !== "Nessuno" ? selectedLead.assegnato_a : null,
       tipo_cliente: selectedLead.tipo_cliente || 'Acquirente',
       budget: parseFloat(selectedLead.budget) || null,
-      tipologia_ricerca: selectedLead.tipologia_ricerca || null,
+      tipologia_ricerca: selectedLead.tipologia_ricerca?.length ? selectedLead.tipologia_ricerca : null,
+      zone_ricercate: selectedLead.zone_ricercate?.length ? selectedLead.zone_ricercate : null,
       valutazione_stimata: parseFloat(selectedLead.valutazione_stimata) || null,
       scadenza_esclusiva: selectedLead.scadenza_esclusiva || null,
       motivazione_vendita: selectedLead.motivazione_vendita || null,
@@ -309,6 +367,7 @@ const Leads = () => {
         showError("Errore nella creazione: " + error.message);
       } else {
         showSuccess("Contatto creato correttamente");
+        setZoneInput('');
         fetchLeads();
         setSelectedLead(null);
       }
@@ -336,6 +395,7 @@ const Leads = () => {
           tipo_cliente: selectedLead.tipo_cliente,
           assegnato_a: payload.assegnato_a,
         } : l));
+        setZoneInput('');
         setSelectedLead(null);
       }
     }
@@ -356,7 +416,8 @@ const Leads = () => {
       assegnato_a: lead.assegnato_a && lead.assegnato_a !== "Nessuno" ? lead.assegnato_a : null,
       tipo_cliente: lead.tipo_cliente || 'Acquirente',
       budget: parseFloat(lead.budget) || null,
-      tipologia_ricerca: lead.tipologia_ricerca || null,
+      tipologia_ricerca: lead.tipologia_ricerca?.length ? lead.tipologia_ricerca : null,
+      zone_ricercate: lead.zone_ricercate?.length ? lead.zone_ricercate : null,
       valutazione_stimata: parseFloat(lead.valutazione_stimata) || null,
       scadenza_esclusiva: lead.scadenza_esclusiva || null,
       motivazione_vendita: lead.motivazione_vendita || null,
@@ -752,7 +813,7 @@ const Leads = () => {
       </div>
 
       {/* Unified Lead Dialog (create + edit) */}
-      <Dialog open={!!selectedLead} onOpenChange={(open) => { if (!open) { setSelectedLead(null); setMatchedProperties([]); setZoneSearch(''); } }}>
+      <Dialog open={!!selectedLead} onOpenChange={(open) => { if (!open) { setSelectedLead(null); setZoneInput(''); } }}>
         <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl rounded-[2rem]">
           {selectedLead && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
@@ -927,7 +988,7 @@ const Leads = () => {
                     </div>
 
                     {/* Card: Esigenze di Acquisto (conditional) */}
-                    {(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && (
+                    <div className={cn(!(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && 'hidden')}>
                       <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5 space-y-5">
                         <div className="flex items-center gap-2">
                           <Briefcase size={15} className="text-blue-500" />
@@ -976,29 +1037,140 @@ const Leads = () => {
                             </div>
                           </div>
 
-                          {/* Tipologia Ricercata */}
+                          {/* Tipologie Ricercate — multi-select pills */}
                           <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Tipologia Ricercata</Label>
-                            <Select
-                              value={selectedLead.tipologia_ricerca || ''}
-                              onValueChange={(v) => setSelectedLead({...selectedLead, tipologia_ricerca: v})}
-                            >
-                              <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                                <SelectValue placeholder="Seleziona..." />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-xl">
-                                {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
-                                  <SelectItem key={t} value={t}>{t}</SelectItem>
+                            <Label className="text-xs font-bold text-gray-500">Tipologie Ricercate</Label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => {
+                                const active = (selectedLead.tipologia_ricerca ?? []).includes(t);
+                                return (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => {
+                                      const cur: string[] = selectedLead.tipologia_ricerca ?? [];
+                                      setSelectedLead({
+                                        ...selectedLead,
+                                        tipologia_ricerca: active ? cur.filter((v: string) => v !== t) : [...cur, t],
+                                      });
+                                    }}
+                                    className={cn(
+                                      "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
+                                      active
+                                        ? "bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60"
+                                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
+                                    )}
+                                  >
+                                    {t}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Zone di Ricerca — tag input with autocomplete */}
+                          <div className="space-y-2">
+                            <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+                              <MapPin size={11} className="text-blue-400" /> Zone di Ricerca
+                            </Label>
+                            {/* Selected zone tags */}
+                            {(selectedLead.zone_ricercate ?? []).length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {(selectedLead.zone_ricercate as string[]).map(z => (
+                                  <span
+                                    key={z}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-500 text-white border border-blue-500"
+                                  >
+                                    {z}
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedLead({
+                                        ...selectedLead,
+                                        zone_ricercate: (selectedLead.zone_ricercate as string[]).filter((v: string) => v !== z),
+                                      })}
+                                      className="ml-0.5 hover:opacity-70"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
                                 ))}
-                              </SelectContent>
-                            </Select>
+                              </div>
+                            )}
+                            {/* Input + suggestions */}
+                            <div className="relative">
+                              <div className="flex gap-2">
+                                <Input
+                                  value={zoneInput}
+                                  onChange={(e) => setZoneInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      const val = zoneInput.trim();
+                                      if (!val) return;
+                                      const cur: string[] = selectedLead.zone_ricercate ?? [];
+                                      if (cur.includes(val)) { setZoneInput(''); return; }
+                                      setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, val] });
+                                      if (!zoneSuggestions.includes(val)) setZoneSuggestions(prev => [...prev, val].sort());
+                                      setZoneInput('');
+                                    }
+                                  }}
+                                  placeholder="Es: Centro Storico, Bolognina..."
+                                  className="h-10 rounded-xl border-gray-200 bg-slate-50/50 flex-1 text-sm"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const val = zoneInput.trim();
+                                    if (!val) return;
+                                    const cur: string[] = selectedLead.zone_ricercate ?? [];
+                                    if (cur.includes(val)) { setZoneInput(''); return; }
+                                    setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, val] });
+                                    if (!zoneSuggestions.includes(val)) setZoneSuggestions(prev => [...prev, val].sort());
+                                    setZoneInput('');
+                                  }}
+                                  className="h-10 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shrink-0 transition-colors"
+                                >
+                                  <Plus size={16} />
+                                </button>
+                              </div>
+                              {/* Autocomplete suggestions */}
+                              {zoneInput.trim() && zoneSuggestions.filter(s =>
+                                s.toLowerCase().includes(zoneInput.toLowerCase()) &&
+                                !(selectedLead.zone_ricercate ?? []).includes(s)
+                              ).length > 0 && (
+                                <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                                  {zoneSuggestions
+                                    .filter(s =>
+                                      s.toLowerCase().includes(zoneInput.toLowerCase()) &&
+                                      !(selectedLead.zone_ricercate ?? []).includes(s)
+                                    )
+                                    .slice(0, 6)
+                                    .map(s => (
+                                      <button
+                                        key={s}
+                                        type="button"
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          const cur: string[] = selectedLead.zone_ricercate ?? [];
+                                          setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, s] });
+                                          setZoneInput('');
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                      >
+                                        {s}
+                                      </button>
+                                    ))
+                                  }
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
 
                     {/* Card: Dati di Vendita (conditional) */}
-                    {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
+                    <div className={cn(!(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && 'hidden')}>
                       <div className="bg-white border border-red-100 rounded-xl shadow-sm p-5 space-y-5">
                         <div className="flex items-center gap-2">
                           <TrendingUp size={15} className="text-red-500" />
@@ -1062,7 +1234,7 @@ const Leads = () => {
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </TabsContent>
 
                   {/* ── IMMOBILI TAB ── */}

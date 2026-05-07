@@ -37,6 +37,16 @@ interface PropertyWizardProps {
   onLeadLinked?: (leadId: string, immobileId: string) => void;
 }
 
+const LOCALI_STANZE: Record<string, number | null> = {
+  Monolocale: 1,
+  Bilocale: 2,
+  Trilocale: 3,
+  Quadrilocale: 4,
+  Villa: null,
+  Attico: null,
+  Loft: null,
+};
+
 const PREDEFINED_FEATURES = [
   "Aria Condizionata", "Ascensore", "Balcone", "Terrazzo",
   "Box Auto", "Posto Auto", "Cantina", "Giardino Privato",
@@ -54,10 +64,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     prezzo: '',
     mq: '',
     locali: 'Trilocale',
+    stanze: '3',
     citta: '',
     indirizzo: '',
     piano: '',
-    bagni: 1,
+    bagni: '1',
     classe_energetica: 'A1',
     stato_immobile: 'Ottimo/Ristrutturato',
     spese_condominiali: '',
@@ -119,10 +130,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
         prezzo: initialData.prezzo ? initialData.prezzo.toString() : '',
         mq: initialData.mq?.toString() || '',
         locali: initialData.locali || 'Trilocale',
+        stanze: initialData.stanze?.toString() || (LOCALI_STANZE[initialData.locali] ?? '').toString(),
         citta: initialData.citta || '',
         indirizzo: initialData.indirizzo || '',
         piano: initialData.piano || '',
-        bagni: initialData.bagni || 1,
+        bagni: initialData.bagni?.toString() || '1',
         classe_energetica: initialData.classe_energetica || 'A1',
         stato_immobile: initialData.stato_immobile || 'Ottimo/Ristrutturato',
         spese_condominiali: initialData.spese_condominiali?.toString() || '',
@@ -146,10 +158,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       prezzo: prezzoSuRichiesta ? null : (parseFloat(formData.prezzo) || null),
       mq: parseInt(formData.mq) || 0,
       locali: formData.locali,
+      stanze: parseInt(formData.stanze) || null,
       citta: formData.citta,
       indirizzo: formData.indirizzo,
       piano: formData.piano,
-      bagni: formData.bagni,
+      bagni: parseInt(formData.bagni as unknown as string) || null,
       classe_energetica: formData.classe_energetica,
       stato_immobile: formData.stato_immobile,
       spese_condominiali: parseFloat(formData.spese_condominiali) || 0,
@@ -285,7 +298,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       ...formData,
       prezzo: prezzoSuRichiesta ? undefined : (parseFloat(formData.prezzo) || undefined),
       mq: parseInt(formData.mq) || 0,
-      bagni: formData.bagni,
+      bagni: parseInt(formData.bagni as unknown as string) || null,
       spese_condominiali: parseFloat(formData.spese_condominiali) || undefined,
       anno_costruzione: parseInt(formData.anno_costruzione) || new Date().getFullYear(),
     });
@@ -475,14 +488,54 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
               </div>
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
-                <Select onValueChange={(v) => setFormData({...formData, locali: v})} value={formData.locali}>
+                <Select
+                  value={formData.locali}
+                  onValueChange={(v) => {
+                    const auto = LOCALI_STANZE[v];
+                    setFormData(prev => ({
+                      ...prev,
+                      locali: v,
+                      stanze: auto !== null && auto !== undefined ? String(auto) : prev.stanze,
+                    }));
+                  }}
+                >
                   <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue /></SelectTrigger>
                   <SelectContent className="rounded-2xl">
-                    {['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico', 'Loft'].map(t => (
+                    {Object.keys(LOCALI_STANZE).map(t => (
                       <SelectItem key={t} value={t}>{t}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Numero locali
+                  {LOCALI_STANZE[formData.locali] !== null && (
+                    <span className="ml-2 text-[10px] text-[#94b0ab] font-bold normal-case">automatico</span>
+                  )}
+                </Label>
+                <Input
+                  type="number"
+                  placeholder="Es: 5"
+                  min={1}
+                  value={formData.stanze}
+                  onChange={(e) => setFormData(prev => ({ ...prev, stanze: e.target.value }))}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  disabled={LOCALI_STANZE[formData.locali] !== null}
+                  className={cn("rounded-2xl h-14 border-gray-100", LOCALI_STANZE[formData.locali] !== null && "opacity-50 cursor-not-allowed")}
+                />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Bagni</Label>
+                <Input
+                  type="number"
+                  placeholder="1"
+                  min={1}
+                  value={formData.bagni}
+                  onChange={(e) => setFormData(prev => ({ ...prev, bagni: e.target.value }))}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  className="rounded-2xl h-14 border-gray-100"
+                />
               </div>
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Città</Label>

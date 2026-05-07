@@ -33,7 +33,7 @@ export const useProperties = (
       if (searchQuery) {
         const escaped = searchQuery.replace(/[%_\\]/g, '\\$&');
         query = query.or(
-          `titolo.ilike.%${escaped}%,zona.ilike.%${escaped}%,indirizzo.ilike.%${escaped}%,citta.ilike.%${escaped}%`,
+          `titolo.ilike.%${escaped}%,citta.ilike.%${escaped}%,indirizzo.ilike.%${escaped}%,locali.ilike.%${escaped}%,descrizione.ilike.%${escaped}%`,
         );
       }
 

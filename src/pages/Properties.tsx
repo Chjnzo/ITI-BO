@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,7 +40,15 @@ const PAGE_SIZE = 10;
 const Properties = () => {
   const [filter, setFilter] = useState<'active' | 'sold'>('active');
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(value), 300);
+  };
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [editingProperty, setEditingProperty] = useState<any>(null);
@@ -49,13 +57,13 @@ const Properties = () => {
   const [ohProperty, setOhProperty] = useState<any>(null);
 
   const queryClient = useQueryClient();
-  const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, searchQuery);
+  const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, debouncedSearch);
   const properties = (propertiesData?.data ?? []) as any[];
   const totalCount = propertiesData?.count ?? 0;
 
   const refetchProperties = () => queryClient.invalidateQueries({ queryKey: ['properties'] });
 
-  useEffect(() => { setCurrentPage(1); }, [filter, searchQuery]);
+  useEffect(() => { setCurrentPage(1); }, [filter, debouncedSearch]);
 
   const formatPrice = (price: number) => {
     if (!price) return 'Su richiesta';
@@ -150,7 +158,7 @@ const Properties = () => {
             <Input
               placeholder="Cerca per titolo, zona o indirizzo..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
               className="h-14 pl-14 pr-6 rounded-2xl border-gray-100 bg-white shadow-sm focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
             />
           </div>
