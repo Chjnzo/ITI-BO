@@ -19,6 +19,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
@@ -107,6 +112,7 @@ const Leads = () => {
   const LEADS_PAGE_SIZE = 50;
 
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
 
   // Tasks State
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
@@ -136,9 +142,17 @@ const Leads = () => {
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
 
+    const applyTipoFilter = (q: ReturnType<typeof supabase.from>) => {
+      if (tipoClienteFilter === 'Acquirenti')
+        return q.or('tipo_cliente.eq.Acquirente,tipo_cliente.eq.Ibrido');
+      if (tipoClienteFilter === 'Proprietari')
+        return q.or('tipo_cliente.eq.Proprietario,tipo_cliente.eq.Ibrido');
+      return q;
+    };
+
     if (searchQuery.trim()) {
       // Search mode: load all leads with full search fields, no pagination
-      const { data, error } = await supabase
+      let query = supabase
         .from('leads')
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
@@ -149,12 +163,14 @@ const Leads = () => {
         .eq('is_deleted', false)
         .order('created_at', { ascending: false })
         .limit(500);
+      query = applyTipoFilter(query as any) as any;
 
+      const { data, error } = await query;
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        const sanitized = (data || []).map(l => ({
+        const sanitized = (data || []).map((l: any) => ({
           ...l,
           stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
         }));
@@ -166,7 +182,7 @@ const Leads = () => {
       const from = (leadsPage - 1) * LEADS_PAGE_SIZE;
       const to = from + LEADS_PAGE_SIZE - 1;
 
-      const { data, count, error } = await supabase
+      let query = supabase
         .from('leads')
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
@@ -174,14 +190,16 @@ const Leads = () => {
           lead_immobili(immobili(titolo))
         `, { count: 'exact' })
         .eq('is_deleted', false)
-        .order('created_at', { ascending: false })
-        .range(from, to);
+        .order('created_at', { ascending: false });
+      query = applyTipoFilter(query as any) as any;
+      query = (query as any).range(from, to);
 
+      const { data, count, error } = await query;
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nel caricamento CRM");
       } else {
-        const sanitized = (data || []).map(l => ({
+        const sanitized = (data || []).map((l: any) => ({
           ...l,
           stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
         }));
@@ -191,7 +209,7 @@ const Leads = () => {
     }
 
     setLoading(false);
-  }, [leadsPage, searchQuery]);
+  }, [leadsPage, searchQuery, tipoClienteFilter]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
@@ -247,6 +265,22 @@ const Leads = () => {
     }
   }, [fetchLeads]);
 
+  const handleDeleteLead = async () => {
+    if (!leadToDelete) return;
+    const targetId = leadToDelete.id;
+    setLeadToDelete(null);
+    const { error } = await supabase
+      .from('leads')
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq('id', targetId);
+    if (error) {
+      showError("Errore nell'eliminazione.");
+    } else {
+      showSuccess('Lead eliminato.');
+      fetchLeads();
+    }
+  };
+
   /**
    * Automation hook — call when an AI evaluation report is completed for a lead.
    * Updates stato_venditore → "Valutazione fatta" and appends a history note.
@@ -293,27 +327,18 @@ const Leads = () => {
 
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return leads.filter(lead => {
-      const matchesTipo =
-        tipoClienteFilter === 'Tutti' ||
-        (tipoClienteFilter === 'Acquirenti' && (lead.tipo_cliente === 'Acquirente' || lead.tipo_cliente === 'Ibrido')) ||
-        (tipoClienteFilter === 'Proprietari' && (lead.tipo_cliente === 'Proprietario' || lead.tipo_cliente === 'Ibrido'));
-
-      if (!matchesTipo) return false;
-      if (!q) return true;
-
-      return (
-        `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
-        lead.email?.toLowerCase().includes(q) ||
-        lead.telefono?.includes(q) ||
-        (lead.budget != null && String(lead.budget).includes(q)) ||
-        (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
-        (lead.zone_ricercate ?? []).some((z: string) => z.toLowerCase().includes(q)) ||
-        lead.zona_venditore?.toLowerCase().includes(q) ||
-        lead.note_interne?.toLowerCase().includes(q)
-      );
-    });
-  }, [leads, searchQuery, tipoClienteFilter]);
+    if (!q) return leads;
+    return leads.filter(lead =>
+      `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
+      lead.email?.toLowerCase().includes(q) ||
+      lead.telefono?.includes(q) ||
+      (lead.budget != null && String(lead.budget).includes(q)) ||
+      (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
+      (lead.zone_ricercate ?? []).some((z: string) => z.toLowerCase().includes(q)) ||
+      lead.zona_venditore?.toLowerCase().includes(q) ||
+      lead.note_interne?.toLowerCase().includes(q)
+    );
+  }, [leads, searchQuery]);
 
 
 
@@ -321,7 +346,7 @@ const Leads = () => {
     nome: z.string().min(2, 'Nome: min 2 caratteri').max(100),
     cognome: z.string().min(2, 'Cognome: min 2 caratteri').max(100),
     email: z.string().email('Email non valida').optional().or(z.literal('')),
-    telefono: z.string().regex(/^\+?[\d\s\-()]+$/, 'Telefono non valido').optional().or(z.literal('')),
+    telefono: z.string().optional(),
   });
 
   const handleSaveDetails = async (e: React.FormEvent) => {
@@ -345,6 +370,7 @@ const Leads = () => {
       nome: selectedLead.nome.trim(),
       cognome: selectedLead.cognome.trim(),
       telefono: selectedLead.telefono || null,
+      telefono_fisso: (selectedLead as any).telefono_fisso || null,
       email: selectedLead.email || null,
       assegnato_a: selectedLead.assegnato_a && selectedLead.assegnato_a !== "Nessuno" ? selectedLead.assegnato_a : null,
       tipo_cliente: selectedLead.tipo_cliente || 'Acquirente',
@@ -412,6 +438,7 @@ const Leads = () => {
       nome: lead.nome.trim(),
       cognome: lead.cognome.trim(),
       telefono: lead.telefono || null,
+      telefono_fisso: lead.telefono_fisso || null,
       email: lead.email || null,
       assegnato_a: lead.assegnato_a && lead.assegnato_a !== "Nessuno" ? lead.assegnato_a : null,
       tipo_cliente: lead.tipo_cliente || 'Acquirente',
@@ -608,7 +635,7 @@ const Leads = () => {
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
           <p className="text-gray-500 mt-1 font-medium">
-            {filteredLeads.length} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
+            {totalLeadsCount} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
           </p>
         </div>
 
@@ -771,6 +798,15 @@ const Leads = () => {
                           className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
                         >
                           <CheckSquare size={15} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Elimina lead"
+                          onClick={() => setLeadToDelete({ id: lead.id, nome: lead.nome, cognome: lead.cognome })}
+                          className="h-8 w-8 p-0 rounded-xl text-gray-300 hover:text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 size={15} />
                         </Button>
                       </div>
                     </td>
@@ -961,10 +997,18 @@ const Leads = () => {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Telefono</Label>
+                          <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
                           <Input
                             value={selectedLead.telefono || ''}
                             onChange={(e) => setSelectedLead({...selectedLead, telefono: e.target.value})}
+                            className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Telefono Fisso</Label>
+                          <Input
+                            value={(selectedLead as any).telefono_fisso || ''}
+                            onChange={(e) => setSelectedLead({...selectedLead, telefono_fisso: e.target.value} as any)}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1641,6 +1685,21 @@ const Leads = () => {
         agents={agentsForEventModal}
         properties={propertiesForEventModal}
       />
+
+      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-500 font-medium">
+              Stai per eliminare <span className="font-bold text-gray-800">{leadToDelete?.nome} {leadToDelete?.cognome}</span>. L'operazione è irreversibile.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteLead} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </AdminLayout>
   );

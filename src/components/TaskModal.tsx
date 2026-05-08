@@ -83,17 +83,18 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
   const searchLeads = async (q: string) => {
-    if (!q.trim()) { setLeadItems([]); return; }
+    const trimmed = q.trim();
+    if (!trimmed) { setLeadItems([]); return; }
     searchLeadsAbortRef.current?.abort();
     const controller = new AbortController();
     searchLeadsAbortRef.current = controller;
 
-    const escaped = q.replace(/[%_\\]/g, '\\$&');
-    const { data: rows } = await supabase
-      .from('leads')
-      .select('id, nome, cognome, telefono')
-      .or(`nome.ilike.%${escaped}%,cognome.ilike.%${escaped}%`)
-      .limit(8);
+    const tokens = trimmed.split(/\s+/).map(t => t.replace(/[%_\\]/g, '\\$&'));
+    let query = supabase.from('leads').select('id, nome, cognome, telefono');
+    for (const token of tokens) {
+      query = query.or(`nome.ilike.%${token}%,cognome.ilike.%${token}%`);
+    }
+    const { data: rows } = await query.limit(8);
 
     if (controller.signal.aborted) return;
     setLeadItems((rows ?? []).map(r => ({
