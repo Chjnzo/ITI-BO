@@ -70,30 +70,40 @@ function buildPrompt(params: {
   ha_box: boolean | null;
   ha_posto_auto: boolean | null;
   ha_cantina: boolean | null;
+  ha_terrazzo: boolean | null;
+  terrazzo_mq: number | null;
   num_locali: number | null;
   num_camere: number | null;
   num_bagni: number | null;
   anno_costruzione: number | null;
+  anno_ristrutturazione: number | null;
   classe_energetica: string | null;
   tipo_riscaldamento: string | null;
+  note_tecniche: string | null;
+  dotazioni_extra: string[];
   zona_omi: ZonaOmi | null;
   comparabili: Comparabile[];
   poi_summary: string | null;
   comparabili_attivi: ComparabileAttivo[];
 }): string {
+  const currentYear = new Date().getFullYear();
   const features: string[] = [];
+
   if (params.piano) features.push(`Piano: ${params.piano}`);
   if (params.ascensore != null) features.push(params.ascensore ? "Con ascensore" : "Senza ascensore");
+  if (params.ha_terrazzo) features.push(params.terrazzo_mq ? `Terrazzo privato di ${params.terrazzo_mq} mq` : "Con terrazzo privato");
   if (params.ha_giardino) features.push("Con giardino");
   if (params.ha_box) features.push("Con box auto");
-  if (params.ha_posto_auto) features.push("Con posto auto");
+  if (params.ha_posto_auto) features.push("Con posto auto scoperto");
   if (params.ha_cantina) features.push("Con cantina");
   if (params.num_locali) features.push(`${params.num_locali} locali`);
   if (params.num_camere) features.push(`${params.num_camere} camere da letto`);
   if (params.num_bagni) features.push(`${params.num_bagni} bagni`);
   if (params.anno_costruzione) features.push(`Anno costruzione: ${params.anno_costruzione}`);
+  if (params.anno_ristrutturazione) features.push(`Ultimo intervento di ristrutturazione: ${params.anno_ristrutturazione} (${currentYear - params.anno_ristrutturazione} anni fa)`);
   if (params.classe_energetica) features.push(`Classe energetica: ${params.classe_energetica}`);
   if (params.tipo_riscaldamento) features.push(`Riscaldamento: ${params.tipo_riscaldamento}`);
+  if (params.dotazioni_extra.length > 0) features.push(`Dotazioni aggiuntive: ${params.dotazioni_extra.join(", ")}`);
 
   let omiBlock = `[MODALITÀ ANALISI DI MERCATO GENERALE — DATI OMI NON DISPONIBILI]
 Nessun dato OMI ufficiale è disponibile per questa zona. NON inventare codici di zona OMI (es. "BG-C1", "BG-R2") né range di prezzo specifici. Basa la stima esclusivamente sulle tendenze generali del comune di ${params.citta} e sulle caratteristiche dell'immobile.`;
@@ -135,6 +145,11 @@ NON scrivere frasi come "in via X sono stati registrati valori di Y €/mq" se v
     poiBlock = `\nServizi nelle vicinanze (raggio 500m — OpenStreetMap): ${params.poi_summary}`;
   }
 
+  let noteTecnicheBlock = "";
+  if (params.note_tecniche?.trim()) {
+    noteTecnicheBlock = `\nNOTE DELL'AGENTE: ${params.note_tecniche.trim()}`;
+  }
+
   const dataMode = params.zona_omi && params.comparabili.length > 0
     ? "MODALITÀ COMPLETA (dati OMI + comparabili disponibili)"
     : params.zona_omi
@@ -152,6 +167,7 @@ Immobile da valutare:
 - Stato conservativo: ${params.stato_conservativo}
 ${features.length > 0 ? `- Caratteristiche: ${features.join(", ")}` : ""}
 ${poiBlock}
+${noteTecnicheBlock}
 ${omiBlock}
 
 ${comparabiliBlock}
@@ -178,7 +194,6 @@ async function fetchPoiSummary(lat: number, lng: number): Promise<string | null>
     const total = parseInt(tags.total ?? "0", 10);
     if (total === 0) return null;
 
-    // Re-query per categoria per avere counts separati
     const queryDetail = `[out:json][timeout:10];(node["amenity"="school"](around:500,${lat},${lng}););out count;`;
     const queryBus = `[out:json][timeout:10];(node["amenity"="bus_stop"](around:500,${lat},${lng}););out count;`;
     const queryPark = `[out:json][timeout:10];(node["leisure"="park"](around:500,${lat},${lng}););out count;`;
@@ -254,12 +269,17 @@ Deno.serve(async (req) => {
       ha_box = null,
       ha_posto_auto = null,
       ha_cantina = null,
+      ha_terrazzo = null,
+      terrazzo_mq = null,
       num_locali = null,
       num_camere = null,
       num_bagni = null,
       anno_costruzione = null,
+      anno_ristrutturazione = null,
       classe_energetica = null,
       tipo_riscaldamento = null,
+      note_tecniche = null,
+      dotazioni_extra = [],
       comparabili_attivi = [],
     } = await req.json();
 
@@ -419,7 +439,7 @@ Analizza i dati forniti e restituisci ESCLUSIVAMENTE un oggetto JSON valido con 
   }
 - "motivazione_ai": testo professionale in italiano strutturato in ESATTAMENTE 3 paragrafi separati da \\n\\n:
   PARAGRAFO 1 — CONTESTO: Analisi approfondita della micro-zona e del trend di mercato locale. Se disponibile, cita il codice zona OMI e il range ufficiale prezzo/mq. NON scrivere frasi generiche: cita dati concreti. Se i comparabili sono presenti, riporta i valori medi di transazione reali.
-  PARAGRAFO 2 — ANALISI TECNICA: Spiega PERCHÉ hai applicato ciascun fattore correttivo specifico, collegandolo alle preferenze degli acquirenti bergamaschi. Sii specifico e tecnico.
+  PARAGRAFO 2 — ANALISI TECNICA: Spiega PERCHÉ hai applicato ciascun fattore correttivo specifico, collegandolo alle preferenze degli acquirenti bergamaschi. Sii specifico e tecnico. Se l'immobile è stato ristrutturato, cita l'anno e quantifica l'impatto sul valore.
   PARAGRAFO 3 — CONCLUSIONE STRATEGICA: Consiglio operativo sul range di prezzo per attrarre acquirenti seri nel mercato attuale. Indica se il mercato locale è in fase espansiva, stabile o contrattiva.
 - "trend_mercato_locale": array di oggetti {anno, prezzo_mq} dal 2018 al ${currentYear}, con valori realistici e coerenti per la zona OMI indicata.
 - "descrizione_zona": testo professionale in italiano strutturato in ESATTAMENTE 2 paragrafi separati da \\n\\n:
@@ -430,7 +450,7 @@ Analizza i dati forniti e restituisci ESCLUSIVAMENTE un oggetto JSON valido con 
 - "costo_stima_lavori": intero — costo indicativo dell'intervento in €. ${isGiaOttimo ? "Imposta 0 (immobile già ottimo)." : "Stima realistica basata su superficie e tipologia di intervento (restyling leggero vs ristrutturazione totale)."}
 - "tempo_mercato": stringa — tempo stimato per vendere questo immobile in questa zona (es. "1-2 mesi", "2-4 mesi", "4-6 mesi", "6-12 mesi"). Basati su tipologia, zona OMI, stato e dati di mercato.
 - "identikit_compratore": testo in italiano di 2-4 frasi — profilo demografico e comportamentale dell'acquirente tipo per questo immobile specifico (es. fascia d'età, nucleo familiare, motivazione d'acquisto, priorità nella scelta).
-- "narrativa_dotazioni": testo in italiano di 2-3 frasi discorsive e persuasive che descrivono come le dotazioni presenti (${["ha_box", "ha_posto_auto", "ha_cantina", "ha_giardino", "ascensore"].join(", ")}) valorizzano concretamente la vita quotidiana in questo immobile. Sii specifico, evita frasi generiche.
+- "narrativa_dotazioni": testo in italiano di 2-3 frasi discorsive e persuasive che descrivono come le dotazioni presenti valorizzano concretamente la vita quotidiana in questo immobile. Sii specifico, evita frasi generiche.
 
 REGOLA MATEMATICA OBBLIGATORIA per stima_breakdown:
 prezzo_mq_finale = prezzo_mq_base × (1 + SOMMA_ALGEBRICA(tutti i delta_percentuale) / 100)
@@ -456,12 +476,16 @@ F. Range orientativi (usa il valore preciso più adatto al caso specifico):
    - Piano terra senza giardino: -5%
    - Piano alto (>3) con ascensore: +4% a +6%
    - Piano alto (>3) senza ascensore: -7% a -10%
+   - Terrazzo privato: +3% a +5%
+   - Balcone: +1% a +3%
    - Giardino privato: +5% a +10%
    - Box auto: +3% a +4%
    - Posto auto scoperto: +1% a +2%
    - Cantina: +1%
    - Stato "da ristrutturare": -15% a -20%
    - Stato "ottimo" o "ristrutturato": +10% a +15%
+   - Ristrutturato negli ultimi 5 anni: +8% a +12%
+   - Ristrutturato tra 6 e 15 anni fa: +3% a +6%
    - Classe energetica A o B: +5%
    - Classe energetica G: -5%
    - Anno di costruzione ante 1960 senza ristrutturazione: -3% a -5%
@@ -481,12 +505,16 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
     const userPrompt = buildPrompt({
       indirizzo, citta, superficie_mq, tipologia, stato_conservativo,
       piano, ascensore, ha_giardino, ha_box, ha_posto_auto, ha_cantina,
-      num_locali, num_camere, num_bagni, anno_costruzione, classe_energetica,
-      tipo_riscaldamento, zona_omi, comparabili, poi_summary,
+      ha_terrazzo, terrazzo_mq,
+      num_locali, num_camere, num_bagni,
+      anno_costruzione, anno_ristrutturazione,
+      classe_energetica, tipo_riscaldamento,
+      note_tecniche, dotazioni_extra: dotazioni_extra ?? [],
+      zona_omi, comparabili, poi_summary,
       comparabili_attivi: comparabili_attivi ?? [],
     });
 
-    console.log("Calling OpenAI...");
+    console.log("Calling OpenAI gpt-4o...");
 
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -495,8 +523,8 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
         Authorization: `Bearer ${openaiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.4,
+        model: "gpt-4o",
+        temperature: 0.3,
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },

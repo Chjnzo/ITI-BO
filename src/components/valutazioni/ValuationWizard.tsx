@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/select';
 import {
   Check, ChevronLeft, ChevronRight, Minus, Plus,
-  Home, Settings, Star, Euro, Calculator, X, TrendingUp,
+  Home, Settings, Star, Euro, Calculator, X, TrendingUp, Info,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -28,15 +28,27 @@ const STATI_CONSERVATIVI = ['Da ristrutturare', 'Discreto', 'Buono', 'Ottimo', '
 const CLASSI_ENERGETICHE = ['A4', 'A3', 'A2', 'A1', 'B', 'C', 'D', 'E', 'F', 'G'];
 const TIPI_RISCALDAMENTO = ['Autonomo', 'Centralizzato', 'Teleriscaldamento', 'Assente'];
 
-const COMFORT_OPTIONS = [
-  { key: 'ha_box',        label: 'Box auto' },
-  { key: 'ha_posto_auto', label: 'Posto auto' },
+// These 6 map to boolean columns in the DB — used for precise valuation corrections
+const COMFORT_BOOLEAN_OPTIONS = [
+  { key: 'ha_box',        label: 'Box Auto' },
+  { key: 'ha_posto_auto', label: 'Posto Auto' },
   { key: 'ha_cantina',    label: 'Cantina' },
-  { key: 'ha_giardino',   label: 'Giardino' },
+  { key: 'ha_giardino',   label: 'Giardino Privato' },
   { key: 'ascensore',     label: 'Ascensore' },
+  { key: 'ha_terrazzo',   label: 'Terrazzo' },
 ] as const;
 
-const STEP_LABELS = ['Lead', 'Immobile', 'Comfort', 'Stima & AI', 'Mercato'];
+// These 6 go into dotazioni_extra[] — enrich AI context but no direct correction factor
+const COMFORT_EXTRA_PRESETS = [
+  'Balcone',
+  'Aria Condizionata',
+  'Domotica',
+  'Allarme',
+  'Piscina',
+  'Pannelli Solari',
+];
+
+const STEP_LABELS = ['Lead', 'Immobile', 'Comfort & Dotazioni', 'Mercato', 'Stima & AI'];
 const TOTAL_STEPS = 5;
 
 const LOADING_MESSAGES = [
@@ -49,12 +61,23 @@ const LOADING_MESSAGES = [
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ComfortKey = typeof COMFORT_OPTIONS[number]['key'];
+type ComfortBooleanKey = typeof COMFORT_BOOLEAN_OPTIONS[number]['key'];
 
 interface ComparabileAttivo {
   url: string;
   titolo: string;
   prezzo: string;
+}
+
+interface StimaFattore {
+  label: string;
+  delta_pct: number;
+}
+
+interface StimaBreakdown {
+  prezzo_base_mq: number;
+  fattori: StimaFattore[];
+  prezzo_finale_mq: number;
 }
 
 const emptyComparabileAttivo = (): ComparabileAttivo => ({ url: '', titolo: '', prezzo: '' });
@@ -136,28 +159,34 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
   const [piano, setPiano] = useState('');
   const [numBagni, setNumBagni] = useState('');
   const [annoCostruzione, setAnnoCostruzione] = useState('');
+  const [annoRistrutturazione, setAnnoRistrutturazione] = useState('');
   const [classeEnergetica, setClasseEnergetica] = useState('');
   const [tipoRiscaldamento, setTipoRiscaldamento] = useState('');
 
-  // Step 3 — Comfort
-  const [comfort, setComfort] = useState<Record<ComfortKey, boolean>>({
+  // Step 3 — Comfort & Dotazioni
+  const [comfort, setComfort] = useState<Record<ComfortBooleanKey, boolean>>({
     ha_box: false,
     ha_posto_auto: false,
     ha_cantina: false,
     ha_giardino: false,
     ascensore: false,
+    ha_terrazzo: false,
   });
+  const [terrazzoMq, setTerrazzoMq] = useState('');
+  const [dotazioniExtra, setDotazioniExtra] = useState<string[]>([]);
+  const [customDotazioneInput, setCustomDotazioneInput] = useState('');
   const [noteTecniche, setNoteTecniche] = useState('');
 
-  // Step 4 — Stima & AI
+  // Step 4 — Mercato
+  const [comparabiliAttivi, setComparabiliAttivi] = useState<ComparabileAttivo[]>([emptyComparabileAttivo()]);
+
+  // Step 5 — Stima & AI
   const [stimaMin, setStimaMin] = useState('');
   const [stimaMax, setStimaMax] = useState('');
   const [motivazioneAi, setMotivazioneAi] = useState('');
+  const [stimaBreakdown, setStimaBreakdown] = useState<StimaBreakdown | null>(null);
   const [loadingMsg, setLoadingMsg] = useState('');
   const [showPriceOverride, setShowPriceOverride] = useState(false);
-
-  // Step 5 — Mercato
-  const [comparabiliAttivi, setComparabiliAttivi] = useState<ComparabileAttivo[]>([emptyComparabileAttivo()]);
 
   // Reset on open
   useEffect(() => {
@@ -178,13 +207,18 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     setPiano('');
     setNumBagni('');
     setAnnoCostruzione('');
+    setAnnoRistrutturazione('');
     setClasseEnergetica('');
     setTipoRiscaldamento('');
-    setComfort({ ha_box: false, ha_posto_auto: false, ha_cantina: false, ha_giardino: false, ascensore: false });
+    setComfort({ ha_box: false, ha_posto_auto: false, ha_cantina: false, ha_giardino: false, ascensore: false, ha_terrazzo: false });
+    setTerrazzoMq('');
+    setDotazioniExtra([]);
+    setCustomDotazioneInput('');
     setNoteTecniche('');
     setStimaMin('');
     setStimaMax('');
     setMotivazioneAi('');
+    setStimaBreakdown(null);
     setLoadingMsg('');
     setShowPriceOverride(false);
     setComparabiliAttivi([emptyComparabileAttivo()]);
@@ -232,8 +266,26 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     })));
   };
 
-  const toggleComfort = (key: ComfortKey) => {
+  const toggleComfortBoolean = (key: ComfortBooleanKey) => {
     setComfort(prev => ({ ...prev, [key]: !prev[key] }));
+    if (key === 'ha_terrazzo') setTerrazzoMq('');
+  };
+
+  const toggleExtraPreset = (preset: string) => {
+    setDotazioniExtra(prev =>
+      prev.includes(preset) ? prev.filter(d => d !== preset) : [...prev, preset]
+    );
+  };
+
+  const addCustomDotazione = () => {
+    const trimmed = customDotazioneInput.trim();
+    if (!trimmed || dotazioniExtra.includes(trimmed)) return;
+    setDotazioniExtra(prev => [...prev, trimmed]);
+    setCustomDotazioneInput('');
+  };
+
+  const removeCustomDotazione = (label: string) => {
+    setDotazioniExtra(prev => prev.filter(d => d !== label));
   };
 
   const handleNextFromStep2 = () => {
@@ -245,7 +297,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
   const generateSlug = (addr: string): string => {
     const base = addr
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
       .replace(/[^a-z0-9\s-]/g, '')
       .trim()
       .replace(/\s+/g, '-')
@@ -277,6 +329,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     piano: piano || null,
     num_bagni: numBagni ? Number(numBagni) : null,
     anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
+    anno_ristrutturazione: annoRistrutturazione ? Number(annoRistrutturazione) : null,
     classe_energetica: classeEnergetica || null,
     tipo_riscaldamento: tipoRiscaldamento || null,
     ha_box: comfort.ha_box,
@@ -284,6 +337,9 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     ha_cantina: comfort.ha_cantina,
     ha_giardino: comfort.ha_giardino,
     ascensore: comfort.ascensore,
+    ha_terrazzo: comfort.ha_terrazzo,
+    terrazzo_mq: comfort.ha_terrazzo && terrazzoMq ? Number(terrazzoMq) : null,
+    dotazioni_extra: dotazioniExtra.length > 0 ? dotazioniExtra : null,
     note_tecniche: noteTecniche.trim() || null,
     comparabili_attivi: getComparabiliAttiviPayload().length > 0 ? getComparabiliAttiviPayload() : null,
   });
@@ -356,12 +412,17 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
           ha_box: comfort.ha_box,
           ha_posto_auto: comfort.ha_posto_auto,
           ha_cantina: comfort.ha_cantina,
+          ha_terrazzo: comfort.ha_terrazzo,
+          terrazzo_mq: comfort.ha_terrazzo && terrazzoMq ? Number(terrazzoMq) : null,
+          anno_ristrutturazione: annoRistrutturazione ? Number(annoRistrutturazione) : null,
           num_locali: numLocali ? Number(numLocali) : null,
           num_camere: numCamere ? Number(numCamere) : null,
           num_bagni: numBagni ? Number(numBagni) : null,
           anno_costruzione: annoCostruzione ? Number(annoCostruzione) : null,
           classe_energetica: classeEnergetica || null,
           tipo_riscaldamento: tipoRiscaldamento || null,
+          note_tecniche: noteTecniche.trim() || null,
+          dotazioni_extra: dotazioniExtra.length > 0 ? dotazioniExtra : [],
           comparabili_attivi: getComparabiliAttiviPayload(),
         },
       });
@@ -373,6 +434,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
       if (v?.stima_min != null) setStimaMin(String(v.stima_min));
       if (v?.stima_max != null) setStimaMax(String(v.stima_max));
       if (v?.motivazione_ai) setMotivazioneAi(v.motivazione_ai);
+      if (v?.stima_breakdown) setStimaBreakdown(v.stima_breakdown);
       setAiGenerated(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Errore generazione AI';
@@ -616,7 +678,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-3 col-span-3">
+                <div className="space-y-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Anno costruzione</Label>
                   <Input
                     type="number"
@@ -624,14 +686,25 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                     onChange={e => setAnnoCostruzione(e.target.value)}
                     onWheel={e => e.currentTarget.blur()}
                     placeholder="1995"
-                    className="h-14 rounded-2xl border-gray-100 max-w-[200px]"
+                    className="h-14 rounded-2xl border-gray-100"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Anno ristrutturazione</Label>
+                  <Input
+                    type="number"
+                    value={annoRistrutturazione}
+                    onChange={e => setAnnoRistrutturazione(e.target.value)}
+                    onWheel={e => e.currentTarget.blur()}
+                    placeholder="2018"
+                    className="h-14 rounded-2xl border-gray-100"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* ── STEP 3: Comfort ───────────────────────────────────────────── */}
+          {/* ── STEP 3: Comfort & Dotazioni ───────────────────────────────── */}
           {step === 3 && (
             <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="space-y-1">
@@ -640,16 +713,67 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 </h2>
                 <p className="text-sm text-gray-400">Seleziona i servizi presenti nell'immobile.</p>
               </div>
+
+              {/* Info box */}
+              <div className="flex gap-3 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-4 py-3">
+                <Info size={16} className="text-[#94b0ab] mt-0.5 shrink-0" />
+                <p className="text-xs text-[#5a7a75] leading-relaxed">
+                  <span className="font-bold">Ascensore, Terrazzo, Box Auto e Giardino</span> influenzano direttamente la correzione €/m². Le altre dotazioni arricchiscono il contesto per l'AI.
+                </p>
+              </div>
+
+              {/* Boolean comfort toggles (mapped to DB columns) */}
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Dotazioni</Label>
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Dotazioni principali</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {COMFORT_OPTIONS.map(({ key, label }) => {
+                  {COMFORT_BOOLEAN_OPTIONS.map(({ key, label }) => {
                     const isActive = comfort[key];
                     return (
+                      <div key={key} className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleComfortBoolean(key)}
+                          className={cn(
+                            'w-full flex items-center justify-between p-4 rounded-2xl border text-sm font-semibold transition-all text-left',
+                            isActive
+                              ? 'bg-[#94b0ab]/10 border-[#94b0ab] text-[#94b0ab]'
+                              : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50',
+                          )}
+                        >
+                          {label}
+                          {isActive && <Check size={15} />}
+                        </button>
+                        {/* Terrazzo mq input */}
+                        {key === 'ha_terrazzo' && isActive && (
+                          <div className="relative">
+                            <Input
+                              type="number"
+                              min={1}
+                              value={terrazzoMq}
+                              onChange={e => setTerrazzoMq(e.target.value)}
+                              onWheel={e => e.currentTarget.blur()}
+                              placeholder="Mq terrazzo (opz.)"
+                              className="h-10 rounded-xl border-[#94b0ab]/30 text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Extra presets (stored in dotazioni_extra) */}
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Altre dotazioni</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {COMFORT_EXTRA_PRESETS.map((preset) => {
+                    const isActive = dotazioniExtra.includes(preset);
+                    return (
                       <button
-                        key={key}
+                        key={preset}
                         type="button"
-                        onClick={() => toggleComfort(key)}
+                        onClick={() => toggleExtraPreset(preset)}
                         className={cn(
                           'flex items-center justify-between p-4 rounded-2xl border text-sm font-semibold transition-all text-left',
                           isActive
@@ -657,126 +781,74 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                             : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50',
                         )}
                       >
-                        {label}
+                        {preset}
                         {isActive && <Check size={15} />}
                       </button>
                     );
                   })}
                 </div>
               </div>
+
+              {/* Custom dotazione input */}
+              <div className="space-y-3">
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Aggiungi dotazione personalizzata</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={customDotazioneInput}
+                    onChange={e => setCustomDotazioneInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomDotazione(); } }}
+                    placeholder="Es. Sauna, Pavimento riscaldato..."
+                    className="h-12 rounded-2xl border-gray-100 flex-1"
+                  />
+                  <Button
+                    type="button"
+                    onClick={addCustomDotazione}
+                    disabled={!customDotazioneInput.trim()}
+                    className="h-12 px-5 rounded-2xl bg-[#94b0ab] hover:bg-[#7a948f] text-white"
+                  >
+                    <Plus size={16} />
+                  </Button>
+                </div>
+
+                {/* Custom tags (non-preset items in dotazioni_extra) */}
+                {dotazioniExtra.filter(d => !COMFORT_EXTRA_PRESETS.includes(d)).length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {dotazioniExtra
+                      .filter(d => !COMFORT_EXTRA_PRESETS.includes(d))
+                      .map(d => (
+                        <span
+                          key={d}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#94b0ab]/10 border border-[#94b0ab]/30 text-xs font-semibold text-[#5a7a75]"
+                        >
+                          {d}
+                          <button
+                            type="button"
+                            onClick={() => removeCustomDotazione(d)}
+                            className="text-[#94b0ab] hover:text-[#5a7a75] transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Note tecniche */}
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Note tecniche</Label>
                 <Textarea
                   value={noteTecniche}
                   onChange={e => setNoteTecniche(e.target.value)}
-                  placeholder="Dettagli aggiuntivi sull'immobile..."
+                  placeholder="Dettagli aggiuntivi sull'immobile (visibilità, luce, finiture, contesto)..."
                   className="rounded-2xl border-gray-100 min-h-[100px] resize-none p-4"
                 />
               </div>
             </div>
           )}
 
-          {/* ── STEP 4: Stima & AI ────────────────────────────────────────── */}
+          {/* ── STEP 4: Mercato ───────────────────────────────────────────── */}
           {step === 4 && (
-            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
-              <div className="space-y-1">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                  <Calculator size={22} className="text-[#94b0ab]" /> Stima & Analisi
-                </h2>
-                <p className="text-sm text-gray-400">Genera la stima basata su dati OMI e transazioni reali.</p>
-              </div>
-
-              <Button
-                type="button"
-                onClick={handleGenerateAI}
-                disabled={isGenerating}
-                className="w-full h-14 rounded-2xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2 shadow-lg shadow-[#94b0ab]/20"
-              >
-                <Calculator size={18} />
-                {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera stima' : 'Genera stima'}
-              </Button>
-
-              {isGenerating && loadingMsg && (
-                <p className="text-center text-xs text-[#94b0ab] animate-pulse leading-relaxed px-2">
-                  {loadingMsg}
-                </p>
-              )}
-
-              {aiGenerated && (
-                <>
-                  {(stimaMin || stimaMax) && (
-                    <div className="rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-6 py-5">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Stima suggerita</p>
-                      <p className="text-2xl font-black text-[#94b0ab]">
-                        {stimaMin ? `€${Number(stimaMin).toLocaleString('it-IT')}` : ''}
-                        {stimaMin && stimaMax && <span className="text-gray-300 mx-2">–</span>}
-                        {stimaMax ? `€${Number(stimaMax).toLocaleString('it-IT')}` : ''}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Analisi e motivazione</Label>
-                    <Textarea
-                      value={motivazioneAi}
-                      onChange={e => setMotivazioneAi(e.target.value)}
-                      placeholder="Il testo dell'analisi apparirà qui..."
-                      className="rounded-2xl border-gray-100 min-h-[140px] resize-none p-4"
-                    />
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowPriceOverride(p => !p)}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
-                  >
-                    {showPriceOverride ? 'Nascondi modifica stima' : 'Modifica stima manualmente'}
-                  </button>
-                  {showPriceOverride && (
-                    <div className="grid grid-cols-2 gap-5">
-                      <div className="space-y-3">
-                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima minima €</Label>
-                        <div className="relative">
-                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                          <Input
-                            type="number"
-                            value={stimaMin}
-                            onChange={e => setStimaMin(e.target.value)}
-                            onWheel={e => e.currentTarget.blur()}
-                            placeholder="200000"
-                            className="h-14 rounded-2xl border-gray-100 pl-12"
-                          />
-                        </div>
-                      </div>
-                      <div className="space-y-3">
-                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima massima €</Label>
-                        <div className="relative">
-                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                          <Input
-                            type="number"
-                            value={stimaMax}
-                            onChange={e => setStimaMax(e.target.value)}
-                            onWheel={e => e.currentTarget.blur()}
-                            placeholder="250000"
-                            className="h-14 rounded-2xl border-gray-100 pl-12"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!aiGenerated && !isGenerating && (
-                <p className="text-xs text-gray-400 text-center italic">
-                  Clicca "Genera stima" per ottenere la valutazione basata su dati OMI e transazioni reali nella zona.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* ── STEP 5: Mercato ───────────────────────────────────────────── */}
-          {step === 5 && (
             <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="space-y-1">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
@@ -852,6 +924,128 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
               <p className="text-xs text-gray-400 italic leading-relaxed">
                 Questi dati vengono passati all'AI per calibrare il posizionamento competitivo dell'immobile e appariranno nel report.
               </p>
+            </div>
+          )}
+
+          {/* ── STEP 5: Stima & AI ────────────────────────────────────────── */}
+          {step === 5 && (
+            <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="space-y-1">
+                <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
+                  <Calculator size={22} className="text-[#94b0ab]" /> Stima & Analisi
+                </h2>
+                <p className="text-sm text-gray-400">Genera la stima basata su dati OMI e transazioni reali.</p>
+              </div>
+
+              <Button
+                type="button"
+                onClick={handleGenerateAI}
+                disabled={isGenerating}
+                className="w-full h-14 rounded-2xl bg-[#94b0ab] hover:bg-[#7a948f] text-white font-bold gap-2 shadow-lg shadow-[#94b0ab]/20"
+              >
+                <Calculator size={18} />
+                {isGenerating ? 'Analisi in corso...' : aiGenerated ? 'Rigenera stima' : 'Genera stima'}
+              </Button>
+
+              {isGenerating && loadingMsg && (
+                <p className="text-center text-xs text-[#94b0ab] animate-pulse leading-relaxed px-2">
+                  {loadingMsg}
+                </p>
+              )}
+
+              {aiGenerated && (
+                <>
+                  {(stimaMin || stimaMax) && (
+                    <div className="rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-6 py-5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">Stima suggerita</p>
+                      <p className="text-2xl font-black text-[#94b0ab]">
+                        {stimaMin ? `€${Number(stimaMin).toLocaleString('it-IT')}` : ''}
+                        {stimaMin && stimaMax && <span className="text-gray-300 mx-2">–</span>}
+                        {stimaMax ? `€${Number(stimaMax).toLocaleString('it-IT')}` : ''}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Breakdown correzioni */}
+                  {stimaBreakdown && stimaBreakdown.fattori?.length > 0 && (
+                    <div className="rounded-2xl border border-gray-100 bg-[#f9f9f7] px-5 py-4 space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Correzioni applicate</p>
+                      <div className="flex justify-between text-xs text-gray-500">
+                        <span>Prezzo/m² base OMI</span>
+                        <span className="font-bold text-gray-700">€{stimaBreakdown.prezzo_base_mq.toLocaleString('it-IT')}</span>
+                      </div>
+                      {stimaBreakdown.fattori.map((f, i) => (
+                        <div key={i} className="flex justify-between text-xs">
+                          <span className="text-gray-500">{f.label}</span>
+                          <span className={cn("font-bold", f.delta_pct >= 0 ? "text-emerald-600" : "text-red-500")}>
+                            {f.delta_pct >= 0 ? '+' : ''}{f.delta_pct}%
+                          </span>
+                        </div>
+                      ))}
+                      <div className="border-t border-gray-200 pt-2 flex justify-between text-xs">
+                        <span className="font-bold text-gray-700">Prezzo/m² finale</span>
+                        <span className="font-black text-[#94b0ab]">€{stimaBreakdown.prezzo_finale_mq.toLocaleString('it-IT')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Analisi e motivazione</Label>
+                    <Textarea
+                      value={motivazioneAi}
+                      onChange={e => setMotivazioneAi(e.target.value)}
+                      placeholder="Il testo dell'analisi apparirà qui..."
+                      className="rounded-2xl border-gray-100 min-h-[140px] resize-none p-4"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPriceOverride(p => !p)}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 transition-colors"
+                  >
+                    {showPriceOverride ? 'Nascondi modifica stima' : 'Modifica stima manualmente'}
+                  </button>
+                  {showPriceOverride && (
+                    <div className="grid grid-cols-2 gap-5">
+                      <div className="space-y-3">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima minima €</Label>
+                        <div className="relative">
+                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                          <Input
+                            type="number"
+                            value={stimaMin}
+                            onChange={e => setStimaMin(e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="200000"
+                            className="h-14 rounded-2xl border-gray-100 pl-12"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima massima €</Label>
+                        <div className="relative">
+                          <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                          <Input
+                            type="number"
+                            value={stimaMax}
+                            onChange={e => setStimaMax(e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="250000"
+                            className="h-14 rounded-2xl border-gray-100 pl-12"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!aiGenerated && !isGenerating && (
+                <p className="text-xs text-gray-400 text-center italic">
+                  Clicca "Genera stima" per ottenere la valutazione basata su dati OMI e transazioni reali nella zona.
+                </p>
+              )}
             </div>
           )}
         </div>

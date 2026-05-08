@@ -57,6 +57,10 @@ interface ValutazioneDetail {
   ha_cantina: boolean;
   ha_giardino: boolean;
   ascensore: boolean;
+  ha_terrazzo: boolean;
+  terrazzo_mq: number | null;
+  anno_ristrutturazione: number | null;
+  dotazioni_extra: string[] | null;
   note_tecniche: string | null;
   stima_min: number | null;
   stima_max: number | null;
@@ -134,6 +138,7 @@ const COMFORT_LABELS: { key: keyof ValutazioneDetail; label: string; icon: strin
   { key: 'ha_cantina',    label: 'Cantina',     icon: '📦' },
   { key: 'ha_giardino',   label: 'Giardino',    icon: '🌿' },
   { key: 'ascensore',     label: 'Ascensore',   icon: '🛗' },
+  { key: 'ha_terrazzo',   label: 'Terrazzo',    icon: '🏙️' },
 ];
 
 // ── Custom Chart Tooltip ───────────────────────────────────────────────────────
@@ -571,6 +576,7 @@ const ValuazioneReport = () => {
               ...(val.piano != null ? [{ icon: <Building2 size={13} />, label: 'Piano', value: `Piano ${val.piano}` }] : []),
               ...(val.classe_energetica ? [{ icon: <TrendingUp size={13} />, label: 'Classe en.', value: val.classe_energetica }] : []),
               ...(val.tipo_riscaldamento ? [{ icon: <Wrench size={13} />, label: 'Riscaldamento', value: val.tipo_riscaldamento }] : []),
+              ...(val.anno_ristrutturazione ? [{ icon: <Wrench size={13} />, label: 'Ristrutturato', value: String(val.anno_ristrutturazione) }] : []),
             ].map(({ icon, label, value }) => (
               <div key={label} className="flex items-start gap-2.5 bg-[#f5f5f0] rounded-2xl p-3">
                 <span className="text-[#94b0ab] mt-0.5 flex-shrink-0">{icon}</span>
@@ -970,25 +976,33 @@ const ValuazioneReport = () => {
         )}
 
         {/* ── Dotazioni ───────────────────────────────────────────────────────── */}
-        {(activeComfort.length > 0 || val.narrativa_dotazioni) && (
+        {(activeComfort.length > 0 || val.narrativa_dotazioni || (val.dotazioni_extra && val.dotazioni_extra.length > 0)) && (
           <div className="print-card bg-white rounded-[2rem] shadow-sm p-8">
             <h2 className="text-base font-bold text-gray-900 mb-4">Dotazioni</h2>
             {val.narrativa_dotazioni && (
               <p className="text-sm text-gray-600 leading-relaxed mb-4">{val.narrativa_dotazioni}</p>
             )}
-            {activeComfort.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {activeComfort.map(c => (
-                  <span
-                    key={c.key}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 text-[#94b0ab] text-sm font-semibold"
-                  >
-                    <span>{c.icon}</span>
-                    {c.label}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {activeComfort.map(c => (
+                <span
+                  key={c.key}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 text-[#94b0ab] text-sm font-semibold"
+                >
+                  <span>{c.icon}</span>
+                  {c.key === 'ha_terrazzo' && val.terrazzo_mq
+                    ? `${c.label} (${val.terrazzo_mq} m²)`
+                    : c.label}
+                </span>
+              ))}
+              {val.dotazioni_extra?.map(d => (
+                <span
+                  key={d}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-gray-50 border border-gray-200 text-gray-600 text-sm font-semibold"
+                >
+                  {d}
+                </span>
+              ))}
+            </div>
             {val.note_tecniche && (
               <p className="text-sm text-gray-500 mt-4 leading-relaxed border-t border-gray-100 pt-4">
                 {val.note_tecniche}
