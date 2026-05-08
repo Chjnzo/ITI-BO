@@ -34,7 +34,7 @@ import {
   User, Search, Save,
   Calendar, CalendarPlus, Plus, ExternalLink,
   TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
-  CheckSquare, Clock, Calculator,
+  CheckSquare, Clock, Calculator, Copy,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
@@ -113,6 +113,7 @@ const Leads = () => {
 
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
+  const [leadValutazione, setLeadValutazione] = useState<{ slug: string; stima_min: number | null; stima_max: number | null } | null>(null);
 
   // Tasks State
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
@@ -230,14 +231,27 @@ const Leads = () => {
 
     if (!error && data) {
       const full = { ...data, stato: data.stato === 'nuovo' ? 'Nuovo' : (data.stato || 'Nuovo') };
-      // Only update if the user hasn't already closed/switched the dialog
       setSelectedLead((prev: any) => prev?.id === leadId ? full : prev);
     }
+
+    // Fetch associated valutazione
+    const { data: val } = await supabase
+      .from('valutazioni')
+      .select('slug, stima_min, stima_max')
+      .eq('lead_id', leadId)
+      .eq('stato', 'Completata')
+      .not('slug', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    setLeadValutazione(val ? { slug: val.slug, stima_min: val.stima_min, stima_max: val.stima_max } : null);
+
     setIsLoadingDetail(false);
   }, []);
 
   // Opens the dialog immediately with card data, then hydrates with full detail
   const openLeadDetail = useCallback((lead: any) => {
+    setLeadValutazione(null);
     setSelectedLead(lead);
     fetchLeadDetail(lead.id);
   }, [fetchLeadDetail]);
@@ -1231,25 +1245,51 @@ const Leads = () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label className="text-xs font-bold text-gray-500">Valutazione Stimata (€)</Label>
-                              {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
-                                <button
-                                  type="button"
-                                  onClick={() => navigate('/valutazioni', { state: { openWizard: true, leadId: selectedLead.id } })}
-                                  className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
-                                >
-                                  <Calculator size={12} />
-                                  Crea valutazione
-                                </button>
-                              )}
-                            </div>
-                            <Input
-                              type="number"
-                              value={selectedLead.valutazione_stimata || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, valutazione_stimata: e.target.value})}
-                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-                            />
+                            <Label className="text-xs font-bold text-gray-500">Valutazione AI</Label>
+                            {leadValutazione ? (
+                              <div className="flex items-center justify-between h-11 rounded-xl border border-gray-200 bg-slate-50/50 px-3">
+                                <span className="font-bold text-gray-800 text-sm">
+                                  €{((leadValutazione.stima_min ?? 0) / 1000).toFixed(0)}k – €{((leadValutazione.stima_max ?? 0) / 1000).toFixed(0)}k
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(`${window.location.origin}/report/${leadValutazione.slug}`);
+                                      showSuccess('Link copiato!');
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
+                                    title="Copia link report"
+                                  >
+                                    <Copy size={12} />
+                                    Copia link
+                                  </button>
+                                  <a
+                                    href={`/report/${leadValutazione.slug}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
+                                    title="Apri report"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </a>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between h-11 rounded-xl border border-dashed border-gray-200 bg-slate-50/20 px-3">
+                                <span className="text-xs text-gray-400 italic">Nessuna valutazione completata</span>
+                                {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate('/valutazioni', { state: { openWizard: true, leadId: selectedLead.id } })}
+                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
+                                  >
+                                    <Calculator size={12} />
+                                    Crea
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Scadenza Esclusiva</Label>

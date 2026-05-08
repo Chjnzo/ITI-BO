@@ -7,6 +7,11 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -22,7 +27,7 @@ import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import {
   Plus, Calculator, ExternalLink, MoreHorizontal,
-  Copy, Link2, Eye, Pencil, ToggleLeft, ToggleRight,
+  Copy, Link2, Eye, Pencil, ToggleLeft, ToggleRight, Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import ValuationWizard from '@/components/valutazioni/ValuationWizard';
@@ -72,6 +77,9 @@ const Valutazioni = () => {
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardLeadId, setWizardLeadId] = useState<string | undefined>(undefined);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  // Delete confirm
+  const [valutazioneToDelete, setValutazioneToDelete] = useState<Valutazione | null>(null);
 
   // Edit modal
   const [editTarget, setEditTarget] = useState<Valutazione | null>(null);
@@ -174,6 +182,19 @@ const Valutazioni = () => {
       setEditTarget(null);
     }
     setIsSavingEdit(false);
+  };
+
+  const handleDeleteValutazione = async () => {
+    if (!valutazioneToDelete) return;
+    const targetId = valutazioneToDelete.id;
+    setValutazioneToDelete(null);
+    const { error } = await supabase.from('valutazioni').delete().eq('id', targetId);
+    if (error) {
+      showError("Errore nell'eliminazione.");
+    } else {
+      showSuccess('Valutazione eliminata.');
+      setValutazioni(prev => prev.filter(v => v.id !== targetId));
+    }
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -356,6 +377,17 @@ const Valutazioni = () => {
                                 : isPublished ? 'Metti in Bozza' : 'Segna Completata'}
                             </DropdownMenuItem>
 
+                            <DropdownMenuSeparator className="my-1" />
+
+                            {/* Elimina */}
+                            <DropdownMenuItem
+                              onClick={() => setValutazioneToDelete(v)}
+                              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer text-sm font-medium text-red-500 hover:bg-red-50"
+                            >
+                              <Trash2 size={14} />
+                              Elimina
+                            </DropdownMenuItem>
+
                           </DropdownMenuContent>
                         </DropdownMenu>
 
@@ -458,6 +490,21 @@ const Valutazioni = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!valutazioneToDelete} onOpenChange={(open) => !open && setValutazioneToDelete(null)}>
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-500 font-medium">
+              Stai per eliminare la valutazione di <span className="font-bold text-gray-800">{valutazioneToDelete?.indirizzo}</span>. L'operazione è irreversibile.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteValutazione} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </AdminLayout>
   );
