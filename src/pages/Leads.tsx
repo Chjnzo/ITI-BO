@@ -158,7 +158,7 @@ const Leads = () => {
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
           assegnato_a, telefono, email, budget, tipologia_ricerca, zone_ricercate,
-          zona_venditore, note_interne,
+          zona_venditore, note_interne, via_immobile,
           lead_immobili(immobili(titolo))
         `)
         .eq('is_deleted', false)
@@ -350,7 +350,8 @@ const Leads = () => {
       (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
       (lead.zone_ricercate ?? []).some((z: string) => z.toLowerCase().includes(q)) ||
       lead.zona_venditore?.toLowerCase().includes(q) ||
-      lead.note_interne?.toLowerCase().includes(q)
+      lead.note_interne?.toLowerCase().includes(q) ||
+      lead.via_immobile?.toLowerCase().includes(q)
     );
   }, [leads, searchQuery]);
 
@@ -397,6 +398,7 @@ const Leads = () => {
       note_interne: selectedLead.note_interne || null,
       zona_venditore: selectedLead.zona_venditore || null,
       stato_venditore: selectedLead.stato_venditore || 'Nuovo',
+      via_immobile: selectedLead.via_immobile || null,
     };
 
     setIsSaving(true);
@@ -464,6 +466,7 @@ const Leads = () => {
       motivazione_vendita: lead.motivazione_vendita || null,
       note_interne: lead.note_interne || null,
       stato_venditore: lead.stato_venditore || 'Nuovo',
+      via_immobile: lead.via_immobile || null,
       _version: version + 1,
     };
     const { data: updated, error } = await supabase
@@ -1238,8 +1241,8 @@ const Leads = () => {
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
                             <Input
-                              value={selectedLead.via || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, via: e.target.value})}
+                              value={selectedLead.via_immobile || ''}
+                              onChange={(e) => setSelectedLead({...selectedLead, via_immobile: e.target.value})}
                               placeholder="es. Via Roma 12"
                               className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                             />

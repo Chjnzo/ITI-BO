@@ -5,7 +5,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
   Plus, Pencil, Trash2, Home, CheckCircle2,
-  RotateCcw, Search, Star, ChevronLeft, ChevronRight, Calendar
+  RotateCcw, Search, Star, Calendar
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -316,21 +316,18 @@ const Properties = () => {
                   size="sm"
                   disabled={currentPage === 1 || loading}
                   onClick={() => handlePageChange(currentPage - 1)}
-                  className="rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-white"
+                  className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
                 >
-                  <ChevronLeft size={16} className="mr-1" /> Precedente
+                  ← Precedente
                 </Button>
-                <div className="flex items-center px-4 text-sm font-bold text-gray-900">
-                  Pagina {currentPage}
-                </div>
                 <Button
                   variant="outline"
                   size="sm"
                   disabled={currentPage >= Math.ceil(totalCount / PAGE_SIZE) || loading}
                   onClick={() => handlePageChange(currentPage + 1)}
-                  className="rounded-xl border-gray-200 text-gray-500 font-bold hover:bg-white"
+                  className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
                 >
-                  Successivo <ChevronRight size={16} className="ml-1" />
+                  Successivo →
                 </Button>
               </div>
             </div>
