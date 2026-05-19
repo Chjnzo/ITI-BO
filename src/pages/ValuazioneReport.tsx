@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
 import { Helmet } from 'react-helmet-async';
 import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { showError } from '@/utils/toast';
 import { Button } from '@/components/ui/button';
 import {
   FileDown, Home, ShieldCheck, TrendingUp,
@@ -293,9 +293,10 @@ const ValuazioneReport = () => {
   const [comparabili, setComparabili] = useState<ComparabileFetched[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!slug) { setNotFound(true); setLoading(false); return; }
@@ -324,27 +325,13 @@ const ValuazioneReport = () => {
       });
   }, [slug]);
 
-  const handleDownloadPdf = async () => {
-    setIsDownloading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-pdf', { body: { slug } });
-      if (error || !data?.pdf_base64) { showError('Errore nella generazione del PDF'); return; }
-      const blob = new Blob(
-        [Uint8Array.from(atob(data.pdf_base64), c => c.charCodeAt(0))],
-        { type: 'application/pdf' },
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `valutazione-${slug}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      showError('Errore nella generazione del PDF');
-    } finally {
-      setIsDownloading(false);
-    }
-  };
+  const handleDownloadPdf = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: val
+      ? `valutazione-${val.indirizzo.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+      : 'valutazione',
+    onBeforePrint: () => document.fonts.ready,
+  });
 
   // ── States ─────────────────────────────────────────────────────────────────
 
@@ -484,7 +471,17 @@ const ValuazioneReport = () => {
             * { box-shadow: none !important; backdrop-filter: none !important; }
 
             /* Full-width container */
-            .print-container { max-width: 100% !important; }
+            .print-container { max-width: 100% !important; padding: 0 !important; }
+
+            /* Compact spacing in print */
+            .space-y-5 > * + * { margin-top: 8pt !important; }
+            .py-8 { padding-top: 6pt !important; padding-bottom: 6pt !important; }
+
+            /* Prevent orphaned lines inside cards */
+            .print-card p, .print-card div { orphans: 3; widows: 3; }
+
+            /* Ensure gradients print (belt-and-suspenders alongside print-color-adjust) */
+            [class*="bg-gradient"] { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           }
         `}</style>
       </Helmet>
@@ -505,7 +502,7 @@ const ValuazioneReport = () => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => window.print()}
+            onClick={() => handleDownloadPdf()}
             className="text-gray-500 hover:text-gray-800 rounded-xl h-9 px-3 gap-1.5 text-xs font-semibold hidden sm:flex"
           >
             <Printer size={13} />
@@ -513,17 +510,16 @@ const ValuazioneReport = () => {
           </Button>
           <Button
             onClick={handleDownloadPdf}
-            disabled={isDownloading}
             size="sm"
             className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-9 px-4 font-semibold text-xs gap-1.5 shadow-sm shadow-[#94b0ab]/30"
           >
             <FileDown size={13} />
-            {isDownloading ? 'Generazione...' : 'Scarica PDF'}
+            Scarica PDF
           </Button>
         </div>
       </div>
 
-      <div className="print-container max-w-[900px] mx-auto px-4 py-8 space-y-5 pb-16">
+      <div ref={printRef} className="print-container max-w-[900px] mx-auto px-4 py-8 space-y-5 pb-16">
 
         {/* ── Hero Card ──────────────────────────────────────────────────────── */}
         <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
@@ -1082,15 +1078,14 @@ const ValuazioneReport = () => {
           <div className="flex items-center justify-center gap-3 flex-wrap">
             <Button
               onClick={handleDownloadPdf}
-              disabled={isDownloading}
               className="bg-white text-[#7a948f] hover:bg-white/90 rounded-xl h-12 px-8 font-bold text-sm gap-2 shadow-md"
             >
               <FileDown size={15} />
-              {isDownloading ? 'Generazione PDF...' : 'Scarica PDF'}
+              Scarica PDF
             </Button>
             <Button
               variant="ghost"
-              onClick={() => window.print()}
+              onClick={() => handleDownloadPdf()}
               className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl h-12 px-6 font-semibold text-sm gap-2"
             >
               <Printer size={15} />

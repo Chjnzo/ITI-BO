@@ -236,7 +236,7 @@ const EventFormModal = ({
     const tokens = trimmed.split(/\s+/).map(t => t.replace(/[%_\\]/g, '\\$&'));
     let query = supabase.from('leads').select('id, nome, cognome, telefono');
     for (const token of tokens) {
-      query = query.or(`nome.ilike.%${token}%,cognome.ilike.%${token}%`);
+      query = query.or(`nome.ilike.%${token}%,cognome.ilike.%${token}%,telefono.ilike.%${token}%`);
     }
     const { data: rows } = await query.limit(8);
 
@@ -378,8 +378,8 @@ const EventFormModal = ({
               value={leadId}
               onSelect={handleLeadSelect}
               onSearch={searchLeads}
-              placeholder="Cerca lead per nome..."
-              searchPlaceholder="Nome o cognome..."
+              placeholder="Cerca lead per nome o telefono..."
+              searchPlaceholder="Nome, cognome o telefono..."
               emptyMessage="Nessun lead trovato."
             />
             {/* Phone + WhatsApp */}
