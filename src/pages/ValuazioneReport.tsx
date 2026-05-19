@@ -13,9 +13,6 @@ import {
 import { cn } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -141,21 +138,109 @@ const COMFORT_LABELS: { key: keyof ValutazioneDetail; label: string; icon: strin
   { key: 'ha_terrazzo',   label: 'Terrazzo',    icon: '🏙️' },
 ];
 
-// ── Custom Chart Tooltip ───────────────────────────────────────────────────────
+// ── Custom SVG Trend Chart ────────────────────────────────────────────────────
 
-const ChartTooltip = ({ active, payload, label }: {
-  active?: boolean;
-  payload?: { value: number }[];
-  label?: string;
-}) => {
-  if (!active || !payload?.length) return null;
+const TrendChart = ({ data }: { data: { anno: number; prezzo_mq: number }[] }) => {
+  if (data.length === 0) return null;
+
+  const W = 800, H = 210;
+  const PAD = { top: 28, right: 20, bottom: 36, left: 54 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  const prices = data.map(d => d.prezzo_mq);
+  const minVal = Math.min(...prices);
+  const maxVal = Math.max(...prices);
+  const yMin = Math.max(0, minVal - (maxVal - minVal) * 0.3);
+  const yMax = maxVal + (maxVal - minVal) * 0.2 + 50;
+  const yRange = yMax - yMin || 1;
+
+  const barGap = chartW / data.length;
+  const barW = Math.min(barGap * 0.55, 48);
+
+  const xPos = (i: number) => PAD.left + i * barGap + barGap / 2;
+  const yScale = (v: number) => PAD.top + chartH - ((v - yMin) / yRange) * chartH;
+  const barHeight = (v: number) => Math.max(2, ((v - yMin) / yRange) * chartH);
+
+  const tickCount = 4;
+  const yTicks = Array.from({ length: tickCount + 1 }, (_, i) =>
+    Math.round((yMin + (yRange * i) / tickCount) / 50) * 50,
+  );
+
+  const latestPrice = prices[prices.length - 1];
+
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl shadow-lg px-4 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">Anno {label}</p>
-      <p className="text-base font-black text-[#94b0ab]">
-        €{payload[0].value.toLocaleString('it-IT')}<span className="text-xs font-semibold text-gray-400">/m²</span>
-      </p>
-    </div>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 210 }} aria-hidden="true">
+      <defs>
+        <linearGradient id="barGradActive" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#94b0ab" stopOpacity="1" />
+          <stop offset="100%" stopColor="#94b0ab" stopOpacity="0.6" />
+        </linearGradient>
+        <linearGradient id="barGradMuted" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#94b0ab" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#94b0ab" stopOpacity="0.15" />
+        </linearGradient>
+      </defs>
+
+      {/* Horizontal grid lines */}
+      {yTicks.map((v, i) => (
+        <line
+          key={i}
+          x1={PAD.left} x2={W - PAD.right}
+          y1={yScale(v)} y2={yScale(v)}
+          stroke="#f1f5f9" strokeWidth="1"
+        />
+      ))}
+
+      {/* Y-axis labels */}
+      {yTicks.map((v, i) => (
+        <text
+          key={i}
+          x={PAD.left - 7} y={yScale(v) + 4}
+          textAnchor="end" fontSize="10" fill="#94a3b8"
+          fontFamily="system-ui,sans-serif"
+        >
+          {v >= 1000 ? `€${(v / 1000).toFixed(1)}k` : `€${v}`}
+        </text>
+      ))}
+
+      {/* Bars */}
+      {data.map((d, i) => {
+        const x = xPos(i);
+        const bh = barHeight(d.prezzo_mq);
+        const by = yScale(d.prezzo_mq);
+        const isLatest = d.prezzo_mq === latestPrice && i === data.length - 1;
+        const showLabel = isLatest || i === 0 || data.length <= 6;
+
+        return (
+          <g key={i}>
+            <rect
+              x={x - barW / 2} y={by}
+              width={barW} height={bh}
+              rx="5" ry="5"
+              fill={isLatest ? 'url(#barGradActive)' : 'url(#barGradMuted)'}
+            />
+            {showLabel && (
+              <text
+                x={x} y={by - 6}
+                textAnchor="middle" fontSize="9" fontWeight="700"
+                fill={isLatest ? '#7a948f' : '#94a3b8'}
+                fontFamily="system-ui,sans-serif"
+              >
+                €{d.prezzo_mq.toLocaleString('it-IT')}
+              </text>
+            )}
+            <text
+              x={x} y={H - 6}
+              textAnchor="middle" fontSize="10" fill="#94a3b8"
+              fontFamily="system-ui,sans-serif"
+            >
+              {d.anno}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 };
 
@@ -315,9 +400,10 @@ const ValuazioneReport = () => {
   const activeComfort = COMFORT_LABELS.filter(c => val[c.key] === true);
   const trendData = parseTrend(val.trend_mercato_locale);
   const breakdown = parseBreakdown(val.stima_breakdown);
-  const prezzoPmq = val.stima_min && val.superficie_mq
-    ? Math.round(((val.stima_min + (val.stima_max ?? val.stima_min)) / 2) / val.superficie_mq)
-    : null;
+  const prezzoPmq = breakdown?.prezzo_mq_finale
+    ?? (val.stima_min && val.superficie_mq
+      ? Math.round(((val.stima_min + (val.stima_max ?? val.stima_min)) / 2) / val.superficie_mq)
+      : null);
   const aiParagraphs = val.motivazione_ai ? parseAiParagraphs(val.motivazione_ai) : [];
 
   const hasOmi = !!val.zone_omi;
@@ -475,33 +561,6 @@ const ValuazioneReport = () => {
               </span>
             </div>
 
-            {/* Valuation range + Gauge */}
-            {(val.stima_min || val.stima_max) && (
-              <div>
-                <p className="text-white/55 text-[10px] font-bold uppercase tracking-widest mb-2">
-                  Valore di Mercato Stimato
-                </p>
-                <div className="flex items-end gap-3 flex-wrap mb-1">
-                  <p className="text-white font-black tracking-tight leading-none" style={{ fontSize: 'clamp(2rem, 7vw, 2.75rem)' }}>
-                    {fmtEuro(val.stima_min)}
-                    {val.stima_min && val.stima_max && (
-                      <span className="text-white/35 mx-2.5 font-light">–</span>
-                    )}
-                    {fmtEuro(val.stima_max)}
-                  </p>
-                  {prezzoPmq && (
-                    <p className="text-white/55 text-sm font-medium mb-0.5">
-                      ~€{prezzoPmq.toLocaleString('it-IT')}/m² · {val.superficie_mq} m²
-                    </p>
-                  )}
-                </div>
-                {val.stima_min && val.stima_max && (
-                  <div className="mt-3">
-                    <GaugeBar min={val.stima_min} max={val.stima_max} />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Affidabilità badge + tempo mercato */}
@@ -945,33 +1004,7 @@ const ValuazioneReport = () => {
               )}
             </div>
 
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={trendData} margin={{ top: 5, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                  dataKey="anno"
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#94a3b8' }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) => `€${(v / 1000).toFixed(0)}k`}
-                  width={44}
-                />
-                <Tooltip content={<ChartTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="prezzo_mq"
-                  stroke="#94b0ab"
-                  strokeWidth={2.5}
-                  dot={{ fill: '#94b0ab', r: 3.5, strokeWidth: 0 }}
-                  activeDot={{ r: 5.5, fill: '#7a948f', strokeWidth: 0 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <TrendChart data={trendData} />
           </div>
         )}
 
@@ -1008,6 +1041,32 @@ const ValuazioneReport = () => {
                 {val.note_tecniche}
               </p>
             )}
+          </div>
+        )}
+
+        {/* ── Valore Stimato ───────────────────────────────────────────────────── */}
+        {(val.stima_min || val.stima_max) && (
+          <div className="print-card bg-white rounded-[2rem] shadow-sm overflow-hidden">
+            <div className="px-8 pt-7 pb-7">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] mb-1">
+                Valore di Mercato Stimato
+              </p>
+              <p className="font-black tracking-tight leading-none text-gray-900 mb-1" style={{ fontSize: 'clamp(2rem, 7vw, 2.75rem)' }}>
+                {fmtEuro(val.stima_min)}
+                {val.stima_min && val.stima_max && (
+                  <span className="text-gray-200 mx-3 font-light">–</span>
+                )}
+                {fmtEuro(val.stima_max)}
+              </p>
+              {prezzoPmq && (
+                <p className="text-sm text-gray-400 font-medium mt-1">
+                  €{prezzoPmq.toLocaleString('it-IT')}/m² · {val.superficie_mq} m²
+                </p>
+              )}
+              {val.stima_min && val.stima_max && (
+                <GaugeBar min={val.stima_min} max={val.stima_max} />
+              )}
+            </div>
           </div>
         )}
 

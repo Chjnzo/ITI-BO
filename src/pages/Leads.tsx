@@ -34,7 +34,8 @@ import {
   User, Search, Save,
   Calendar, CalendarPlus, Plus, ExternalLink,
   TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
-  CheckSquare, Clock, Calculator, Copy,
+  CheckSquare, Clock, Calculator, Copy, SlidersHorizontal, X as XIcon,
+  MessageSquare, FileText,
 } from 'lucide-react';
 import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
@@ -139,6 +140,21 @@ const Leads = () => {
   const [zoneSuggestions, setZoneSuggestions] = useState<string[]>([]);
   const [zoneInput, setZoneInput] = useState('');
 
+  // Advanced filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterBudgetMax, setFilterBudgetMax] = useState<number | null>(null);
+  const [filterZona, setFilterZona] = useState('');
+  const [filterTipologia, setFilterTipologia] = useState('');
+  const [filterAgente, setFilterAgente] = useState('');
+  const [filterStato, setFilterStato] = useState('');
+
+  // Notes tab
+  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
+  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterAgente !== '' || filterStato !== '';
+
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -151,7 +167,7 @@ const Leads = () => {
       return q;
     };
 
-    if (searchQuery.trim()) {
+    if (searchQuery.trim() || hasActiveFilters) {
       // Search mode: load all leads with full search fields, no pagination
       let query = supabase
         .from('leads')
@@ -210,7 +226,8 @@ const Leads = () => {
     }
 
     setLoading(false);
-  }, [leadsPage, searchQuery, tipoClienteFilter]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
@@ -322,7 +339,7 @@ const Leads = () => {
     return () => controller.abort();
   }, [fetchLeads]);
 
-  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter]);
+  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato]);
 
   // Load distinct zone names used across all leads for autocomplete
   useEffect(() => {
@@ -339,27 +356,67 @@ const Leads = () => {
       });
   }, []);
 
+  // Join all zone strings into one text blob for token-based matching.
+  // This handles the legacy case where zones were stored as a single
+  // space-separated string (e.g. "Ranica Torre Boldone Gorle") instead
+  // of individual array items.
+  const zoneTextOf = (lead: any) =>
+    (lead.zone_ricercate ?? []).join(' ').toLowerCase();
+
+  // Returns true if ALL whitespace-separated tokens in `query` appear
+  // somewhere inside `text` (order-independent, partial match per token).
+  const allTokensMatch = (text: string, query: string) => {
+    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return tokens.length > 0 && tokens.every(t => text.includes(t));
+  };
+
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return leads;
-    return leads.filter(lead =>
-      `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
-      lead.email?.toLowerCase().includes(q) ||
-      lead.telefono?.includes(q) ||
-      (lead.budget != null && String(lead.budget).includes(q)) ||
-      (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
-      (lead.zone_ricercate ?? []).some((z: string) => z.toLowerCase().includes(q)) ||
-      lead.zona_venditore?.toLowerCase().includes(q) ||
-      lead.note_interne?.toLowerCase().includes(q) ||
-      lead.via_immobile?.toLowerCase().includes(q)
-    );
-  }, [leads, searchQuery]);
+    // Normalize phone: strip all spaces and dashes for comparison
+    const qPhone = q.replace(/[\s\-]/g, '');
+
+    return leads.filter(lead => {
+      const zoneText = zoneTextOf(lead);
+
+      // Text search (permissive phone + token-based zone matching)
+      if (q) {
+        const phoneNorm = (lead.telefono ?? '').replace(/[\s\-]/g, '');
+        const matchesText =
+          `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
+          lead.email?.toLowerCase().includes(q) ||
+          (qPhone && phoneNorm.includes(qPhone)) ||
+          (lead.budget != null && String(lead.budget).includes(q)) ||
+          (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
+          allTokensMatch(zoneText, q) ||
+          lead.zona_venditore?.toLowerCase().includes(q) ||
+          lead.note_interne?.toLowerCase().includes(q) ||
+          lead.via_immobile?.toLowerCase().includes(q);
+        if (!matchesText) return false;
+      }
+      // Budget filter
+      if (filterBudgetMax !== null && (lead.budget == null || Number(lead.budget) > filterBudgetMax)) return false;
+      // Zona filter — token-based: each word must appear in the zone text
+      if (filterZona.trim()) {
+        if (!allTokensMatch(zoneText, filterZona)) return false;
+      }
+      // Tipologia filter
+      if (filterTipologia) {
+        if (!(lead.tipologia_ricerca ?? []).includes(filterTipologia)) return false;
+      }
+      // Agente filter
+      if (filterAgente && lead.assegnato_a !== filterAgente) return false;
+      // Stato filter
+      if (filterStato && lead.stato !== filterStato) return false;
+
+      return true;
+    });
+  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato]);
 
 
 
   const LeadValidationSchema = z.object({
     nome: z.string().min(2, 'Nome: min 2 caratteri').max(100),
-    cognome: z.string().min(2, 'Cognome: min 2 caratteri').max(100),
+    cognome: z.string().max(100).optional().or(z.literal('')),
     email: z.string().email('Email non valida').optional().or(z.literal('')),
     telefono: z.string().optional(),
   });
@@ -447,7 +504,7 @@ const Leads = () => {
 
   // Autosave — only fires in edit mode after the user has interacted
   const performAutoSave = useCallback(async (lead: any) => {
-    if (!lead?.id || !lead.nome?.trim() || !lead.cognome?.trim()) return;
+    if (!lead?.id || !lead.nome?.trim()) return;
     setAutoSaveStatus('saving');
     const version = lead._version ?? 1;
     const payload = {
@@ -493,7 +550,7 @@ const Leads = () => {
 
   useEffect(() => {
     if (!selectedLead?.id || !hasInteractedRef.current) return;
-    if (!selectedLead.nome?.trim() || !selectedLead.cognome?.trim()) return;
+    if (!selectedLead.nome?.trim()) return;
     pendingSaveRef.current = selectedLead;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
@@ -595,6 +652,36 @@ const Leads = () => {
     })();
   }, [selectedLead?.id]);
 
+  // Fetch notes whenever a different lead is opened
+  useEffect(() => {
+    if (!selectedLead?.id) { setLeadNotes([]); setNewNoteText(''); return; }
+    (async () => {
+      const { data } = await supabase
+        .from('lead_notes')
+        .select('id, testo, autore, created_at')
+        .eq('lead_id', selectedLead.id)
+        .order('created_at', { ascending: true });
+      setLeadNotes(data || []);
+    })();
+  }, [selectedLead?.id]);
+
+  const handleSaveNote = async () => {
+    if (!newNoteText.trim() || !selectedLead?.id) return;
+    setIsSavingNote(true);
+    const { data, error } = await supabase
+      .from('lead_notes')
+      .insert({ lead_id: selectedLead.id, testo: newNoteText.trim(), autore: 'Agente' })
+      .select('id, testo, autore, created_at')
+      .single();
+    setIsSavingNote(false);
+    if (error) {
+      showError('Errore nel salvataggio della nota');
+    } else {
+      setLeadNotes(prev => [...prev, data]);
+      setNewNoteText('');
+    }
+  };
+
   // Open lead from navigation state (e.g. coming from Tasks page)
   useEffect(() => {
     if (!loading && pendingOpenLeadIdRef.current && leads.length > 0) {
@@ -670,12 +757,31 @@ const Leads = () => {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
             <Input
-              placeholder="Cerca..."
+              placeholder="Cerca per nome, telefono, email, zona..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 pl-9 w-[220px] rounded-xl border-gray-200 bg-white"
+              className="h-11 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
             />
           </div>
+
+          {/* Filters toggle */}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowFilters(f => !f)}
+            className={cn(
+              "h-11 rounded-xl border-gray-200 gap-2 font-semibold text-sm",
+              (showFilters || hasActiveFilters) && "border-[#94b0ab] text-[#94b0ab] bg-[#94b0ab]/5"
+            )}
+          >
+            <SlidersHorizontal size={15} />
+            Filtri
+            {hasActiveFilters && (
+              <span className="ml-0.5 w-5 h-5 rounded-full bg-[#94b0ab] text-white text-[10px] font-black flex items-center justify-center">
+                {[filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterAgente !== '', filterStato !== ''].filter(Boolean).length}
+              </span>
+            )}
+          </Button>
 
           <Button
             onClick={openCreateModal}
@@ -685,6 +791,103 @@ const Leads = () => {
           </Button>
         </div>
       </div>
+
+      {/* Filter panel */}
+      {showFilters && (
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-4 shrink-0">
+          <div className="flex flex-wrap gap-4 items-end">
+            {/* Budget max */}
+            <div className="space-y-1 min-w-[160px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Budget max</Label>
+              <Select value={filterBudgetMax !== null ? String(filterBudgetMax) : '_all'} onValueChange={(v) => setFilterBudgetMax(v === '_all' ? null : Number(v))}>
+                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                  <SelectValue placeholder="Qualsiasi" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="_all">Qualsiasi</SelectItem>
+                  <SelectItem value="100000">Fino a €100.000</SelectItem>
+                  <SelectItem value="150000">Fino a €150.000</SelectItem>
+                  <SelectItem value="200000">Fino a €200.000</SelectItem>
+                  <SelectItem value="300000">Fino a €300.000</SelectItem>
+                  <SelectItem value="500000">Fino a €500.000</SelectItem>
+                  <SelectItem value="750000">Fino a €750.000</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Zona */}
+            <div className="space-y-1 min-w-[160px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Zona ricercata</Label>
+              <div className="relative">
+                <Input
+                  value={filterZona}
+                  onChange={(e) => setFilterZona(e.target.value)}
+                  placeholder="Es: Centro, Bergamo..."
+                  className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Tipologia */}
+            <div className="space-y-1 min-w-[160px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tipologia</Label>
+              <Select value={filterTipologia || '_all'} onValueChange={(v) => setFilterTipologia(v === '_all' ? '' : v)}>
+                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                  <SelectValue placeholder="Qualsiasi" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="_all">Qualsiasi</SelectItem>
+                  {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Agente */}
+            <div className="space-y-1 min-w-[140px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Agente</Label>
+              <Select value={filterAgente || '_all'} onValueChange={(v) => setFilterAgente(v === '_all' ? '' : v)}>
+                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                  <SelectValue placeholder="Tutti" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="_all">Tutti</SelectItem>
+                  {AGENTS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Stato */}
+            <div className="space-y-1 min-w-[140px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Stato</Label>
+              <Select value={filterStato || '_all'} onValueChange={(v) => setFilterStato(v === '_all' ? '' : v)}>
+                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                  <SelectValue placeholder="Tutti" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  <SelectItem value="_all">Tutti</SelectItem>
+                  <SelectItem value="Nuovo">Nuovo</SelectItem>
+                  <SelectItem value="In Trattativa">In Trattativa</SelectItem>
+                  <SelectItem value="Visita Fissata">Visita Fissata</SelectItem>
+                  <SelectItem value="Chiuso">Chiuso</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Reset */}
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => { setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); }}
+                className="h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border border-red-100"
+              >
+                <XIcon size={13} /> Reset filtri
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Lead list */}
       <div className="flex-1 overflow-hidden min-h-0">
@@ -968,6 +1171,12 @@ const Leads = () => {
                             <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadTasks.length}</span>
                           )}
                         </TabsTrigger>
+                        <TabsTrigger value="note" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <FileText size={15} /> Note
+                          {leadNotes.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadNotes.length}</span>
+                          )}
+                        </TabsTrigger>
                       </TabsList>
                     </div>
 
@@ -995,9 +1204,8 @@ const Leads = () => {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Cognome <span className="text-red-400">*</span></Label>
+                          <Label className="text-xs font-bold text-gray-500">Cognome</Label>
                           <Input
-                            required
                             value={selectedLead.cognome || ''}
                             onChange={(e) => setSelectedLead({...selectedLead, cognome: e.target.value})}
                             placeholder="Rossi"
@@ -1166,27 +1374,29 @@ const Leads = () => {
                                   onKeyDown={(e) => {
                                     if (e.key === 'Enter') {
                                       e.preventDefault();
-                                      const val = zoneInput.trim();
-                                      if (!val) return;
+                                      const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
+                                      if (vals.length === 0) return;
                                       const cur: string[] = selectedLead.zone_ricercate ?? [];
-                                      if (cur.includes(val)) { setZoneInput(''); return; }
-                                      setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, val] });
-                                      if (!zoneSuggestions.includes(val)) setZoneSuggestions(prev => [...prev, val].sort());
+                                      const newZones = vals.filter(v => !cur.includes(v));
+                                      if (newZones.length === 0) { setZoneInput(''); return; }
+                                      setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, ...newZones] });
+                                      newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
                                       setZoneInput('');
                                     }
                                   }}
-                                  placeholder="Es: Centro Storico, Bolognina..."
+                                  placeholder="Es: Centro, Bolognina (separa con virgola + Invio)"
                                   className="h-10 rounded-xl border-gray-200 bg-slate-50/50 flex-1 text-sm"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const val = zoneInput.trim();
-                                    if (!val) return;
+                                    const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
+                                    if (vals.length === 0) return;
                                     const cur: string[] = selectedLead.zone_ricercate ?? [];
-                                    if (cur.includes(val)) { setZoneInput(''); return; }
-                                    setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, val] });
-                                    if (!zoneSuggestions.includes(val)) setZoneSuggestions(prev => [...prev, val].sort());
+                                    const newZones = vals.filter(v => !cur.includes(v));
+                                    if (newZones.length === 0) { setZoneInput(''); return; }
+                                    setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, ...newZones] });
+                                    newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
                                     setZoneInput('');
                                   }}
                                   className="h-10 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shrink-0 transition-colors"
@@ -1557,6 +1767,91 @@ const Leads = () => {
                         })}
                       </div>
                     )}
+                  </TabsContent>
+
+                  {/* ── NOTE TAB ── */}
+                  <TabsContent value="note" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+
+                    {/* Messaggio dal sito (note_interne o prima nota da Sistema) */}
+                    {(() => {
+                      const siteMsg = selectedLead.note_interne?.trim()
+                        ? selectedLead.note_interne
+                        : leadNotes.find((n: any) => n.autore !== 'Agente')?.testo;
+                      if (!siteMsg) return null;
+                      const siteDate = leadNotes.find((n: any) => n.autore !== 'Agente')?.created_at;
+                      return (
+                        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare size={14} className="text-blue-500 shrink-0" />
+                            <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">Messaggio dal sito</span>
+                            {siteDate && (
+                              <span className="ml-auto text-[10px] text-blue-400 font-medium">
+                                {safeFormat(siteDate, 'd MMM yyyy HH:mm', { locale: it })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-blue-800 leading-relaxed whitespace-pre-wrap">{siteMsg}</p>
+                        </div>
+                      );
+                    })()}
+
+                    {/* List of notes */}
+                    <div className="space-y-2">
+                      {leadNotes.filter((n: any) => n.autore === 'Agente').length === 0 && !selectedLead.note_interne && leadNotes.filter((n: any) => n.autore !== 'Agente').length === 0 ? (
+                        <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
+                          <FileText className="mx-auto text-gray-200 mb-2" size={26} />
+                          <p className="text-xs text-gray-400 italic">Nessuna nota per questo lead.</p>
+                        </div>
+                      ) : (
+                        leadNotes.map((note: any) => (
+                          <div key={note.id} className={cn(
+                            "rounded-xl border p-4",
+                            note.autore === 'Agente'
+                              ? "bg-white border-gray-100 shadow-sm"
+                              : "hidden" // Sistema notes shown above as site message
+                          )}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
+                              <span className="text-[10px] text-gray-400 font-medium">
+                                {safeFormat(note.created_at, 'd MMM yyyy HH:mm', { locale: it })}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* New note input */}
+                    <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
+                      <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Aggiungi nota</Label>
+                      <Textarea
+                        value={newNoteText}
+                        onChange={(e) => setNewNoteText(e.target.value)}
+                        placeholder="Scrivi una nota su questo lead..."
+                        className="rounded-xl border-gray-200 bg-slate-50/50 min-h-[80px] resize-none text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            handleSaveNote();
+                          }
+                        }}
+                      />
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-gray-300">Ctrl+Invio per salvare</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleSaveNote}
+                          disabled={isSavingNote || !newNoteText.trim()}
+                          className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-4 text-xs font-bold gap-1.5"
+                        >
+                          <Save size={12} />
+                          {isSavingNote ? 'Salvataggio...' : 'Salva nota'}
+                        </Button>
+                      </div>
+                    </div>
+
                   </TabsContent>
 
                 </div>

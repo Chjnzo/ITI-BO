@@ -8,7 +8,7 @@ import { type Appointment, type AgentProfile, TIPOLOGIA_COLORS } from '@/compone
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 60;
+const HOUR_HEIGHT = 80;
 const DAY_START = 8;
 const DAY_END = 20;
 const TOTAL_HOURS = DAY_END - DAY_START;
@@ -153,12 +153,12 @@ const DayColumn = memo(({
         )}
         style={{ height: DAY_HEADER_HEIGHT }}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+        <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
           {format(day, 'EEE', { locale: it })}
         </span>
         <span
           className={cn(
-            'text-sm font-black leading-none mt-0.5',
+            'text-base font-black leading-none mt-0.5',
             today ? 'text-[#94b0ab]' : 'text-gray-700',
           )}
         >
@@ -224,14 +224,14 @@ const DayColumn = memo(({
                 }}
               >
                 <p
-                  className="text-[9px] font-bold leading-tight truncate"
+                  className="text-[11px] font-bold leading-tight truncate"
                   style={{ color: colors.text }}
                 >
                   {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
                 </p>
-                {height > 36 && (
+                {height > 42 && (
                   <p
-                    className="text-[8px] leading-tight truncate opacity-80"
+                    className="text-[10px] leading-tight truncate opacity-80"
                     style={{ color: colors.text }}
                   >
                     {event.leads
@@ -342,7 +342,7 @@ const WeeklyPlanningView = ({
                 className="absolute left-0 w-full flex items-start justify-end pr-1.5"
                 style={{ top: DAY_HEADER_HEIGHT + TIMELINE_TOP_PADDING + (h - DAY_START) * HOUR_HEIGHT - 6 }}
               >
-                <span className="text-[9px] text-gray-300 font-medium leading-none select-none">
+                <span className="text-[11px] text-gray-300 font-medium leading-none select-none">
                   {String(h).padStart(2, '0')}
                 </span>
               </div>

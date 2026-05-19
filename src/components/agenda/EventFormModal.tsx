@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Trash2, CalendarIcon } from 'lucide-react';
+import { Trash2, CalendarIcon, Phone, MessageCircle, Save } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -29,11 +29,11 @@ export interface Appointment {
   tipologia: string;
   lead_id: string | null;
   immobile_id: string | null;
-  data: string;         // 'yyyy-MM-dd'
-  ora_inizio: string | null;  // 'HH:mm:ss' or 'HH:mm'
+  data: string;
+  ora_inizio: string | null;
   ora_fine: string | null;
   note: string | null;
-  leads?: { nome: string; cognome: string } | null;
+  leads?: { nome: string; cognome: string; telefono?: string | null } | null;
   immobili?: { titolo: string } | null;
 }
 
@@ -64,21 +64,21 @@ export const TIPOLOGIE = [
 ] as const;
 
 export const TIPOLOGIA_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Prima visita':              { bg: '#dcfce7', text: '#166534', border: '#86efac' },
-  'Seconda Visita':            { bg: '#d1fae5', text: '#065f46', border: '#6ee7b7' },
-  'Terza Visita':              { bg: '#ccfbf1', text: '#134e4a', border: '#5eead4' },
-  'Valutazione Vendita':       { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
-  'Valutazione Affitto':       { bg: '#e0f2fe', text: '#075985', border: '#7dd3fc' },
-  'Incontro con proprietario': { bg: '#ede9fe', text: '#4c1d95', border: '#c4b5fd' },
-  'Firma proposta':            { bg: '#fef3c7', text: '#92400e', border: '#fcd34d' },
-  'Rogito':                    { bg: '#fed7aa', text: '#9a3412', border: '#fdba74' },
-  'Preliminare':               { bg: '#fce7f3', text: '#9d174d', border: '#f9a8d4' },
-  'Telefonata':                { bg: '#d4f1ee', text: '#134e4a', border: '#94b0ab' },
-  'Riunione':                  { bg: '#e8f4f2', text: '#1d4038', border: '#94b0ab' },
-  'Consulente finanziario':    { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' },
-  'Foto/video':                { bg: '#f5f3ff', text: '#4c1d95', border: '#ddd6fe' },
-  'Perito':                    { bg: '#fef9c3', text: '#713f12', border: '#fef08a' },
-  'Altro':                     { bg: '#f3f4f6', text: '#374151', border: '#d1d5db' },
+  'Prima visita':              { bg: '#bbf7d0', text: '#14532d', border: '#22c55e' },
+  'Seconda Visita':            { bg: '#a7f3d0', text: '#065f46', border: '#10b981' },
+  'Terza Visita':              { bg: '#99f6e4', text: '#134e4a', border: '#14b8a6' },
+  'Valutazione Vendita':       { bg: '#bfdbfe', text: '#1e3a8a', border: '#3b82f6' },
+  'Valutazione Affitto':       { bg: '#bae6fd', text: '#0c4a6e', border: '#0ea5e9' },
+  'Incontro con proprietario': { bg: '#ddd6fe', text: '#3b0764', border: '#8b5cf6' },
+  'Firma proposta':            { bg: '#fef08a', text: '#713f12', border: '#eab308' },
+  'Rogito':                    { bg: '#fed7aa', text: '#7c2d12', border: '#f97316' },
+  'Preliminare':               { bg: '#fbcfe8', text: '#831843', border: '#ec4899' },
+  'Telefonata':                { bg: '#cffafe', text: '#164e63', border: '#06b6d4' },
+  'Riunione':                  { bg: '#e0e7ff', text: '#1e1b4b', border: '#6366f1' },
+  'Consulente finanziario':    { bg: '#fae8ff', text: '#4a044e', border: '#d946ef' },
+  'Foto/video':                { bg: '#fef9c3', text: '#713f12', border: '#f59e0b' },
+  'Perito':                    { bg: '#ffe4e6', text: '#881337', border: '#f43f5e' },
+  'Altro':                     { bg: '#f1f5f9', text: '#374151', border: '#94a3b8' },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,6 +89,12 @@ const addOneHour = (timeStr: string): string => {
   const newH = Math.floor(totalMin / 60) % 24;
   const newM = totalMin % 60;
   return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+};
+
+const getWhatsAppUrl = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  const withCountry = digits.startsWith('39') && digits.length >= 11 ? digits : `39${digits}`;
+  return `https://wa.me/${withCountry}`;
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -124,6 +130,7 @@ const EventFormModal = ({
   const [tipologia, setTipologia] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
+  const [leadPhone, setLeadPhone] = useState<string | null>(null);
   const [immobileId, setImmobileId] = useState('none');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [oraInizio, setOraInizio] = useState('');
@@ -131,16 +138,23 @@ const EventFormModal = ({
   const [note, setNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  const autosavedIdRef = useRef<string | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    autosavedIdRef.current = null;
+    setAutoSaveStatus('idle');
     if (event) {
       setAgenteId(event.agente_id);
       setTipologia(event.tipologia);
       setLeadId(event.lead_id ?? '');
       setLeadItems(event.leads && event.lead_id
-        ? [{ id: event.lead_id, label: `${event.leads.nome} ${event.leads.cognome}` }]
+        ? [{ id: event.lead_id, label: `${event.leads.nome} ${event.leads.cognome}`, sublabel: event.leads.telefono ?? undefined }]
         : []);
+      setLeadPhone(event.leads?.telefono ?? null);
       setImmobileId(event.immobile_id ?? 'none');
       setSelectedDate(parseISO(event.data));
       setOraInizio(event.ora_inizio?.slice(0, 5) ?? '');
@@ -153,6 +167,7 @@ const EventFormModal = ({
       setLeadItems(defaultLeadId && defaultLeadName
         ? [{ id: defaultLeadId, label: defaultLeadName }]
         : []);
+      setLeadPhone(null);
       setImmobileId('none');
       setSelectedDate(defaultDate ? parseISO(defaultDate) : new Date());
       const initStart = defaultTimeStart ?? '09:00';
@@ -161,6 +176,53 @@ const EventFormModal = ({
       setNote('');
     }
   }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
+
+  // Auto-save for new appointments (debounced 2.5s)
+  useEffect(() => {
+    if (isEdit || !open || !selectedDate || !agenteId) return;
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      setAutoSaveStatus('saving');
+      const payload = {
+        agente_id: agenteId,
+        tipologia: tipologia || 'Altro',
+        lead_id: leadId || null,
+        immobile_id: immobileId !== 'none' ? immobileId : null,
+        data: format(selectedDate, 'yyyy-MM-dd'),
+        ora_inizio: oraInizio || null,
+        ora_fine: oraFine || null,
+        note: note.trim() || null,
+      };
+      if (autosavedIdRef.current) {
+        const { error } = await supabase.from('appuntamenti').update(payload).eq('id', autosavedIdRef.current);
+        if (!error) { setAutoSaveStatus('saved'); setTimeout(() => setAutoSaveStatus('idle'), 2000); }
+        else setAutoSaveStatus('idle');
+      } else {
+        const { data, error } = await supabase.from('appuntamenti').insert([payload]).select('id').single();
+        if (!error && data?.id) {
+          autosavedIdRef.current = data.id;
+          setAutoSaveStatus('saved');
+          setTimeout(() => setAutoSaveStatus('idle'), 2000);
+        } else {
+          setAutoSaveStatus('idle');
+        }
+      }
+    }, 2500);
+
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, open, selectedDate, agenteId, tipologia, leadId, immobileId, oraInizio, oraFine, note]);
+
+  const handleClose = () => {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    if (!isEdit && autosavedIdRef.current) {
+      const idToDelete = autosavedIdRef.current;
+      autosavedIdRef.current = null;
+      supabase.from('appuntamenti').delete().eq('id', idToDelete).then(() => onSaved());
+    }
+    onClose();
+  };
 
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
@@ -186,19 +248,27 @@ const EventFormModal = ({
     })));
   };
 
+  const handleLeadSelect = (id: string) => {
+    setLeadId(id);
+    if (!id) { setLeadPhone(null); return; }
+    const item = leadItems.find(i => i.id === id);
+    setLeadPhone(item?.sublabel ?? null);
+  };
+
   const handleSave = async () => {
-    if (!tipologia || !selectedDate) {
-      showError('Tipologia e data sono obbligatorie');
+    if (!selectedDate) {
+      showError('Seleziona una data');
       return;
     }
     if (!agenteId) {
       showError('Seleziona un agente');
       return;
     }
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     setIsSaving(true);
     const payload = {
       agente_id: agenteId,
-      tipologia,
+      tipologia: tipologia || 'Altro',
       lead_id: leadId || null,
       immobile_id: immobileId !== 'none' ? immobileId : null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
@@ -206,9 +276,17 @@ const EventFormModal = ({
       ora_fine: oraFine || null,
       note: note.trim() || null,
     };
-    const { error } = isEdit
-      ? await supabase.from('appuntamenti').update(payload).eq('id', event!.id)
-      : await supabase.from('appuntamenti').insert([payload]);
+
+    let error;
+    if (isEdit) {
+      ({ error } = await supabase.from('appuntamenti').update(payload).eq('id', event!.id));
+    } else if (autosavedIdRef.current) {
+      ({ error } = await supabase.from('appuntamenti').update(payload).eq('id', autosavedIdRef.current));
+      autosavedIdRef.current = null;
+    } else {
+      ({ error } = await supabase.from('appuntamenti').insert([payload]));
+    }
+
     setIsSaving(false);
     if (error) {
       showError('Errore: ' + error.message);
@@ -234,19 +312,27 @@ const EventFormModal = ({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
       <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
         <DialogHeader className="px-8 pt-8 pb-4 border-b border-gray-100">
-          <DialogTitle className="text-xl font-bold text-gray-900">
-            {isEdit ? 'Modifica Appuntamento' : 'Nuovo Appuntamento'}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle className="text-xl font-bold text-gray-900">
+              {isEdit ? 'Modifica Appuntamento' : 'Nuovo Appuntamento'}
+            </DialogTitle>
+            {!isEdit && autoSaveStatus !== 'idle' && (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <Save size={11} className={autoSaveStatus === 'saving' ? 'animate-pulse text-amber-400' : 'text-green-500'} />
+                {autoSaveStatus === 'saving' ? 'Salvataggio...' : 'Bozza salvata'}
+              </div>
+            )}
+          </div>
         </DialogHeader>
 
         <div className="px-8 py-6 space-y-5 overflow-y-auto max-h-[60vh]">
 
           {/* Tipologia */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia *</Label>
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
             <Select value={tipologia} onValueChange={setTipologia}>
               <SelectTrigger className="h-12 rounded-xl border-gray-200 bg-slate-50/50">
                 <SelectValue placeholder="Seleziona tipologia..." />
@@ -257,7 +343,7 @@ const EventFormModal = ({
                   return (
                     <SelectItem key={t} value={t}>
                       <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: c.border }} />
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.border }} />
                         {t}
                       </span>
                     </SelectItem>
@@ -290,17 +376,36 @@ const EventFormModal = ({
             <Combobox
               items={leadItems}
               value={leadId}
-              onSelect={(id) => setLeadId(id)}
+              onSelect={handleLeadSelect}
               onSearch={searchLeads}
               placeholder="Cerca lead per nome..."
               searchPlaceholder="Nome o cognome..."
               emptyMessage="Nessun lead trovato."
             />
+            {/* Phone + WhatsApp */}
+            {leadPhone && (
+              <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-4 py-3 mt-2">
+                <Phone size={15} className="text-green-600 shrink-0" />
+                <span className="font-bold text-green-800 text-sm flex-1 tracking-wide">{leadPhone}</span>
+                <a
+                  href={getWhatsAppUrl(leadPhone)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition-colors shrink-0"
+                >
+                  <MessageCircle size={13} />
+                  WhatsApp
+                </a>
+              </div>
+            )}
           </div>
 
-          {/* Immobile */}
+          {/* Immobile (opzionale) */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Immobile</Label>
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+              Immobile <span className="normal-case font-normal text-gray-400">(opzionale)</span>
+            </Label>
             <Combobox
               items={[
                 { id: 'none', label: 'Nessuno' },
@@ -396,7 +501,7 @@ const EventFormModal = ({
           <Button
             type="button"
             variant="outline"
-            onClick={onClose}
+            onClick={handleClose}
             className="rounded-xl h-11 border-gray-200"
           >
             Annulla

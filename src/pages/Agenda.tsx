@@ -21,7 +21,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // ── Timeline constants ────────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 60; // px per hour
+const HOUR_HEIGHT = 80; // px per hour
 const DAY_START = 8;
 const DAY_END = 20;
 const TOTAL_HOURS = DAY_END - DAY_START;
@@ -100,7 +100,7 @@ const AgentDayColumn = memo(({
           {getAgentInitials(agent)}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={cn('text-xs capitalize', isSelectedToday ? 'text-[#94b0ab] font-semibold' : 'text-gray-400')}>
+          <p className={cn('text-sm capitalize font-medium', isSelectedToday ? 'text-[#94b0ab] font-semibold' : 'text-gray-500')}>
             {dateLabel} · {events.length} eventi
           </p>
         </div>
@@ -137,7 +137,7 @@ const AgentDayColumn = memo(({
                   className="absolute left-0 right-0 border-t border-gray-100 flex items-start"
                   style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
                 >
-                  <span className="text-[9px] text-gray-300 font-medium pl-2 pt-0.5 leading-none select-none">
+                  <span className="text-[11px] text-gray-300 font-medium pl-2 pt-0.5 leading-none select-none">
                     {String(h).padStart(2, '0')}:00
                   </span>
                 </div>
@@ -178,7 +178,7 @@ const AgentDayColumn = memo(({
 
                   {/* Time + tipologia */}
                   <p
-                    className="text-[10px] font-bold leading-tight truncate"
+                    className="text-[11px] font-bold leading-tight truncate"
                     style={{ color: colors.text }}
                   >
                     {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
@@ -186,23 +186,23 @@ const AgentDayColumn = memo(({
 
                   {/* Lead name */}
                   {height > 38 && event.leads && (
-                    <p className="text-[9px] leading-tight truncate opacity-75 mt-0.5" style={{ color: colors.text }}>
+                    <p className="text-[10px] leading-tight truncate opacity-80 mt-0.5" style={{ color: colors.text }}>
                       {event.leads.nome} {event.leads.cognome}
                     </p>
                   )}
 
                   {/* Property */}
-                  {height > 52 && event.immobili?.titolo && (
-                    <p className="flex items-center gap-0.5 text-[9px] leading-tight truncate opacity-70 mt-0.5" style={{ color: colors.text }}>
-                      <MapPin size={8} className="shrink-0" />
+                  {height > 56 && event.immobili?.titolo && (
+                    <p className="flex items-center gap-0.5 text-[10px] leading-tight truncate opacity-70 mt-0.5" style={{ color: colors.text }}>
+                      <MapPin size={9} className="shrink-0" />
                       {event.immobili.titolo}
                     </p>
                   )}
 
                   {/* Notes */}
-                  {height > 68 && event.note && (
+                  {height > 72 && event.note && (
                     <p className="flex items-start gap-0.5 text-[9px] leading-tight line-clamp-2 opacity-60 mt-0.5" style={{ color: colors.text }}>
-                      <AlignLeft size={8} className="shrink-0 mt-px" />
+                      <AlignLeft size={9} className="shrink-0 mt-px" />
                       {event.note}
                     </p>
                   )}
@@ -272,7 +272,7 @@ const Agenda = () => {
     setLoading(true);
     let query = supabase
       .from('appuntamenti')
-      .select('*, leads(nome, cognome), immobili(titolo)')
+      .select('*, leads(nome, cognome, telefono), immobili(titolo)')
       .order('ora_inizio');
 
     if (viewMode === 'giornaliera') {

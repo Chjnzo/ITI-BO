@@ -22,7 +22,7 @@ import EventFormModal, {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 52; // px per hour
+const HOUR_HEIGHT = 68; // px per hour
 const DAY_START = 8;    // 08:00
 const DAY_END = 20;     // 20:00
 const TOTAL_HOURS = DAY_END - DAY_START;
@@ -79,13 +79,13 @@ const EventBlock = ({ event, onClick }: EventBlockProps) => {
       style={{ top, height, backgroundColor: colors.bg, borderColor: colors.border, minHeight: 20 }}
     >
       {/* Time + tipologia */}
-      <p className="text-[10px] font-bold leading-tight truncate" style={{ color: colors.text }}>
+      <p className="text-[11px] font-bold leading-tight truncate" style={{ color: colors.text }}>
         {event.ora_inizio?.slice(0, 5)} {event.tipologia}
       </p>
 
       {/* Lead name */}
-      {height > 32 && event.leads && (
-        <p className="text-[9px] leading-tight truncate opacity-80 mt-px" style={{ color: colors.text }}>
+      {height > 36 && event.leads && (
+        <p className="text-[10px] leading-tight truncate opacity-80 mt-px" style={{ color: colors.text }}>
           {event.leads.nome} {event.leads.cognome}
         </p>
       )}
@@ -323,7 +323,7 @@ const AgentExpandModal = ({
     }
     const { data, error } = await supabase
       .from('appuntamenti')
-      .select('*, leads(nome, cognome), immobili(titolo)')
+      .select('*, leads(nome, cognome, telefono), immobili(titolo)')
       .eq('agente_id', agent.id)
       .gte('data', rangeStart)
       .lte('data', rangeEnd)
