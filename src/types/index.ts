@@ -61,6 +61,20 @@ export interface Task {
   nota?: string;
 }
 
+export interface ImmobileUnita {
+  id: string;
+  immobile_id: string;
+  tipologia: string;
+  superficie_mq: number;
+  piano: string;
+  bagni: number;
+  camere: number;
+  terrazzo: boolean;
+  prezzo: number | null;
+  stato: 'Disponibile' | 'Riservato' | 'Venduto';
+  created_at: string;
+}
+
 export interface Valutazione {
   id: string;
   indirizzo: string;

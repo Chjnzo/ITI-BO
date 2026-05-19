@@ -64,21 +64,21 @@ export const TIPOLOGIE = [
 ] as const;
 
 export const TIPOLOGIA_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  'Prima visita':              { bg: '#bbf7d0', text: '#14532d', border: '#22c55e' },
-  'Seconda Visita':            { bg: '#a7f3d0', text: '#065f46', border: '#10b981' },
-  'Terza Visita':              { bg: '#99f6e4', text: '#134e4a', border: '#14b8a6' },
-  'Valutazione Vendita':       { bg: '#bfdbfe', text: '#1e3a8a', border: '#3b82f6' },
-  'Valutazione Affitto':       { bg: '#bae6fd', text: '#0c4a6e', border: '#0ea5e9' },
-  'Incontro con proprietario': { bg: '#ddd6fe', text: '#3b0764', border: '#8b5cf6' },
-  'Firma proposta':            { bg: '#fef08a', text: '#713f12', border: '#eab308' },
-  'Rogito':                    { bg: '#fed7aa', text: '#7c2d12', border: '#f97316' },
-  'Preliminare':               { bg: '#fbcfe8', text: '#831843', border: '#ec4899' },
-  'Telefonata':                { bg: '#cffafe', text: '#164e63', border: '#06b6d4' },
-  'Riunione':                  { bg: '#e0e7ff', text: '#1e1b4b', border: '#6366f1' },
-  'Consulente finanziario':    { bg: '#fae8ff', text: '#4a044e', border: '#d946ef' },
-  'Foto/video':                { bg: '#fef9c3', text: '#713f12', border: '#f59e0b' },
-  'Perito':                    { bg: '#ffe4e6', text: '#881337', border: '#f43f5e' },
-  'Altro':                     { bg: '#f1f5f9', text: '#374151', border: '#94a3b8' },
+  'Prima visita':              { bg: '#16a34a', text: '#ffffff', border: '#15803d' },  // Verde
+  'Seconda Visita':            { bg: '#059669', text: '#ffffff', border: '#047857' },  // Smeraldo
+  'Terza Visita':              { bg: '#65a30d', text: '#ffffff', border: '#4d7c0f' },  // Lime
+  'Valutazione Vendita':       { bg: '#2563eb', text: '#ffffff', border: '#1d4ed8' },  // Blu
+  'Valutazione Affitto':       { bg: '#0284c7', text: '#ffffff', border: '#0369a1' },  // Azzurro
+  'Incontro con proprietario': { bg: '#92400e', text: '#ffffff', border: '#78350f' },  // Marrone
+  'Firma proposta':            { bg: '#d97706', text: '#ffffff', border: '#b45309' },  // Ambra
+  'Rogito':                    { bg: '#ea580c', text: '#ffffff', border: '#c2410c' },  // Arancione
+  'Preliminare':               { bg: '#dc2626', text: '#ffffff', border: '#b91c1c' },  // Rosso
+  'Telefonata':                { bg: '#0891b2', text: '#ffffff', border: '#0e7490' },  // Ciano
+  'Riunione':                  { bg: '#7c3aed', text: '#ffffff', border: '#6d28d9' },  // Viola
+  'Consulente finanziario':    { bg: '#c026d3', text: '#ffffff', border: '#a21caf' },  // Magenta
+  'Foto/video':                { bg: '#ca8a04', text: '#ffffff', border: '#a16207' },  // Giallo oro
+  'Perito':                    { bg: '#be123c', text: '#ffffff', border: '#9f1239' },  // Cremisi
+  'Altro':                     { bg: '#6b7280', text: '#ffffff', border: '#4b5563' },  // Grigio
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ const EventFormModal = ({
                   return (
                     <SelectItem key={t} value={t}>
                       <span className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.border }} />
+                        <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: c.bg }} />
                         {t}
                       </span>
                     </SelectItem>

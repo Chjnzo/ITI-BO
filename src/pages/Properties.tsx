@@ -5,7 +5,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
   Plus, Pencil, Trash2, Home, CheckCircle2,
-  RotateCcw, Search, Star, Calendar
+  RotateCcw, Search, Star, Calendar, Building2, Eye, EyeOff
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/tooltip";
 import PropertyWizard from '@/components/properties/PropertyWizard';
 import OpenHouseManager from '@/components/properties/OpenHouseManager';
+import UnitaSheet from '@/components/properties/UnitaSheet';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -55,6 +56,7 @@ const Properties = () => {
   const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
 
   const [ohProperty, setOhProperty] = useState<any>(null);
+  const [unitaProperty, setUnitaProperty] = useState<any>(null);
 
   const queryClient = useQueryClient();
   const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, debouncedSearch);
@@ -100,6 +102,12 @@ const Properties = () => {
       showSuccess(`Stato: ${newStatus}`);
       refetchProperties();
     }
+  };
+
+  const toggleVisibile = async (id: string, current: boolean) => {
+    const { error } = await supabase.from('immobili').update({ visibile: !current }).eq('id', id);
+    if (error) showError("Errore visibilità.");
+    else refetchProperties();
   };
 
   const toggleFeatured = async (id: string, currentFeatured: boolean) => {
@@ -227,6 +235,34 @@ const Properties = () => {
                       <td className="px-8 py-5 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <TooltipProvider>
+                            {prop.locali === 'Nuova costruzione' && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    onClick={() => setUnitaProperty(prop)}
+                                    className="text-gray-300 hover:text-[#94b0ab] transition-all active:scale-90"
+                                  >
+                                    <Building2 size={18} />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent className="rounded-xl font-bold">Gestisci Unità</TooltipContent>
+                              </Tooltip>
+                            )}
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  onClick={() => toggleVisibile(prop.id, prop.visibile ?? true)}
+                                  className={cn("transition-all active:scale-90", prop.visibile === false ? "text-amber-400 hover:text-amber-500" : "text-gray-300 hover:text-gray-500")}
+                                >
+                                  {prop.visibile === false ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent className="rounded-xl font-bold">
+                                {prop.visibile === false ? "Nascoste dal sito — clicca per mostrare" : "Visibile sul sito — clicca per nascondere"}
+                              </TooltipContent>
+                            </Tooltip>
+
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
@@ -353,6 +389,17 @@ const Properties = () => {
         >
           {ohProperty && (
             <OpenHouseManager property={ohProperty} onClose={() => setOhProperty(null)} />
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={!!unitaProperty} onOpenChange={(open) => !open && setUnitaProperty(null)}>
+        <SheetContent
+          side="right"
+          className="p-0 w-full sm:max-w-[720px] flex flex-col overflow-hidden [&>button]:hidden"
+        >
+          {unitaProperty && (
+            <UnitaSheet property={unitaProperty} onClose={() => setUnitaProperty(null)} />
           )}
         </SheetContent>
       </Sheet>

@@ -345,9 +345,21 @@ Deno.serve(async (req) => {
       if (geoCoords) break;
     }
 
+    // Fallback: se l'indirizzo completo non geocodifica, prova solo il comune.
+    // Utile per piccoli comuni (es. Bagnatica) con scarsa copertura OSM a livello via.
+    // nearest_zona_omi troverà comunque la zona OMI geograficamente più vicina.
+    if (!geoCoords) {
+      const cityFallbacks = Array.from(new Set([cittaRaw, cittaMain].filter(Boolean)));
+      for (const q of cityFallbacks) {
+        console.log(`Geocoding street-level failed, trying city fallback: "${q}"`);
+        geoCoords = await nominatimFetch(q);
+        if (geoCoords) break;
+      }
+    }
+
     if (!geoCoords) {
       return json({
-        error: `Nessun risultato geocoding per: "${indirizzo}, ${cittaRaw}". Controlla l'indirizzo.`,
+        error: `Impossibile localizzare "${cittaRaw}". Verifica il nome del comune e riprova.`,
         success: false,
       }, 422);
     }

@@ -28,7 +28,6 @@ const STATI_CONSERVATIVI = ['Da ristrutturare', 'Discreto', 'Buono', 'Ottimo', '
 const CLASSI_ENERGETICHE = ['A4', 'A3', 'A2', 'A1', 'B', 'C', 'D', 'E', 'F', 'G'];
 const TIPI_RISCALDAMENTO = ['Autonomo', 'Centralizzato', 'Teleriscaldamento', 'Assente'];
 
-// These 6 map to boolean columns in the DB — used for precise valuation corrections
 const COMFORT_BOOLEAN_OPTIONS = [
   { key: 'ha_box',        label: 'Box Auto' },
   { key: 'ha_posto_auto', label: 'Posto Auto' },
@@ -38,7 +37,6 @@ const COMFORT_BOOLEAN_OPTIONS = [
   { key: 'ha_terrazzo',   label: 'Terrazzo' },
 ] as const;
 
-// These 6 go into dotazioni_extra[] — enrich AI context but no direct correction factor
 const COMFORT_EXTRA_PRESETS = [
   'Balcone',
   'Aria Condizionata',
@@ -78,6 +76,35 @@ interface StimaBreakdown {
   prezzo_base_mq: number;
   fattori: StimaFattore[];
   prezzo_finale_mq: number;
+}
+
+export interface ValuationInitialData {
+  id: string;
+  slug: string | null;
+  lead_id: string | null;
+  indirizzo: string;
+  citta: string | null;
+  superficie_mq: number;
+  tipologia: string | null;
+  stato_conservativo: string | null;
+  num_locali: number | null;
+  num_camere: number | null;
+  piano: number | string | null;
+  num_bagni: number | null;
+  anno_costruzione: number | null;
+  anno_ristrutturazione: number | null;
+  classe_energetica: string | null;
+  tipo_riscaldamento: string | null;
+  ha_box: boolean;
+  ha_posto_auto: boolean;
+  ha_cantina: boolean;
+  ha_giardino: boolean;
+  ascensore: boolean;
+  ha_terrazzo: boolean;
+  terrazzo_mq: number | null;
+  dotazioni_extra: string[] | null;
+  note_tecniche: string | null;
+  comparabili_attivi: Array<{ url: string; titolo?: string; prezzo?: number }> | null;
 }
 
 const emptyComparabileAttivo = (): ComparabileAttivo => ({ url: '', titolo: '', prezzo: '' });
@@ -130,16 +157,16 @@ interface ValuationWizardProps {
   onClose: () => void;
   onSaved: () => void;
   initialLeadId?: string;
+  initialData?: ValuationInitialData | null;
 }
 
-const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWizardProps) => {
+const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }: ValuationWizardProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiGenerated, setAiGenerated] = useState(false);
 
-  // Persisted draft after AI generation
   const [valutazioneId, setValutazioneId] = useState<string | null>(null);
   const [valutazioneSlug, setValutazioneSlug] = useState<string | null>(null);
 
@@ -165,12 +192,8 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
 
   // Step 3 — Comfort & Dotazioni
   const [comfort, setComfort] = useState<Record<ComfortBooleanKey, boolean>>({
-    ha_box: false,
-    ha_posto_auto: false,
-    ha_cantina: false,
-    ha_giardino: false,
-    ascensore: false,
-    ha_terrazzo: false,
+    ha_box: false, ha_posto_auto: false, ha_cantina: false,
+    ha_giardino: false, ascensore: false, ha_terrazzo: false,
   });
   const [terrazzoMq, setTerrazzoMq] = useState('');
   const [dotazioniExtra, setDotazioniExtra] = useState<string[]>([]);
@@ -188,59 +211,115 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
   const [loadingMsg, setLoadingMsg] = useState('');
   const [showPriceOverride, setShowPriceOverride] = useState(false);
 
-  // Reset on open
+  // Reset / pre-fill on open
   useEffect(() => {
     if (!open) return;
+
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setAgenteId(user.id);
+    });
+
     setStep(1);
-    setLeadId('');
-    setLeadItems([]);
     setAiGenerated(false);
-    setValutazioneId(null);
-    setValutazioneSlug(null);
-    setIndirizzo('');
-    setCitta('Ranica');
-    setSuperficieMq('');
-    setTipologia('');
-    setStatoConservativo('');
-    setNumLocali('');
-    setNumCamere('');
-    setPiano('');
-    setNumBagni('');
-    setAnnoCostruzione('');
-    setAnnoRistrutturazione('');
-    setClasseEnergetica('');
-    setTipoRiscaldamento('');
-    setComfort({ ha_box: false, ha_posto_auto: false, ha_cantina: false, ha_giardino: false, ascensore: false, ha_terrazzo: false });
-    setTerrazzoMq('');
-    setDotazioniExtra([]);
-    setCustomDotazioneInput('');
-    setNoteTecniche('');
     setStimaMin('');
     setStimaMax('');
     setMotivazioneAi('');
     setStimaBreakdown(null);
     setLoadingMsg('');
     setShowPriceOverride(false);
-    setComparabiliAttivi([emptyComparabileAttivo()]);
+    setCustomDotazioneInput('');
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) setAgenteId(user.id);
-    });
+    if (initialData) {
+      setValutazioneId(initialData.id);
+      setValutazioneSlug(initialData.slug);
+      setIndirizzo(initialData.indirizzo);
+      setCitta(initialData.citta ?? 'Ranica');
+      setSuperficieMq(String(initialData.superficie_mq));
+      setTipologia(initialData.tipologia ?? '');
+      setStatoConservativo(initialData.stato_conservativo ?? '');
+      setNumLocali(initialData.num_locali != null ? String(initialData.num_locali) : '');
+      setNumCamere(initialData.num_camere != null ? String(initialData.num_camere) : '');
+      setPiano(initialData.piano != null ? String(initialData.piano) : '');
+      setNumBagni(initialData.num_bagni != null ? String(initialData.num_bagni) : '');
+      setAnnoCostruzione(initialData.anno_costruzione != null ? String(initialData.anno_costruzione) : '');
+      setAnnoRistrutturazione(initialData.anno_ristrutturazione != null ? String(initialData.anno_ristrutturazione) : '');
+      setClasseEnergetica(initialData.classe_energetica ?? '');
+      setTipoRiscaldamento(initialData.tipo_riscaldamento ?? '');
+      setComfort({
+        ha_box: initialData.ha_box ?? false,
+        ha_posto_auto: initialData.ha_posto_auto ?? false,
+        ha_cantina: initialData.ha_cantina ?? false,
+        ha_giardino: initialData.ha_giardino ?? false,
+        ascensore: initialData.ascensore ?? false,
+        ha_terrazzo: initialData.ha_terrazzo ?? false,
+      });
+      setTerrazzoMq(initialData.terrazzo_mq != null ? String(initialData.terrazzo_mq) : '');
+      setDotazioniExtra(initialData.dotazioni_extra ?? []);
+      setNoteTecniche(initialData.note_tecniche ?? '');
+      setComparabiliAttivi(
+        initialData.comparabili_attivi && initialData.comparabili_attivi.length > 0
+          ? initialData.comparabili_attivi.map(c => ({
+              url: c.url,
+              titolo: c.titolo ?? '',
+              prezzo: c.prezzo != null ? String(c.prezzo) : '',
+            }))
+          : [emptyComparabileAttivo()],
+      );
+      if (initialData.lead_id) {
+        supabase
+          .from('leads')
+          .select('id, nome, cognome, telefono')
+          .eq('id', initialData.lead_id)
+          .single()
+          .then(({ data: row }) => {
+            if (row) {
+              setLeadId(row.id);
+              setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
+            }
+          });
+      } else {
+        setLeadId('');
+        setLeadItems([]);
+      }
+    } else {
+      setValutazioneId(null);
+      setValutazioneSlug(null);
+      setLeadId('');
+      setLeadItems([]);
+      setIndirizzo('');
+      setCitta('Ranica');
+      setSuperficieMq('');
+      setTipologia('');
+      setStatoConservativo('');
+      setNumLocali('');
+      setNumCamere('');
+      setPiano('');
+      setNumBagni('');
+      setAnnoCostruzione('');
+      setAnnoRistrutturazione('');
+      setClasseEnergetica('');
+      setTipoRiscaldamento('');
+      setComfort({ ha_box: false, ha_posto_auto: false, ha_cantina: false, ha_giardino: false, ascensore: false, ha_terrazzo: false });
+      setTerrazzoMq('');
+      setDotazioniExtra([]);
+      setNoteTecniche('');
+      setComparabiliAttivi([emptyComparabileAttivo()]);
 
-    if (initialLeadId) {
-      supabase
-        .from('leads')
-        .select('id, nome, cognome, telefono')
-        .eq('id', initialLeadId)
-        .single()
-        .then(({ data: row }) => {
-          if (row) {
-            setLeadId(row.id);
-            setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
-          }
-        });
+      if (initialLeadId) {
+        supabase
+          .from('leads')
+          .select('id, nome, cognome, telefono')
+          .eq('id', initialLeadId)
+          .single()
+          .then(({ data: row }) => {
+            if (row) {
+              setLeadId(row.id);
+              setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
+            }
+          });
+      }
     }
-  }, [open, initialLeadId]);
+  }, [open, initialLeadId, initialData]);
 
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
@@ -344,8 +423,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     comparabili_attivi: getComparabiliAttiviPayload().length > 0 ? getComparabiliAttiviPayload() : null,
   });
 
-  // ── Comparabili Attivi helpers ──────────────────────────────────────────────
-
   const addComparabileAttivo = () => {
     if (comparabiliAttivi.length >= 3) return;
     setComparabiliAttivi(prev => [...prev, emptyComparabileAttivo()]);
@@ -381,18 +458,18 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
           .insert([{ ...buildDraftPayload(), stato: 'Bozza', slug }])
           .select('id, slug')
           .single();
-
         if (insertError) throw new Error('Errore creazione bozza: ' + insertError.message);
         recordId = inserted!.id;
         recordSlug = inserted!.slug;
         setValutazioneId(recordId);
         setValutazioneSlug(recordSlug);
+      } else {
+        // Recreate: update the existing record with the (potentially modified) form data
+        await supabase.from('valutazioni').update(buildDraftPayload()).eq('id', recordId);
       }
 
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
-      }
+      if (!session) throw new Error('Sessione scaduta. Effettua nuovamente il login e riprova.');
       const { error: tokenError } = await supabase.from('profili_agenti').select('id').limit(1);
       if (tokenError?.message?.includes('JWT') || tokenError?.code === 'PGRST301') {
         throw new Error('Token scaduto. Effettua nuovamente il login e riprova.');
@@ -427,7 +504,15 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Extract the actual JSON error from the edge function response body
+        let edgeMsg: string | undefined;
+        try {
+          const body = await (error as { context?: Response }).context?.json();
+          edgeMsg = body?.error;
+        } catch { /* ignore */ }
+        throw new Error(edgeMsg ?? (error instanceof Error ? error.message : 'Errore generazione AI'));
+      }
       if (!data?.success) throw new Error(data?.error ?? 'Errore generazione AI');
 
       const v = data.valutazione;
@@ -454,6 +539,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
       let slug = valutazioneSlug;
 
       if (!valutazioneId) {
+        // New valutazione — no AI ran
         const newSlug = generateSlug(indirizzo);
         const { data: inserted, error } = await supabase
           .from('valutazioni')
@@ -467,10 +553,22 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
           }])
           .select('slug')
           .single();
-
         if (error) throw new Error(error.message);
         slug = inserted?.slug ?? null;
+      } else if (initialData) {
+        // Recreate mode — save all fields
+        const updates: Record<string, unknown> = {
+          ...buildDraftPayload(),
+          updated_at: new Date().toISOString(),
+        };
+        if (aiGenerated || showPriceOverride) {
+          updates.stima_min = stimaMin ? Number(stimaMin) : null;
+          updates.stima_max = stimaMax ? Number(stimaMax) : null;
+          updates.motivazione_ai = motivazioneAi.trim() || null;
+        }
+        await supabase.from('valutazioni').update(updates).eq('id', valutazioneId);
       } else {
+        // New with AI ran — minimal update
         const updates: Record<string, unknown> = {
           comparabili_attivi: getComparabiliAttiviPayload().length > 0 ? getComparabiliAttiviPayload() : null,
         };
@@ -482,8 +580,8 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
         await supabase.from('valutazioni').update(updates).eq('id', valutazioneId);
       }
 
-      // CRM automation — fire and forget
-      if (leadId) {
+      // CRM automation — only for new valuations
+      if (leadId && !initialData) {
         supabase.from('leads').update({ stato_venditore: 'Valutazione fatta' }).eq('id', leadId);
         supabase.from('lead_notes').insert({
           lead_id: leadId,
@@ -491,7 +589,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
         });
       }
 
-      showSuccess('Valutazione salvata');
+      showSuccess(initialData ? 'Valutazione aggiornata' : 'Valutazione salvata');
       onSaved();
       onClose();
       if (slug) navigate(`/report/${slug}`);
@@ -503,12 +601,14 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
     }
   };
 
+  const isRecreate = !!initialData;
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
-        className="max-w-2xl max-h-[90vh] flex flex-col rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden"
+        className="max-w-3xl w-full max-h-[90vh] flex flex-col rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden"
         aria-describedby={undefined}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
@@ -519,10 +619,12 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
           <div className="flex justify-between items-center">
             <div>
               <DialogTitle className="text-3xl font-bold text-[#1a1a1a]">
-                Nuova Valutazione
+                {isRecreate ? 'Ricrea Valutazione' : 'Nuova Valutazione'}
               </DialogTitle>
               <p className="text-sm text-gray-500 mt-1">
-                Stai compilando lo step {step} di {TOTAL_STEPS} — {STEP_LABELS[step - 1]}
+                {isRecreate
+                  ? `Modifica i dati e rigenera — step ${step} di ${TOTAL_STEPS}: ${STEP_LABELS[step - 1]}`
+                  : `Stai compilando lo step ${step} di ${TOTAL_STEPS} — ${STEP_LABELS[step - 1]}`}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -545,7 +647,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
         </DialogHeader>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-10 py-7 space-y-7">
+        <div className="flex-1 overflow-y-auto px-10 py-8 space-y-7">
 
           {/* ── STEP 1: Lead ─────────────────────────────────────────────── */}
           {step === 1 && (
@@ -605,18 +707,16 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 </div>
                 <div className="space-y-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Superficie m² *</Label>
-                  <div className="relative">
-                    <Input
-                      type="number"
-                      min={1}
-                      value={superficieMq}
-                      onChange={e => { const v = e.target.value; if (v === '' || Number(v) > 0) setSuperficieMq(v); }}
-                      onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
-                      onWheel={e => e.currentTarget.blur()}
-                      placeholder="80"
-                      className="h-14 rounded-2xl border-gray-100"
-                    />
-                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={superficieMq}
+                    onChange={e => { const v = e.target.value; if (v === '' || Number(v) > 0) setSuperficieMq(v); }}
+                    onKeyDown={e => ['-', '+', 'e', 'E'].includes(e.key) && e.preventDefault()}
+                    onWheel={e => e.currentTarget.blur()}
+                    placeholder="80"
+                    className="h-14 rounded-2xl border-gray-100"
+                  />
                 </div>
                 <div className="space-y-3">
                   <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
@@ -714,7 +814,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 <p className="text-sm text-gray-400">Seleziona i servizi presenti nell'immobile.</p>
               </div>
 
-              {/* Info box */}
               <div className="flex gap-3 rounded-2xl bg-[#94b0ab]/8 border border-[#94b0ab]/20 px-4 py-3">
                 <Info size={16} className="text-[#94b0ab] mt-0.5 shrink-0" />
                 <p className="text-xs text-[#5a7a75] leading-relaxed">
@@ -722,7 +821,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 </p>
               </div>
 
-              {/* Boolean comfort toggles (mapped to DB columns) */}
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Dotazioni principali</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -743,19 +841,16 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                           {label}
                           {isActive && <Check size={15} />}
                         </button>
-                        {/* Terrazzo mq input */}
                         {key === 'ha_terrazzo' && isActive && (
-                          <div className="relative">
-                            <Input
-                              type="number"
-                              min={1}
-                              value={terrazzoMq}
-                              onChange={e => setTerrazzoMq(e.target.value)}
-                              onWheel={e => e.currentTarget.blur()}
-                              placeholder="Mq terrazzo (opz.)"
-                              className="h-10 rounded-xl border-[#94b0ab]/30 text-sm"
-                            />
-                          </div>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={terrazzoMq}
+                            onChange={e => setTerrazzoMq(e.target.value)}
+                            onWheel={e => e.currentTarget.blur()}
+                            placeholder="Mq terrazzo (opz.)"
+                            className="h-10 rounded-xl border-[#94b0ab]/30 text-sm"
+                          />
                         )}
                       </div>
                     );
@@ -763,7 +858,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 </div>
               </div>
 
-              {/* Extra presets (stored in dotazioni_extra) */}
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Altre dotazioni</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -789,7 +883,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 </div>
               </div>
 
-              {/* Custom dotazione input */}
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Aggiungi dotazione personalizzata</Label>
                 <div className="flex gap-2">
@@ -809,8 +902,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                     <Plus size={16} />
                   </Button>
                 </div>
-
-                {/* Custom tags (non-preset items in dotazioni_extra) */}
                 {dotazioniExtra.filter(d => !COMFORT_EXTRA_PRESETS.includes(d)).length > 0 && (
                   <div className="flex flex-wrap gap-2 pt-1">
                     {dotazioniExtra
@@ -821,11 +912,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#94b0ab]/10 border border-[#94b0ab]/30 text-xs font-semibold text-[#5a7a75]"
                         >
                           {d}
-                          <button
-                            type="button"
-                            onClick={() => removeCustomDotazione(d)}
-                            className="text-[#94b0ab] hover:text-[#5a7a75] transition-colors"
-                          >
+                          <button type="button" onClick={() => removeCustomDotazione(d)} className="text-[#94b0ab] hover:text-[#5a7a75]">
                             <X size={12} />
                           </button>
                         </span>
@@ -834,7 +921,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 )}
               </div>
 
-              {/* Note tecniche */}
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Note tecniche</Label>
                 <Textarea
@@ -863,9 +949,8 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
                   Comparabili attivi sul mercato
                 </Label>
-
                 {comparabiliAttivi.map((c, idx) => (
-                  <div key={idx} className="rounded-2xl border border-gray-100 bg-[#f9f9f7] p-4 space-y-3">
+                  <div key={idx} className="rounded-2xl border border-gray-100 bg-[#f9f9f7] p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
                         Comparabile {idx + 1}
@@ -880,36 +965,33 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                         </button>
                       )}
                     </div>
-                    <div className="space-y-2">
+                    <Input
+                      value={c.url}
+                      onChange={e => updateComparabileAttivo(idx, 'url', e.target.value)}
+                      placeholder="https://www.immobiliare.it/annunci/..."
+                      className="h-11 rounded-xl border-gray-200 bg-white text-sm"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
                       <Input
-                        value={c.url}
-                        onChange={e => updateComparabileAttivo(idx, 'url', e.target.value)}
-                        placeholder="https://www.immobiliare.it/annunci/..."
+                        value={c.titolo}
+                        onChange={e => updateComparabileAttivo(idx, 'titolo', e.target.value)}
+                        placeholder="Titolo (opz.)"
                         className="h-11 rounded-xl border-gray-200 bg-white text-sm"
                       />
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="relative">
+                        <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
                         <Input
-                          value={c.titolo}
-                          onChange={e => updateComparabileAttivo(idx, 'titolo', e.target.value)}
-                          placeholder="Titolo (opz.)"
-                          className="h-11 rounded-xl border-gray-200 bg-white text-sm"
+                          type="number"
+                          value={c.prezzo}
+                          onChange={e => updateComparabileAttivo(idx, 'prezzo', e.target.value)}
+                          onWheel={e => e.currentTarget.blur()}
+                          placeholder="Prezzo richiesto"
+                          className="h-11 rounded-xl border-gray-200 bg-white text-sm pl-9"
                         />
-                        <div className="relative">
-                          <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                          <Input
-                            type="number"
-                            value={c.prezzo}
-                            onChange={e => updateComparabileAttivo(idx, 'prezzo', e.target.value)}
-                            onWheel={e => e.currentTarget.blur()}
-                            placeholder="Prezzo richiesto"
-                            className="h-11 rounded-xl border-gray-200 bg-white text-sm pl-9"
-                          />
-                        </div>
                       </div>
                     </div>
                   </div>
                 ))}
-
                 {comparabiliAttivi.length < 3 && (
                   <button
                     type="button"
@@ -920,10 +1002,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                   </button>
                 )}
               </div>
-
-              <p className="text-xs text-gray-400 italic leading-relaxed">
-                Questi dati vengono passati all'AI per calibrare il posizionamento competitivo dell'immobile e appariranno nel report.
-              </p>
             </div>
           )}
 
@@ -966,13 +1044,12 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                     </div>
                   )}
 
-                  {/* Breakdown correzioni */}
                   {stimaBreakdown && stimaBreakdown.fattori?.length > 0 && (
                     <div className="rounded-2xl border border-gray-100 bg-[#f9f9f7] px-5 py-4 space-y-2">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Correzioni applicate</p>
                       <div className="flex justify-between text-xs text-gray-500">
                         <span>Prezzo/m² base OMI</span>
-                        <span className="font-bold text-gray-700">€{stimaBreakdown.prezzo_base_mq.toLocaleString('it-IT')}</span>
+                        <span className="font-bold text-gray-700">€{(stimaBreakdown.prezzo_base_mq ?? 0).toLocaleString('it-IT')}</span>
                       </div>
                       {stimaBreakdown.fattori.map((f, i) => (
                         <div key={i} className="flex justify-between text-xs">
@@ -984,7 +1061,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                       ))}
                       <div className="border-t border-gray-200 pt-2 flex justify-between text-xs">
                         <span className="font-bold text-gray-700">Prezzo/m² finale</span>
-                        <span className="font-black text-[#94b0ab]">€{stimaBreakdown.prezzo_finale_mq.toLocaleString('it-IT')}</span>
+                        <span className="font-black text-[#94b0ab]">€{(stimaBreakdown.prezzo_finale_mq ?? 0).toLocaleString('it-IT')}</span>
                       </div>
                     </div>
                   )}
@@ -1012,28 +1089,14 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
                         <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima minima €</Label>
                         <div className="relative">
                           <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                          <Input
-                            type="number"
-                            value={stimaMin}
-                            onChange={e => setStimaMin(e.target.value)}
-                            onWheel={e => e.currentTarget.blur()}
-                            placeholder="200000"
-                            className="h-14 rounded-2xl border-gray-100 pl-12"
-                          />
+                          <Input type="number" value={stimaMin} onChange={e => setStimaMin(e.target.value)} onWheel={e => e.currentTarget.blur()} placeholder="200000" className="h-14 rounded-2xl border-gray-100 pl-12" />
                         </div>
                       </div>
                       <div className="space-y-3">
                         <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Stima massima €</Label>
                         <div className="relative">
                           <Euro className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                          <Input
-                            type="number"
-                            value={stimaMax}
-                            onChange={e => setStimaMax(e.target.value)}
-                            onWheel={e => e.currentTarget.blur()}
-                            placeholder="250000"
-                            className="h-14 rounded-2xl border-gray-100 pl-12"
-                          />
+                          <Input type="number" value={stimaMax} onChange={e => setStimaMax(e.target.value)} onWheel={e => e.currentTarget.blur()} placeholder="250000" className="h-14 rounded-2xl border-gray-100 pl-12" />
                         </div>
                       </div>
                     </div>
@@ -1043,7 +1106,9 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId }: ValuationWiz
 
               {!aiGenerated && !isGenerating && (
                 <p className="text-xs text-gray-400 text-center italic">
-                  Clicca "Genera stima" per ottenere la valutazione basata su dati OMI e transazioni reali nella zona.
+                  {isRecreate
+                    ? 'Clicca "Genera stima" per rigenerare la valutazione con i nuovi dati.'
+                    : 'Clicca "Genera stima" per ottenere la valutazione basata su dati OMI e transazioni reali nella zona.'}
                 </p>
               )}
             </div>

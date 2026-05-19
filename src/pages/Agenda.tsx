@@ -94,13 +94,13 @@ const AgentDayColumn = memo(({
       {/* Column header */}
       <CardHeader className="px-5 py-4 border-b border-gray-50 flex-row items-center gap-3 space-y-0 shrink-0">
         <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center font-black text-white text-xs shrink-0 shadow-sm"
+          className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-sm shrink-0 shadow-sm"
           style={{ backgroundColor: agentColor }}
         >
           {getAgentInitials(agent)}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={cn('text-sm capitalize font-medium', isSelectedToday ? 'text-[#94b0ab] font-semibold' : 'text-gray-500')}>
+          <p className={cn('text-base capitalize font-semibold', isSelectedToday ? 'text-[#94b0ab]' : 'text-gray-600')}>
             {dateLabel} · {events.length} eventi
           </p>
         </div>
@@ -137,7 +137,7 @@ const AgentDayColumn = memo(({
                   className="absolute left-0 right-0 border-t border-gray-100 flex items-start"
                   style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
                 >
-                  <span className="text-[11px] text-gray-300 font-medium pl-2 pt-0.5 leading-none select-none">
+                  <span className="text-xs text-gray-400 font-semibold pl-2 pt-0.5 leading-none select-none">
                     {String(h).padStart(2, '0')}:00
                   </span>
                 </div>
@@ -170,7 +170,7 @@ const AgentDayColumn = memo(({
                 >
                   {/* Agent initials badge */}
                   <span
-                    className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black text-white shrink-0"
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black text-white shrink-0"
                     style={{ backgroundColor: agentColor }}
                   >
                     {getAgentInitials(agent)}
@@ -178,31 +178,31 @@ const AgentDayColumn = memo(({
 
                   {/* Time + tipologia */}
                   <p
-                    className="text-[11px] font-bold leading-tight truncate"
+                    className="text-xs font-bold leading-tight truncate"
                     style={{ color: colors.text }}
                   >
                     {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
                   </p>
 
                   {/* Lead name */}
-                  {height > 38 && event.leads && (
-                    <p className="text-[10px] leading-tight truncate opacity-80 mt-0.5" style={{ color: colors.text }}>
+                  {height > 40 && event.leads && (
+                    <p className="text-[11px] leading-tight truncate opacity-90 mt-0.5 font-medium" style={{ color: colors.text }}>
                       {event.leads.nome} {event.leads.cognome}
                     </p>
                   )}
 
                   {/* Property */}
-                  {height > 56 && event.immobili?.titolo && (
-                    <p className="flex items-center gap-0.5 text-[10px] leading-tight truncate opacity-70 mt-0.5" style={{ color: colors.text }}>
-                      <MapPin size={9} className="shrink-0" />
+                  {height > 60 && event.immobili?.titolo && (
+                    <p className="flex items-center gap-0.5 text-[11px] leading-tight truncate opacity-80 mt-0.5" style={{ color: colors.text }}>
+                      <MapPin size={10} className="shrink-0" />
                       {event.immobili.titolo}
                     </p>
                   )}
 
                   {/* Notes */}
-                  {height > 72 && event.note && (
-                    <p className="flex items-start gap-0.5 text-[9px] leading-tight line-clamp-2 opacity-60 mt-0.5" style={{ color: colors.text }}>
-                      <AlignLeft size={9} className="shrink-0 mt-px" />
+                  {height > 78 && event.note && (
+                    <p className="flex items-start gap-0.5 text-[10px] leading-tight line-clamp-2 opacity-75 mt-0.5" style={{ color: colors.text }}>
+                      <AlignLeft size={10} className="shrink-0 mt-px" />
                       {event.note}
                     </p>
                   )}

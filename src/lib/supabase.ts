@@ -16,7 +16,15 @@ export const setupSessionManagement = (callback: (session: Session | null) => vo
     async (event, session) => {
       if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
         callback(null);
-      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      } else if (event === 'TOKEN_REFRESHED') {
+        if (session) {
+          callback(session);
+        } else {
+          // Refresh token invalido/scaduto: pulisci la sessione locale e manda al login
+          await supabase.auth.signOut({ scope: 'local' });
+          callback(null);
+        }
+      } else if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         callback(session);
       }
     }

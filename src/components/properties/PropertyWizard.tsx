@@ -42,9 +42,17 @@ const LOCALI_STANZE: Record<string, number | null> = {
   Bilocale: 2,
   Trilocale: 3,
   Quadrilocale: 4,
+  'Pentalocale+': 5,
+  'Nuova costruzione': null,
   Villa: null,
+  'Villetta a schiera': null,
   Attico: null,
   Loft: null,
+  Box: null,
+  'Posto auto': null,
+  'Locale commerciale': null,
+  Capannone: null,
+  Terreno: null,
 };
 
 const PREDEFINED_FEATURES = [
@@ -151,18 +159,20 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     }
   }, [initialData]);
 
+  const isNC = formData.locali === 'Nuova costruzione';
+
   const buildPayload = () => {
     const slug = formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
     return {
       titolo: formData.titolo,
       prezzo: prezzoSuRichiesta ? null : (parseFloat(formData.prezzo) || null),
-      mq: parseInt(formData.mq) || 0,
+      mq: isNC ? 0 : (parseInt(formData.mq) || 0),
       locali: formData.locali,
-      stanze: parseInt(formData.stanze) || null,
+      stanze: isNC ? null : (parseInt(formData.stanze) || null),
       citta: formData.citta,
       indirizzo: formData.indirizzo,
-      piano: formData.piano,
-      bagni: parseInt(formData.bagni as unknown as string) || null,
+      piano: isNC ? null : formData.piano,
+      bagni: isNC ? null : (parseInt(formData.bagni as unknown as string) || null),
       classe_energetica: formData.classe_energetica,
       stato_immobile: formData.stato_immobile,
       spese_condominiali: parseFloat(formData.spese_condominiali) || 0,
@@ -483,8 +493,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
                 </div>
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Superficie (mq)</Label>
-                <Input type="number" placeholder="0" value={formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} onWheel={(e) => e.currentTarget.blur()} className="rounded-2xl h-14 border-gray-100" />
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Superficie (mq)
+                  {isNC && <span className="ml-2 text-[10px] text-gray-400 font-medium normal-case">definita per unità</span>}
+                </Label>
+                <Input type="number" placeholder={isNC ? '—' : '0'} value={isNC ? '' : formData.mq} onChange={(e) => setFormData({...formData, mq: e.target.value})} onWheel={(e) => e.currentTarget.blur()} disabled={isNC} className={cn("rounded-2xl h-14 border-gray-100", isNC && "opacity-30 cursor-not-allowed")} />
               </div>
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Tipologia</Label>
@@ -510,31 +523,36 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
               <div className="space-y-3">
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
                   Numero locali
-                  {LOCALI_STANZE[formData.locali] !== null && (
+                  {!isNC && LOCALI_STANZE[formData.locali] !== null && (
                     <span className="ml-2 text-[10px] text-[#94b0ab] font-bold normal-case">automatico</span>
                   )}
+                  {isNC && <span className="ml-2 text-[10px] text-gray-400 font-medium normal-case">definito per unità</span>}
                 </Label>
                 <Input
                   type="number"
                   placeholder="Es: 5"
                   min={1}
-                  value={formData.stanze}
+                  value={isNC ? '' : formData.stanze}
                   onChange={(e) => setFormData(prev => ({ ...prev, stanze: e.target.value }))}
                   onWheel={(e) => e.currentTarget.blur()}
-                  disabled={LOCALI_STANZE[formData.locali] !== null}
-                  className={cn("rounded-2xl h-14 border-gray-100", LOCALI_STANZE[formData.locali] !== null && "opacity-50 cursor-not-allowed")}
+                  disabled={isNC || LOCALI_STANZE[formData.locali] !== null}
+                  className={cn("rounded-2xl h-14 border-gray-100", (isNC || LOCALI_STANZE[formData.locali] !== null) && "opacity-30 cursor-not-allowed")}
                 />
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Bagni</Label>
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Bagni
+                  {isNC && <span className="ml-2 text-[10px] text-gray-400 font-medium normal-case">definiti per unità</span>}
+                </Label>
                 <Input
                   type="number"
-                  placeholder="1"
+                  placeholder={isNC ? '—' : '1'}
                   min={1}
-                  value={formData.bagni}
+                  value={isNC ? '' : formData.bagni}
                   onChange={(e) => setFormData(prev => ({ ...prev, bagni: e.target.value }))}
                   onWheel={(e) => e.currentTarget.blur()}
-                  className="rounded-2xl h-14 border-gray-100"
+                  disabled={isNC}
+                  className={cn("rounded-2xl h-14 border-gray-100", isNC && "opacity-30 cursor-not-allowed")}
                 />
               </div>
               <div className="space-y-3">
@@ -546,9 +564,12 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
                 <Input placeholder="Es: Via Roma 12" value={formData.indirizzo} onChange={(e) => setFormData({...formData, indirizzo: e.target.value})} className="rounded-2xl h-14 border-gray-100" />
               </div>
               <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Piano</Label>
-                <Select value={formData.piano || ''} onValueChange={(v) => setFormData({...formData, piano: v})}>
-                  <SelectTrigger className="rounded-2xl h-14 border-gray-100"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  Piano
+                  {isNC && <span className="ml-2 text-[10px] text-gray-400 font-medium normal-case">definito per unità</span>}
+                </Label>
+                <Select value={formData.piano || ''} onValueChange={(v) => !isNC && setFormData({...formData, piano: v})} disabled={isNC}>
+                  <SelectTrigger className={cn("rounded-2xl h-14 border-gray-100", isNC && "opacity-30 cursor-not-allowed")}><SelectValue placeholder={isNC ? '—' : 'Seleziona...'} /></SelectTrigger>
                   <SelectContent className="rounded-2xl">
                     {['Piano Terra','1° Piano','2° Piano','3° Piano','4° Piano','5° Piano','6° Piano','7° Piano','8° Piano','9° Piano','10° Piano+'].map(p => (
                       <SelectItem key={p} value={p}>{p}</SelectItem>

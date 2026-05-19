@@ -27,10 +27,10 @@ import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import {
   Plus, Calculator, ExternalLink, MoreHorizontal,
-  Copy, Link2, Eye, Pencil, ToggleLeft, ToggleRight, Trash2,
+  Copy, Link2, Eye, Pencil, ToggleLeft, ToggleRight, Trash2, RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import ValuationWizard from '@/components/valutazioni/ValuationWizard';
+import ValuationWizard, { type ValuationInitialData } from '@/components/valutazioni/ValuationWizard';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -76,6 +76,7 @@ const Valutazioni = () => {
   const [loading, setLoading] = useState(true);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [wizardLeadId, setWizardLeadId] = useState<string | undefined>(undefined);
+  const [recreateData, setRecreateData] = useState<ValuationInitialData | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Delete confirm
@@ -141,6 +142,20 @@ const Valutazioni = () => {
       showSuccess(`Stato aggiornato: ${nuovoStato}`);
     }
     setTogglingId(null);
+  };
+
+  const handleOpenRecreate = async (v: Valutazione) => {
+    const { data, error } = await supabase
+      .from('valutazioni')
+      .select('*')
+      .eq('id', v.id)
+      .single();
+    if (error || !data) {
+      showError('Errore nel caricamento valutazione');
+      return;
+    }
+    setRecreateData(data as unknown as ValuationInitialData);
+    setIsWizardOpen(true);
   };
 
   const handleOpenEdit = (v: Valutazione) => {
@@ -356,6 +371,15 @@ const Valutazioni = () => {
                               Modifica
                             </DropdownMenuItem>
 
+                            {/* Ricrea */}
+                            <DropdownMenuItem
+                              onClick={() => handleOpenRecreate(v)}
+                              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer text-sm font-medium text-gray-700 hover:bg-[#94b0ab]/8 hover:text-[#7a948f]"
+                            >
+                              <RefreshCw size={14} className="text-[#94b0ab]" />
+                              Ricrea
+                            </DropdownMenuItem>
+
                             <DropdownMenuSeparator className="my-1" />
 
                             {/* Toggle stato */}
@@ -406,13 +430,14 @@ const Valutazioni = () => {
       <ValuationWizard
         open={isWizardOpen}
         initialLeadId={wizardLeadId}
-        onClose={() => { setIsWizardOpen(false); setWizardLeadId(undefined); }}
-        onSaved={() => { setIsWizardOpen(false); setWizardLeadId(undefined); fetchValutazioni(); }}
+        initialData={recreateData}
+        onClose={() => { setIsWizardOpen(false); setWizardLeadId(undefined); setRecreateData(null); }}
+        onSaved={() => { setIsWizardOpen(false); setWizardLeadId(undefined); setRecreateData(null); fetchValutazioni(); }}
       />
 
       {/* ── Edit Modal ──────────────────────────────────────────────────────── */}
       <Dialog open={!!editTarget} onOpenChange={open => { if (!open) setEditTarget(null); }}>
-        <DialogContent className="max-w-lg rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
+        <DialogContent className="max-w-3xl rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden" aria-describedby={undefined}>
           <DialogHeader className="px-8 pt-8 pb-4 border-b border-slate-100">
             <DialogTitle className="text-xl font-bold text-gray-900">Modifica Valutazione</DialogTitle>
             {editTarget && (

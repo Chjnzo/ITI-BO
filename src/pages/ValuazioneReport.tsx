@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import {
   FileDown, Home, ShieldCheck, TrendingUp,
   MapPin, Ruler, Building2, Wrench, ArrowUpRight, ArrowDownRight,
-  Printer, Star, ChevronDown, Lock, Info, Clock, User,
+  Star, ChevronDown, Lock, Info, Clock, User,
   ExternalLink,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -499,15 +499,7 @@ const ValuazioneReport = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleDownloadPdf()}
-            className="text-gray-500 hover:text-gray-800 rounded-xl h-9 px-3 gap-1.5 text-xs font-semibold hidden sm:flex"
-          >
-            <Printer size={13} />
-            Stampa
-          </Button>
+
           <Button
             onClick={handleDownloadPdf}
             size="sm"
@@ -1082,14 +1074,6 @@ const ValuazioneReport = () => {
             >
               <FileDown size={15} />
               Scarica PDF
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => handleDownloadPdf()}
-              className="text-white/80 hover:text-white hover:bg-white/10 rounded-xl h-12 px-6 font-semibold text-sm gap-2"
-            >
-              <Printer size={15} />
-              Stampa
             </Button>
           </div>
         </div>

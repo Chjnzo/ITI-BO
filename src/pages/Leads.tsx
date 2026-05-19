@@ -147,13 +147,14 @@ const Leads = () => {
   const [filterTipologia, setFilterTipologia] = useState('');
   const [filterAgente, setFilterAgente] = useState('');
   const [filterStato, setFilterStato] = useState('');
+  const [filterDalSito, setFilterDalSito] = useState(false);
 
   // Notes tab
   const [leadNotes, setLeadNotes] = useState<any[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterAgente !== '' || filterStato !== '';
+  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterAgente !== '' || filterStato !== '' || filterDalSito;
 
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
@@ -178,9 +179,35 @@ const Leads = () => {
           lead_immobili(immobili(titolo))
         `)
         .eq('is_deleted', false)
-        .order('created_at', { ascending: false })
-        .limit(500);
+        .order('created_at', { ascending: false });
+
+      // When a text search is active, filter server-side so the result set stays
+      // small regardless of total lead count (avoids cutting off contacts when
+      // "Tutti" is selected and total leads exceed any fixed client-side limit).
+      if (searchQuery.trim()) {
+        const sq = searchQuery.trim();
+        const phonePattern = sq.replace(/[\s\-]/g, '');
+        // Build OR clauses; include both raw and digit-stripped phone patterns
+        // so "333 874 8484" matches whether stored with or without spaces.
+        const clauses = [
+          `nome.ilike.%${sq}%`,
+          `cognome.ilike.%${sq}%`,
+          `email.ilike.%${sq}%`,
+          `telefono.ilike.%${sq}%`,
+        ];
+        if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
+        clauses.push(
+          `note_interne.ilike.%${sq}%`,
+          `via_immobile.ilike.%${sq}%`,
+          `zona_venditore.ilike.%${sq}%`,
+        );
+        query = (query as any).or(clauses.join(','));
+      } else {
+        query = (query as any).limit(500);
+      }
+
       query = applyTipoFilter(query as any) as any;
+      if (filterDalSito) query = (query as any).eq('fonte', 'sito');
 
       const { data, error } = await query;
       if (signal?.aborted) return;
@@ -203,12 +230,13 @@ const Leads = () => {
         .from('leads')
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-          assegnato_a, telefono, email,
+          assegnato_a, telefono, email, fonte,
           lead_immobili(immobili(titolo))
         `, { count: 'exact' })
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
       query = applyTipoFilter(query as any) as any;
+      if (filterDalSito) query = (query as any).eq('fonte', 'sito');
       query = (query as any).range(from, to);
 
       const { data, count, error } = await query;
@@ -227,7 +255,7 @@ const Leads = () => {
 
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters]);
+  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters, filterDalSito]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
@@ -339,7 +367,7 @@ const Leads = () => {
     return () => controller.abort();
   }, [fetchLeads]);
 
-  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato]);
+  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato, filterDalSito]);
 
   // Load distinct zone names used across all leads for autocomplete
   useEffect(() => {
@@ -407,10 +435,12 @@ const Leads = () => {
       if (filterAgente && lead.assegnato_a !== filterAgente) return false;
       // Stato filter
       if (filterStato && lead.stato !== filterStato) return false;
+      // Fonte filter (client-side guard; DB already filters in paginated mode)
+      if (filterDalSito && (lead as any).fonte !== 'sito') return false;
 
       return true;
     });
-  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato]);
+  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato, filterDalSito]);
 
 
 
@@ -875,11 +905,28 @@ const Leads = () => {
               </Select>
             </div>
 
+            {/* Dal sito */}
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Origine</Label>
+              <button
+                type="button"
+                onClick={() => setFilterDalSito(v => !v)}
+                className={cn(
+                  'h-9 flex items-center gap-2 px-4 rounded-xl border text-sm font-semibold transition-all',
+                  filterDalSito
+                    ? 'bg-[#94b0ab] border-[#94b0ab] text-white shadow-sm'
+                    : 'bg-slate-50/50 border-gray-200 text-gray-500 hover:border-[#94b0ab] hover:text-[#94b0ab]',
+                )}
+              >
+                🌐 Dal sito
+              </button>
+            </div>
+
             {/* Reset */}
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => { setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); }}
+                onClick={() => { setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); setFilterDalSito(false); }}
                 className="h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border border-red-100"
               >
                 <XIcon size={13} /> Reset filtri
@@ -1268,7 +1315,7 @@ const Leads = () => {
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
                             <div className="flex flex-wrap gap-1.5">
-                              {[50000, 100000, 150000, 200000, 300000, 500000, 750000, 1000000].map((preset) => {
+                              {[250000, 100000, 150000, 200000, 300000, 500000, 750000, 1000000].map((preset) => {
                                 const isActive = Number(selectedLead.budget) === preset;
                                 return (
                                   <button

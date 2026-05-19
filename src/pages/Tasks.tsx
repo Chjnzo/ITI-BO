@@ -85,11 +85,11 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
         type="button"
         onClick={() => onToggleComplete(task)}
         className={cn(
-          'w-5 h-5 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
+          'w-6 h-6 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
           isComplete ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-[#94b0ab]',
         )}
       >
-        {isComplete && <Check size={10} className="text-white" />}
+        {isComplete && <Check size={13} className="text-white" />}
       </button>
 
 
@@ -97,7 +97,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
       <div className="flex-1 min-w-0">
         <p
           className={cn(
-            'text-sm font-semibold truncate cursor-pointer',
+            'text-base font-semibold truncate cursor-pointer',
             isComplete ? 'line-through text-gray-400' : 'text-gray-800',
           )}
           onClick={() => task.lead_id && onOpenLead(task)}
@@ -107,18 +107,18 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
 
         <div className="flex items-center gap-2 flex-wrap mt-0.5">
           {leadName && task.titolo && (
-            <span className="text-xs text-gray-500 font-medium truncate">{leadName}</span>
+            <span className="text-sm text-gray-500 font-medium truncate">{leadName}</span>
           )}
           {task.ora && (
-            <span className="text-xs text-gray-400 font-medium">{task.ora.slice(0, 5)}</span>
+            <span className="text-sm text-gray-400 font-medium">{task.ora.slice(0, 5)}</span>
           )}
           <Popover open={datePicker} onOpenChange={setDatePicker}>
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-[#94b0ab] transition-colors"
+                className="flex items-center gap-1 text-sm text-gray-400 hover:text-[#94b0ab] transition-colors"
               >
-                <CalendarIcon size={10} className="shrink-0" />
+                <CalendarIcon size={12} className="shrink-0" />
                 {format(parseISO(task.data), 'd MMM', { locale: it })}
               </button>
             </PopoverTrigger>
@@ -140,7 +140,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
         </div>
 
         {noteExpanded && task.nota && (
-          <p className="text-xs text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2 break-words whitespace-pre-wrap">
+          <p className="text-sm text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2 break-words whitespace-pre-wrap">
             {task.nota}
           </p>
         )}
@@ -153,9 +153,9 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
             type="button"
             title="Apri scheda lead"
             onClick={() => onOpenLead(task)}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
           >
-            <User size={13} />
+            <User size={15} />
           </button>
         )}
         {task.nota && (
@@ -170,7 +170,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
                 : 'text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10',
             )}
           >
-            <StickyNote size={13} />
+            <StickyNote size={15} />
           </button>
         )}
       </div>
@@ -390,10 +390,10 @@ const Tasks = () => {
                     {sortedDates.map((dateStr, idx) => (
                       <div key={dateStr} className={idx > 0 ? 'border-t border-gray-100' : ''}>
                         <div className="flex items-center gap-3 px-5 py-3 bg-gray-50/60">
-                          <span className="text-xs font-black uppercase tracking-widest text-gray-500">
+                          <span className="text-sm font-black uppercase tracking-widest text-gray-600">
                             {formatDateHeader(dateStr)}
                           </span>
-                          <span className="text-xs text-gray-300 font-medium">
+                          <span className="text-sm text-gray-400 font-medium">
                             {format(parseISO(dateStr), 'd MMM yyyy', { locale: it })}
                           </span>
                           <div className="flex-1 h-px bg-gray-100" />
@@ -487,7 +487,7 @@ const Tasks = () => {
                       ) : (
                         dates.map(dateStr => (
                           <div key={dateStr}>
-                            <div className="px-5 py-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-50 bg-gray-50/50">
+                            <div className="px-5 py-3 text-xs font-bold text-gray-500 uppercase tracking-widest border-b border-gray-50 bg-gray-50/50">
                               {formatDateHeader(dateStr)}
                             </div>
                             <div className="divide-y divide-gray-50">
