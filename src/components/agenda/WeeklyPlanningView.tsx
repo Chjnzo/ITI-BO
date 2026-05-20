@@ -153,12 +153,12 @@ const DayColumn = memo(({
         )}
         style={{ height: DAY_HEADER_HEIGHT }}
       >
-        <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
           {format(day, 'EEE', { locale: it })}
         </span>
         <span
           className={cn(
-            'text-base font-black leading-none mt-0.5',
+            'text-lg font-black leading-none mt-0.5',
             today ? 'text-[#94b0ab]' : 'text-gray-700',
           )}
         >
@@ -212,7 +212,7 @@ const DayColumn = memo(({
                 key={event.id}
                 data-event-block
                 onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                className="absolute rounded-lg border overflow-hidden cursor-pointer hover:brightness-95 transition-all px-1.5 py-1"
+                className="absolute rounded-lg overflow-hidden cursor-pointer hover:brightness-90 transition-all px-1.5 py-1"
                 style={{
                   top,
                   height,
@@ -220,18 +220,19 @@ const DayColumn = memo(({
                   left: `calc(${leftPct}% + 1px)`,
                   width: `calc(${widthPct}% - 2px)`,
                   backgroundColor: colors.bg,
-                  borderColor: colors.border,
+                  borderLeft: `3px solid ${colors.border}`,
+                  boxShadow: `0 1px 3px 0 ${colors.bg}55`,
                 }}
               >
                 <p
-                  className="text-[11px] font-bold leading-tight truncate"
+                  className="text-[12px] font-extrabold leading-tight truncate tracking-tight"
                   style={{ color: colors.text }}
                 >
                   {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
                 </p>
                 {height > 42 && (
                   <p
-                    className="text-[10px] leading-tight truncate opacity-80"
+                    className="text-[11px] leading-tight truncate font-semibold"
                     style={{ color: colors.text }}
                   >
                     {event.leads
@@ -342,7 +343,7 @@ const WeeklyPlanningView = ({
                 className="absolute left-0 w-full flex items-start justify-end pr-1.5"
                 style={{ top: DAY_HEADER_HEIGHT + TIMELINE_TOP_PADDING + (h - DAY_START) * HOUR_HEIGHT - 6 }}
               >
-                <span className="text-[11px] text-gray-300 font-medium leading-none select-none">
+                <span className="text-sm text-gray-400 font-bold leading-none select-none">
                   {String(h).padStart(2, '0')}
                 </span>
               </div>

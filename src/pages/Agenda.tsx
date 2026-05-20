@@ -137,7 +137,7 @@ const AgentDayColumn = memo(({
                   className="absolute left-0 right-0 border-t border-gray-100 flex items-start"
                   style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
                 >
-                  <span className="text-xs text-gray-400 font-semibold pl-2 pt-0.5 leading-none select-none">
+                  <span className="text-sm text-gray-400 font-bold pl-2 pt-0.5 leading-none select-none">
                     {String(h).padStart(2, '0')}:00
                   </span>
                 </div>
@@ -159,12 +159,13 @@ const AgentDayColumn = memo(({
                   key={event.id}
                   data-event-block
                   onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                  className="absolute left-14 right-2 rounded-xl px-2 py-1.5 overflow-hidden cursor-pointer hover:brightness-95 transition-all border"
+                  className="absolute left-14 right-2 rounded-xl px-2.5 py-1.5 overflow-hidden cursor-pointer hover:brightness-90 transition-all"
                   style={{
                     top,
                     height,
                     backgroundColor: colors.bg,
-                    borderColor: colors.border,
+                    borderLeft: `4px solid ${colors.border}`,
+                    boxShadow: `0 1px 4px 0 ${colors.bg}55`,
                     minHeight: 28,
                   }}
                 >
@@ -178,7 +179,7 @@ const AgentDayColumn = memo(({
 
                   {/* Time + tipologia */}
                   <p
-                    className="text-xs font-bold leading-tight truncate"
+                    className="text-[13px] font-extrabold leading-tight truncate tracking-tight"
                     style={{ color: colors.text }}
                   >
                     {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
@@ -186,23 +187,23 @@ const AgentDayColumn = memo(({
 
                   {/* Lead name */}
                   {height > 40 && event.leads && (
-                    <p className="text-[11px] leading-tight truncate opacity-90 mt-0.5 font-medium" style={{ color: colors.text }}>
+                    <p className="text-xs leading-tight truncate mt-0.5 font-semibold" style={{ color: colors.text }}>
                       {event.leads.nome} {event.leads.cognome}
                     </p>
                   )}
 
                   {/* Property */}
                   {height > 60 && event.immobili?.titolo && (
-                    <p className="flex items-center gap-0.5 text-[11px] leading-tight truncate opacity-80 mt-0.5" style={{ color: colors.text }}>
-                      <MapPin size={10} className="shrink-0" />
+                    <p className="flex items-center gap-0.5 text-xs leading-tight truncate opacity-90 mt-0.5 font-medium" style={{ color: colors.text }}>
+                      <MapPin size={11} className="shrink-0" />
                       {event.immobili.titolo}
                     </p>
                   )}
 
                   {/* Notes */}
                   {height > 78 && event.note && (
-                    <p className="flex items-start gap-0.5 text-[10px] leading-tight line-clamp-2 opacity-75 mt-0.5" style={{ color: colors.text }}>
-                      <AlignLeft size={10} className="shrink-0 mt-px" />
+                    <p className="flex items-start gap-0.5 text-[11px] leading-tight line-clamp-2 opacity-90 mt-0.5" style={{ color: colors.text }}>
+                      <AlignLeft size={11} className="shrink-0 mt-px" />
                       {event.note}
                     </p>
                   )}

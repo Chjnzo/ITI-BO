@@ -445,11 +445,14 @@ const Leads = () => {
 
 
   const LeadValidationSchema = z.object({
-    nome: z.string().min(2, 'Nome: min 2 caratteri').max(100),
+    nome: z.string().max(100).optional().or(z.literal('')),
     cognome: z.string().max(100).optional().or(z.literal('')),
     email: z.string().email('Email non valida').optional().or(z.literal('')),
     telefono: z.string().optional(),
-  });
+  }).refine(
+    (data) => (data.nome?.trim() ?? '').length > 0 || (data.cognome?.trim() ?? '').length > 0,
+    { message: 'Inserisci almeno il nome o il cognome' },
+  );
 
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
