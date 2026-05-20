@@ -137,7 +137,7 @@ const AgentDayColumn = memo(({
                   className="absolute left-0 right-0 border-t border-gray-100 flex items-start"
                   style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
                 >
-                  <span className="text-sm text-gray-400 font-bold pl-2 pt-0.5 leading-none select-none">
+                  <span className="text-sm text-gray-800 font-bold pl-2 pt-0.5 leading-none select-none">
                     {String(h).padStart(2, '0')}:00
                   </span>
                 </div>
