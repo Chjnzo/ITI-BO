@@ -243,13 +243,11 @@ const DayColumn = memo(({
                       : event.immobili?.titolo ?? ''}
                   </p>
                 )}
-                {/* Agent initials badge */}
+                {/* Agent color dot — tiny, non-intrusive */}
                 <span
-                  className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-[7px] font-black text-white shrink-0"
+                  className="absolute bottom-1 right-1 w-2 h-2 rounded-full shrink-0 ring-1 ring-white/40"
                   style={{ backgroundColor: agentColor }}
-                >
-                  {initials}
-                </span>
+                />
               </div>
             );
           })}
