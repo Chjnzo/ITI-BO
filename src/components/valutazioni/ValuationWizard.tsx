@@ -330,11 +330,10 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
     const controller = new AbortController();
     searchLeadsAbortRef.current = controller;
 
-    const tokens = trimmed.split(/\s+/).map(t => t.replace(/[%_\\]/g, '\\$&'));
+    const { buildLeadSearchClauses } = await import('@/utils/search');
+    const clauses = buildLeadSearchClauses(trimmed);
     let query = supabase.from('leads').select('id, nome, cognome, telefono');
-    for (const token of tokens) {
-      query = query.or(`nome.ilike.%${token}%,cognome.ilike.%${token}%`);
-    }
+    for (const clause of clauses) query = query.or(clause);
     const { data: rows } = await query.limit(8);
 
     if (controller.signal.aborted) return;

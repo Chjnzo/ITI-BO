@@ -56,11 +56,16 @@ export const Combobox = ({
   const visible = onSearch
     ? items
     : items.filter(i => {
-        const q = inputValue.toLowerCase();
-        return (
-          i.label.toLowerCase().includes(q) ||
-          (i.sublabel ?? '').toLowerCase().includes(q)
-        );
+        const q = inputValue;
+        if (!q) return true;
+        const labelMatch = i.label.toLowerCase().includes(q.toLowerCase());
+        const sublabelMatch = (i.sublabel ?? '').toLowerCase().includes(q.toLowerCase());
+        // Phone normalisation: strip non-digits and compare sequences
+        const qDigits = q.replace(/\D/g, '');
+        const phoneMatch =
+          qDigits.length >= 4 &&
+          (i.sublabel ?? '').replace(/\D/g, '').includes(qDigits);
+        return labelMatch || sublabelMatch || phoneMatch;
       });
 
   const handleFocus = () => {
