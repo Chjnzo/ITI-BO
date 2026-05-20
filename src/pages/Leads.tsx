@@ -7,7 +7,6 @@ import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { z } from 'zod';
 import { format, parseISO } from 'date-fns';
-import { logAudit } from '@/lib/auditLogger';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -519,7 +518,6 @@ const Leads = () => {
         fetchLeadDetail(selectedLead.id);
       } else {
         showSuccess("Scheda cliente aggiornata");
-        logAudit(selectedLead.id, payload, 'Agente');
         setLeads(prev => prev.map(l => l.id === selectedLead.id ? {
           ...l,
           nome: selectedLead.nome.trim(),
@@ -1847,19 +1845,14 @@ const Leads = () => {
 
                     {/* List of notes */}
                     <div className="space-y-2">
-                      {leadNotes.filter((n: any) => n.autore === 'Agente').length === 0 && !selectedLead.note_interne && leadNotes.filter((n: any) => n.autore !== 'Agente').length === 0 ? (
+                      {leadNotes.filter((n: any) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedLead.note_interne && leadNotes.filter((n: any) => n.autore !== 'Agente').length === 0 ? (
                         <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <FileText className="mx-auto text-gray-200 mb-2" size={26} />
                           <p className="text-xs text-gray-400 italic">Nessuna nota per questo lead.</p>
                         </div>
                       ) : (
-                        leadNotes.map((note: any) => (
-                          <div key={note.id} className={cn(
-                            "rounded-xl border p-4",
-                            note.autore === 'Agente'
-                              ? "bg-white border-gray-100 shadow-sm"
-                              : "hidden" // Sistema notes shown above as site message
-                          )}>
+                        leadNotes.filter((n: any) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note: any) => (
+                          <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
                               <span className="text-[10px] text-gray-400 font-medium">
