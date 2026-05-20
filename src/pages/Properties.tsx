@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 import { useProperties } from '@/hooks/useProperties';
 import { useQueryClient } from '@tanstack/react-query';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 const Properties = () => {
   const [filter, setFilter] = useState<'active' | 'sold'>('active');
@@ -339,37 +339,38 @@ const Properties = () => {
               </table>
             </div>
 
-            <div className="px-8 py-5 bg-gray-50/30 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-              <div className="text-sm text-gray-400 font-medium">
-                Visualizzando <span className="text-gray-900 font-bold">{Math.min((currentPage - 1) * PAGE_SIZE + 1, totalCount)}</span>-
-                <span className="text-gray-900 font-bold">{Math.min(currentPage * PAGE_SIZE, totalCount)}</span> di
-                <span className="text-gray-900 font-bold"> {totalCount}</span> immobili
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage === 1 || loading}
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
-                >
-                  ← Precedente
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={currentPage >= Math.ceil(totalCount / PAGE_SIZE) || loading}
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
-                >
-                  Successivo →
-                </Button>
-              </div>
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Pagination — fuori dalla card, sempre visibile */}
+      {totalCount > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 shrink-0">
+          <p className="text-xs text-gray-400 font-medium">
+            {Math.min((currentPage - 1) * PAGE_SIZE + 1, totalCount)}–{Math.min(currentPage * PAGE_SIZE, totalCount)} di {totalCount}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage === 1 || loading}
+              onClick={() => handlePageChange(currentPage - 1)}
+              className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
+            >
+              ← Precedente
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={currentPage >= Math.ceil(totalCount / PAGE_SIZE) || loading}
+              onClick={() => handlePageChange(currentPage + 1)}
+              className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
+            >
+              Successiva →
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
         <DialogContent

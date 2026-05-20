@@ -11,8 +11,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Plus, Maximize2, ChevronLeft, ChevronRight, CalendarIcon, MapPin, AlignLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EventFormModal, {
-  type Appointment, type AgentProfile, TIPOLOGIA_COLORS,
+  type Appointment, type AgentProfile, type TipologiaRow, type TipologieMap, TIPOLOGIA_COLORS,
 } from '@/components/agenda/EventFormModal';
+import CategorieSheet from '@/components/agenda/CategorieSheet';
 import AgentExpandModal from '@/components/agenda/AgentExpandModal';
 import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -69,10 +70,11 @@ interface AgentDayColumnProps {
   onEventClick: (event: Appointment) => void;
   onSlotClick: (agentId: string, time: string) => void;
   onExpand: (agent: AgentProfile) => void;
+  coloriMap?: TipologieMap;
 }
 
 const AgentDayColumn = memo(({
-  agent, events, selectedDate, loading, onEventClick, onSlotClick, onExpand,
+  agent, events, selectedDate, loading, onEventClick, onSlotClick, onExpand, coloriMap,
 }: AgentDayColumnProps) => {
   const agentColor = agent.colore_calendario ?? '#94b0ab';
 
@@ -151,7 +153,8 @@ const AgentDayColumn = memo(({
 
             {/* Event blocks */}
             {events.map(event => {
-              const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+              const cm = coloriMap ?? TIPOLOGIA_COLORS;
+              const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
               const top = getEventTop(event.ora_inizio);
               const height = getEventHeight(event.ora_inizio, event.ora_fine);
               return (
@@ -243,7 +246,7 @@ interface ExpandState {
 
 const Agenda = () => {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [viewMode, setViewMode] = useState<'giornaliera' | 'planning'>('giornaliera');
+  const [viewMode, setViewMode] = useState<'giornaliera' | 'planning'>('planning');
   const [events, setEvents] = useState<Appointment[]>([]);
   const [agents, setAgents] = useState<AgentProfile[]>([]);
   const [properties, setProperties] = useState<{ id: string; titolo: string }[]>([]);
@@ -252,8 +255,17 @@ const Agenda = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [formModal, setFormModal] = useState<FormModalState>({ open: false });
   const [expandState, setExpandState] = useState<ExpandState>({ open: false, agent: null });
+  const [tipologieRows, setTipologieRows] = useState<TipologiaRow[]>([]);
 
-  // Fetch agents + properties once on mount
+  const fetchTipologie = useCallback(async () => {
+    const { data } = await supabase
+      .from('tipologie_appuntamenti')
+      .select('*')
+      .order('ordine');
+    setTipologieRows((data as TipologiaRow[]) ?? []);
+  }, []);
+
+  // Fetch agents + properties + tipologie once on mount
   useEffect(() => {
     const init = async () => {
       const [{ data: { user } }, { data: agentsData }, { data: propsData }] = await Promise.all([
@@ -266,7 +278,8 @@ const Agenda = () => {
       setProperties(propsData || []);
     };
     init();
-  }, []);
+    fetchTipologie();
+  }, [fetchTipologie]);
 
   // Fetch events — single day or full week depending on viewMode
   const fetchEvents = useCallback(async () => {
@@ -305,6 +318,19 @@ const Agenda = () => {
     ];
   }, [agents, currentUserId]);
 
+  // Derived color map and tipologie list from DB rows
+  const coloriMap = useMemo<TipologieMap>(() => {
+    if (tipologieRows.length === 0) return TIPOLOGIA_COLORS;
+    return Object.fromEntries(
+      tipologieRows.map(t => [t.nome, { bg: t.colore_bg, border: t.colore_border, text: '#ffffff' }]),
+    );
+  }, [tipologieRows]);
+
+  const tipologieList = useMemo(
+    () => tipologieRows.map(t => t.nome),
+    [tipologieRows],
+  );
+
   // Events grouped by agent
   const eventsByAgent = useMemo(() => {
     const map = new Map<string, Appointment[]>();
@@ -335,7 +361,7 @@ const Agenda = () => {
   const headerDateLabel = format(parsedDate, "EEEE d MMMM yyyy", { locale: it });
 
   return (
-    <AdminLayout fullHeight>
+    <AdminLayout fullHeight wide>
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
         {/* Header */}
@@ -412,6 +438,7 @@ const Agenda = () => {
                 />
               </PopoverContent>
             </Popover>
+            <CategorieSheet onRefresh={() => { fetchTipologie(); fetchEvents(); }} />
             <Button
               onClick={openNewEvent}
               className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
@@ -435,6 +462,7 @@ const Agenda = () => {
                     onEventClick={openEventEdit}
                     onSlotClick={openSlotCreate}
                     onExpand={openExpand}
+                    coloriMap={coloriMap}
                   />
                 </div>
               ))}
@@ -454,6 +482,7 @@ const Agenda = () => {
                 loading={loading}
                 onEventClick={openEventEdit}
                 onSlotClick={openDateSlotCreate}
+                coloriMap={coloriMap}
               />
             </div>
           )}
@@ -472,6 +501,8 @@ const Agenda = () => {
         defaultTimeStart={formModal.defaultTimeStart}
         agents={agents}
         properties={properties}
+        coloriMap={coloriMap}
+        tipologieList={tipologieList}
       />
 
       {/* Expand modal */}
@@ -482,6 +513,7 @@ const Agenda = () => {
         agent={expandState.agent}
         allAgents={agents}
         properties={properties}
+        coloriMap={coloriMap}
       />
     </AdminLayout>
   );

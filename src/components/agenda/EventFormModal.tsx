@@ -43,6 +43,16 @@ export interface AgentProfile {
   colore_calendario?: string | null;
 }
 
+export interface TipologiaRow {
+  id: string;
+  nome: string;
+  colore_bg: string;
+  colore_border: string;
+  ordine: number;
+}
+
+export type TipologieMap = Record<string, { bg: string; text: string; border: string }>;
+
 // ── Tipologia config ──────────────────────────────────────────────────────────
 
 export const TIPOLOGIE = [
@@ -116,13 +126,15 @@ interface EventFormModalProps {
   defaultLeadName?: string;
   agents: AgentProfile[];
   properties: Property[];
+  coloriMap?: TipologieMap;
+  tipologieList?: string[];
 }
 
 const EventFormModal = ({
   open, onClose, onSaved, event,
   defaultAgentId, defaultDate, defaultTimeStart,
   defaultLeadId, defaultLeadName,
-  agents, properties,
+  agents, properties, coloriMap, tipologieList,
 }: EventFormModalProps) => {
   const isEdit = !!event;
 
@@ -337,8 +349,9 @@ const EventFormModal = ({
                 <SelectValue placeholder="Seleziona tipologia..." />
               </SelectTrigger>
               <SelectContent className="rounded-xl">
-                {TIPOLOGIE.map(t => {
-                  const c = TIPOLOGIA_COLORS[t] ?? TIPOLOGIA_COLORS['Altro'];
+                {(tipologieList ?? [...TIPOLOGIE]).map(t => {
+                  const cm = coloriMap ?? TIPOLOGIA_COLORS;
+                  const c = cm[t] ?? TIPOLOGIA_COLORS['Altro'];
                   return (
                     <SelectItem key={t} value={t}>
                       <span className="flex items-center gap-2">

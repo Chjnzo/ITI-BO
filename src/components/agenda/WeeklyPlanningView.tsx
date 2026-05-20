@@ -4,7 +4,7 @@ import React, { useState, useMemo, memo } from 'react';
 import { format, isToday, parseISO, startOfWeek, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { type Appointment, type AgentProfile, TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
+import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -113,6 +113,7 @@ interface WeeklyPlanningViewProps {
   loading: boolean;
   onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
+  coloriMap?: TipologieMap;
 }
 
 // ── DayColumn ─────────────────────────────────────────────────────────────────
@@ -125,10 +126,11 @@ interface DayColumnProps {
   loading: boolean;
   onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
+  coloriMap?: TipologieMap;
 }
 
 const DayColumn = memo(({
-  day, events, agentColorMap, agentNameMap, loading, onEventClick, onSlotClick,
+  day, events, agentColorMap, agentNameMap, loading, onEventClick, onSlotClick, coloriMap,
 }: DayColumnProps) => {
   const dateStr = format(day, 'yyyy-MM-dd');
   const today = isToday(day);
@@ -158,8 +160,8 @@ const DayColumn = memo(({
         </span>
         <span
           className={cn(
-            'text-lg font-black leading-none mt-0.5',
-            today ? 'text-[#94b0ab]' : 'text-gray-700',
+            'text-xl font-black leading-none mt-0.5',
+            today ? 'text-[#94b0ab]' : 'text-gray-900',
           )}
         >
           {format(day, 'd')}
@@ -199,7 +201,8 @@ const DayColumn = memo(({
 
           {/* Event blocks */}
           {laid.map(event => {
-            const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+            const cm = coloriMap ?? TIPOLOGIA_COLORS;
+            const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
             const agentColor = agentColorMap.get(event.agente_id) ?? '#94b0ab';
             const initials = (agentNameMap.get(event.agente_id) ?? '?').substring(0, 2).toUpperCase();
             const top = getEventTop(event.ora_inizio);
@@ -268,7 +271,7 @@ DayColumn.displayName = 'DayColumn';
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const WeeklyPlanningView = ({
-  events, agents, visibleAgents, selectedDate, loading, onEventClick, onSlotClick,
+  events, agents, visibleAgents, selectedDate, loading, onEventClick, onSlotClick, coloriMap,
 }: WeeklyPlanningViewProps) => {
   const [hiddenAgentIds, setHiddenAgentIds] = useState<Set<string>>(new Set());
 
@@ -306,10 +309,10 @@ const WeeklyPlanningView = ({
   }, [events, hiddenAgentIds]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="h-full overflow-hidden rounded-[2rem] border border-gray-100 shadow-sm bg-white flex flex-col">
 
-      {/* Agent visibility pills */}
-      <div className="flex flex-wrap gap-2 mb-3 shrink-0">
+      {/* Agent visibility pills — sticky inside the card */}
+      <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-gray-100">
         {visibleAgents.map(agent => {
           const color = agentColorMap.get(agent.id) ?? '#94b0ab';
           const hidden = hiddenAgentIds.has(agent.id);
@@ -318,7 +321,7 @@ const WeeklyPlanningView = ({
               key={agent.id}
               type="button"
               onClick={() => toggleAgent(agent.id)}
-              className="rounded-xl px-3 py-1.5 text-xs font-bold border transition-all"
+              className="rounded-xl px-3 py-1 text-xs font-bold border transition-all"
               style={{
                 backgroundColor: hidden ? '#f3f4f6' : hexWithOpacity(color, 0.12),
                 borderColor: hidden ? '#e5e7eb' : color,
@@ -331,8 +334,8 @@ const WeeklyPlanningView = ({
         })}
       </div>
 
-      {/* Grid */}
-      <div className="flex-1 overflow-auto rounded-[2rem] border border-gray-100 shadow-sm bg-white min-h-0">
+      {/* Scrollable grid */}
+      <div className="flex-1 overflow-auto min-h-0">
         <div className="flex" style={{ minWidth: 670 }}>
 
           {/* Time gutter */}
@@ -343,7 +346,7 @@ const WeeklyPlanningView = ({
                 className="absolute left-0 w-full flex items-start justify-end pr-1.5"
                 style={{ top: DAY_HEADER_HEIGHT + TIMELINE_TOP_PADDING + (h - DAY_START) * HOUR_HEIGHT - 6 }}
               >
-                <span className="text-sm text-gray-400 font-bold leading-none select-none">
+                <span className="text-sm text-gray-800 font-bold leading-none select-none">
                   {String(h).padStart(2, '0')}
                 </span>
               </div>
@@ -361,6 +364,7 @@ const WeeklyPlanningView = ({
               loading={loading}
               onEventClick={onEventClick}
               onSlotClick={onSlotClick}
+              coloriMap={coloriMap}
             />
           ))}
 

@@ -17,7 +17,7 @@ import {
 import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import EventFormModal, {
-  type Appointment, type AgentProfile, TIPOLOGIA_COLORS,
+  type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS,
 } from './EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -65,10 +65,12 @@ const minutesToTimeStr = (totalMinutes: number): string => {
 interface EventBlockProps {
   event: Appointment;
   onClick: (e: React.MouseEvent) => void;
+  coloriMap?: TipologieMap;
 }
 
-const EventBlock = ({ event, onClick }: EventBlockProps) => {
-  const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+const EventBlock = ({ event, onClick, coloriMap }: EventBlockProps) => {
+  const cm = coloriMap ?? TIPOLOGIA_COLORS;
+  const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
   const top = getEventTop(event.ora_inizio);
   const height = getEventHeight(event.ora_inizio, event.ora_fine);
 
@@ -116,9 +118,10 @@ interface WeekViewProps {
   events: Appointment[];
   onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
+  coloriMap?: TipologieMap;
 }
 
-const WeekView = ({ days, events, onEventClick, onSlotClick }: WeekViewProps) => {
+const WeekView = ({ days, events, onEventClick, onSlotClick, coloriMap }: WeekViewProps) => {
   const eventsForDay = (day: Date) =>
     events.filter(e => isSameDay(new Date(e.data), day));
 
@@ -196,6 +199,7 @@ const WeekView = ({ days, events, onEventClick, onSlotClick }: WeekViewProps) =>
                 <EventBlock
                   event={event}
                   onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
+                  coloriMap={coloriMap}
                 />
               </div>
             ))}
@@ -213,9 +217,10 @@ interface MonthViewProps {
   events: Appointment[];
   onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
+  coloriMap?: TipologieMap;
 }
 
-const MonthView = ({ currentDate, events, onEventClick, onSlotClick }: MonthViewProps) => {
+const MonthView = ({ currentDate, events, onEventClick, onSlotClick, coloriMap }: MonthViewProps) => {
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
@@ -258,7 +263,8 @@ const MonthView = ({ currentDate, events, onEventClick, onSlotClick }: MonthView
               </span>
               <div className="space-y-0.5">
                 {dayEvents.slice(0, 3).map(event => {
-                  const colors = TIPOLOGIA_COLORS[event.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
+                  const cm = coloriMap ?? TIPOLOGIA_COLORS;
+                  const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
                   return (
                     <div
                       key={event.id}
@@ -293,10 +299,11 @@ interface AgentExpandModalProps {
   agent: AgentProfile | null;
   allAgents: AgentProfile[];
   properties: { id: string; titolo: string }[];
+  coloriMap?: TipologieMap;
 }
 
 const AgentExpandModal = ({
-  open, onClose, onRefresh, agent, allAgents, properties,
+  open, onClose, onRefresh, agent, allAgents, properties, coloriMap,
 }: AgentExpandModalProps) => {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -459,6 +466,7 @@ const AgentExpandModal = ({
                 events={expandEvents}
                 onEventClick={(event) => setFormModal({ open: true, event })}
                 onSlotClick={(date, time) => setFormModal({ open: true, defaultDate: date, defaultTime: time })}
+                coloriMap={coloriMap}
               />
             ) : (
               <MonthView
@@ -466,6 +474,7 @@ const AgentExpandModal = ({
                 events={expandEvents}
                 onEventClick={(event) => setFormModal({ open: true, event })}
                 onSlotClick={(date, time) => setFormModal({ open: true, defaultDate: date, defaultTime: time })}
+                coloriMap={coloriMap}
               />
             )}
           </div>
@@ -483,6 +492,7 @@ const AgentExpandModal = ({
         defaultTimeStart={formModal.defaultTime}
         agents={allAgents}
         properties={properties}
+        coloriMap={coloriMap}
       />
     </>
   );

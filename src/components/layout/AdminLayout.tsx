@@ -8,9 +8,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 interface AdminLayoutProps {
   children: React.ReactNode;
   fullHeight?: boolean;
+  wide?: boolean;
 }
 
-const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
+const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -173,14 +174,14 @@ const AdminLayout = ({ children, fullHeight = false }: AdminLayoutProps) => {
         </div>
 
         {fullHeight ? (
-          <div className="flex-1 overflow-hidden flex flex-col min-h-0 p-4 md:p-8">
-            <div className="flex-1 overflow-hidden flex flex-col min-h-0 max-w-6xl mx-auto w-full">
+          <div className={cn('flex-1 overflow-hidden flex flex-col min-h-0', wide ? 'p-3 md:p-4' : 'p-4 md:p-8')}>
+            <div className={cn('flex-1 overflow-hidden flex flex-col min-h-0 w-full', !wide && 'max-w-6xl mx-auto')}>
               {children}
             </div>
           </div>
         ) : (
-          <div className="flex-1 p-4 md:p-8">
-            <div className="max-w-6xl mx-auto pb-12">
+          <div className={cn('flex-1', wide ? 'p-3 md:p-4' : 'p-4 md:p-8')}>
+            <div className={cn('pb-12', !wide && 'max-w-6xl mx-auto')}>
               {children}
             </div>
           </div>
