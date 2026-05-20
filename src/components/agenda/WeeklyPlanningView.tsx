@@ -8,7 +8,7 @@ import { type Appointment, type AgentProfile, TIPOLOGIA_COLORS } from '@/compone
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 80;
+const HOUR_HEIGHT = 56;
 const DAY_START = 8;
 const DAY_END = 20;
 const TOTAL_HOURS = DAY_END - DAY_START;

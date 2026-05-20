@@ -21,7 +21,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // ── Timeline constants ────────────────────────────────────────────────────────
 
-const HOUR_HEIGHT = 80; // px per hour
+const HOUR_HEIGHT = 56; // px per hour
 const DAY_START = 8;
 const DAY_END = 20;
 const TOTAL_HOURS = DAY_END - DAY_START;

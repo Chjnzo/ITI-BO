@@ -65,8 +65,8 @@ export const TIPOLOGIE = [
 
 export const TIPOLOGIA_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   'Prima visita':              { bg: '#16a34a', text: '#ffffff', border: '#15803d' },  // Verde
-  'Seconda Visita':            { bg: '#059669', text: '#ffffff', border: '#047857' },  // Smeraldo
-  'Terza Visita':              { bg: '#65a30d', text: '#ffffff', border: '#4d7c0f' },  // Lime
+  'Seconda Visita':            { bg: '#f97316', text: '#ffffff', border: '#ea580c' },  // Arancione
+  'Terza Visita':              { bg: '#a855f7', text: '#ffffff', border: '#9333ea' },  // Viola
   'Valutazione Vendita':       { bg: '#2563eb', text: '#ffffff', border: '#1d4ed8' },  // Blu
   'Valutazione Affitto':       { bg: '#0284c7', text: '#ffffff', border: '#0369a1' },  // Azzurro
   'Incontro con proprietario': { bg: '#92400e', text: '#ffffff', border: '#78350f' },  // Marrone
