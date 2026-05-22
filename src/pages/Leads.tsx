@@ -174,7 +174,7 @@ const Leads = () => {
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
           assegnato_a, telefono, email, budget, tipologia_ricerca, zone_ricercate,
-          zona_venditore, note_interne, via_immobile,
+          zona_venditore, note_interne, via_immobile, fonte,
           lead_immobili(immobili(titolo))
         `)
         .eq('is_deleted', false)
