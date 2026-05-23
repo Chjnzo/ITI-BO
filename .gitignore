@@ -29,4 +29,4 @@ dist-ssr
 .env.production
 .env
 .env.local
-.env.*.local
+.env.*.local.claude/
