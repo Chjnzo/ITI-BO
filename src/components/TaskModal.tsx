@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Phone, MessageCircle, CalendarDays, CalendarIcon } from 'lucide-react';
+import { CalendarIcon } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -20,18 +20,6 @@ import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
-
-// Exported for use in Tasks.tsx and Dashboard.tsx
-export const TIPOLOGIA_CONFIG: Record<string, {
-  icon: React.ElementType;
-  color: string;
-  bg: string;
-  activeCls: string;
-}> = {
-  Chiamata:     { icon: Phone,         color: 'text-blue-500',   bg: 'bg-blue-50',   activeCls: 'bg-blue-50 border-blue-200 text-blue-700'   },
-  WhatsApp:     { icon: MessageCircle, color: 'text-green-500',  bg: 'bg-green-50',  activeCls: 'bg-green-50 border-green-200 text-green-700'  },
-  Appuntamento: { icon: CalendarDays,  color: 'text-purple-500', bg: 'bg-purple-50', activeCls: 'bg-purple-50 border-purple-200 text-purple-700' },
-};
 
 interface TaskModalProps {
   open: boolean;
@@ -43,6 +31,7 @@ interface TaskModalProps {
 
 const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
@@ -68,6 +57,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
       }
     });
     setTitolo('');
+    setTelefono('');
     setSelectedDate(new Date());
     setOra('');
     setNota('');
@@ -119,9 +109,9 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     setIsSaving(true);
     const { error } = await supabase.from('tasks').insert({
       titolo: titolo.trim(),
+      telefono: telefono.trim() || null,
       lead_id: leadId || null,
       agente_id: agenteId || currentUserId,
-      tipologia: 'Chiamata',
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora: ora || null,
@@ -153,6 +143,18 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               value={titolo}
               onChange={(e) => setTitolo(e.target.value)}
               placeholder="Es: Richiamare cliente, Preparare documentazione..."
+              className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
+            />
+          </div>
+
+          {/* Telefono */}
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Numero di cellulare</Label>
+            <Input
+              type="tel"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              placeholder="+39 333 1234567"
               className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
             />
           </div>

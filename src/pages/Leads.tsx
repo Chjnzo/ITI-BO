@@ -36,7 +36,7 @@ import {
   CheckSquare, Clock, Calculator, Copy, SlidersHorizontal, X as XIcon,
   MessageSquare, FileText,
 } from 'lucide-react';
-import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
+import TaskModal from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -118,6 +118,9 @@ const Leads = () => {
   // Tasks State
   const [leadTasks, setLeadTasks] = useState<any[]>([]);
   const [isLeadTaskModalOpen, setIsLeadTaskModalOpen] = useState(false);
+  const [taskDetail, setTaskDetail] = useState<any | null>(null);
+  const [taskDetailNota, setTaskDetailNota] = useState('');
+  const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
   // Events State (appuntamenti linked to current lead)
   const [leadEvents, setLeadEvents] = useState<any[]>([]);
@@ -186,21 +189,24 @@ const Leads = () => {
       if (searchQuery.trim()) {
         const sq = searchQuery.trim();
         const phonePattern = sq.replace(/[\s\-]/g, '');
-        // Build OR clauses; include both raw and digit-stripped phone patterns
-        // so "333 874 8484" matches whether stored with or without spaces.
-        const clauses = [
-          `nome.ilike.%${sq}%`,
-          `cognome.ilike.%${sq}%`,
-          `email.ilike.%${sq}%`,
-          `telefono.ilike.%${sq}%`,
-        ];
-        if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
-        clauses.push(
-          `note_interne.ilike.%${sq}%`,
-          `via_immobile.ilike.%${sq}%`,
-          `zona_venditore.ilike.%${sq}%`,
-        );
-        query = (query as any).or(clauses.join(','));
+        const isPhoneSearch = /^\d[\d\s\-]*$/.test(sq) && phonePattern.length >= 4;
+        if (isPhoneSearch) {
+          // Postgres ilike can't strip internal spaces, so fetch all and rely on
+          // client-side normalization (which compares digit-stripped strings).
+          query = (query as any).limit(2000);
+        } else {
+          const clauses = [
+            `nome.ilike.%${sq}%`,
+            `cognome.ilike.%${sq}%`,
+            `email.ilike.%${sq}%`,
+            `telefono.ilike.%${sq}%`,
+            `note_interne.ilike.%${sq}%`,
+            `via_immobile.ilike.%${sq}%`,
+            `zona_venditore.ilike.%${sq}%`,
+          ];
+          if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
+          query = (query as any).or(clauses.join(','));
+        }
       } else {
         query = (query as any).limit(500);
       }
@@ -747,11 +753,26 @@ const Leads = () => {
     const STATI = ['Da fare', 'In corso', 'Completata'];
     const nextStato = STATI[(STATI.indexOf(currentStato) + 1) % STATI.length];
     setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
+    if (taskDetail?.id === taskId) setTaskDetail((prev: any) => ({ ...prev, stato: nextStato }));
     const { error } = await supabase.from('tasks').update({ stato: nextStato }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento stato');
       setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
     }
+  };
+
+  const saveTaskNota = async () => {
+    if (!taskDetail) return;
+    setTaskDetailSaving(true);
+    const { error } = await supabase.from('tasks').update({ nota: taskDetailNota }).eq('id', taskDetail.id);
+    if (error) {
+      showError('Errore nel salvataggio della nota');
+    } else {
+      setLeadTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, nota: taskDetailNota } : t));
+      showSuccess('Nota aggiornata');
+      setTaskDetail(null);
+    }
+    setTaskDetailSaving(false);
   };
 
   const filteredPickerProperties = useMemo(() => {
@@ -1316,7 +1337,7 @@ const Leads = () => {
                           <div className="space-y-2">
                             <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
                             <div className="flex flex-wrap gap-1.5">
-                              {[250000, 100000, 150000, 200000, 300000, 500000, 750000, 1000000].map((preset) => {
+                              {[100000, 150000, 200000, 250000, 300000, 500000, 750000, 1000000].map((preset) => {
                                 const isActive = Number(selectedLead.budget) === preset;
                                 return (
                                   <button
@@ -1756,55 +1777,60 @@ const Leads = () => {
                   </TabsContent>
 
                   {/* ── TASK TAB ── */}
-                  <TabsContent value="task" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+                  <TabsContent value="task" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
+                      <p className="text-[11px] font-semibold text-muted-foreground tracking-wide uppercase">
                         Task ({leadTasks.length})
                       </p>
                       <Button
                         type="button"
                         size="sm"
                         onClick={(e) => { e.preventDefault(); setIsLeadTaskModalOpen(true); }}
-                        className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-3 text-xs font-bold gap-1.5"
+                        className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-7 px-3 text-[11px] font-bold gap-1"
                       >
-                        <Plus size={13} /> Nuova Task
+                        <Plus size={12} /> Nuova Task
                       </Button>
                     </div>
 
                     {leadTasks.length === 0 ? (
                       <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
-                        <CheckSquare className="mx-auto text-gray-200 mb-2" size={26} />
-                        <p className="text-xs text-gray-400 italic">Nessuna task per questo lead.</p>
+                        <CheckSquare className="mx-auto text-gray-200 mb-2" size={24} />
+                        <p className="text-[11px] text-gray-400 italic">Nessuna task per questo lead.</p>
                       </div>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1.5">
                         {leadTasks.map((task: any) => {
-                          const cfg = TIPOLOGIA_CONFIG[task.tipologia as string] ?? TIPOLOGIA_CONFIG['Chiamata'];
-                          const Icon = cfg.icon;
                           const STATO_BADGE: Record<string, string> = {
                             'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
                             'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
                             'Completata': 'bg-emerald-100 text-emerald-700 border-emerald-200',
                           };
                           return (
-                            <div key={task.id} className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-start gap-3 hover:border-[#94b0ab]/30 transition-all">
-                              <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5', cfg.bg)}>
-                                <Icon size={15} className={cfg.color} />
-                              </div>
+                            <div
+                              key={task.id}
+                              className="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2.5 flex items-center gap-3 hover:border-[#94b0ab]/40 hover:shadow-md transition-all cursor-pointer group"
+                              onClick={() => { setTaskDetail(task); setTaskDetailNota(task.nota || ''); }}
+                            >
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap mb-1">
-                                  <span className="text-xs font-bold text-gray-500">{task.tipologia}</span>
-                                  <span className="text-xs text-gray-400">{task.data}{task.ora ? ` — ${task.ora.slice(0, 5)}` : ''}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[11px] font-bold text-gray-700 truncate">{task.titolo || 'Task'}</span>
+                                  <span className="text-[11px] text-gray-400">{task.data}{task.ora ? ` · ${task.ora.slice(0, 5)}` : ''}</span>
                                 </div>
-                                {task.nota && (
-                                  <p className="text-sm text-gray-700 leading-relaxed">{task.nota}</p>
+                                {task.telefono && (
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <Phone size={10} className="text-[#94b0ab] shrink-0" />
+                                    <span className="text-[11px] font-semibold text-[#94b0ab]">{task.telefono}</span>
+                                  </div>
+                                )}
+                                {task.nota && !task.telefono && (
+                                  <p className="text-[11px] text-gray-500 leading-snug truncate mt-0.5">{task.nota}</p>
                                 )}
                               </div>
                               <button
                                 type="button"
-                                onClick={(e) => { e.preventDefault(); cycleLeadTaskStato(task.id, task.stato); }}
+                                onClick={(e) => { e.stopPropagation(); cycleLeadTaskStato(task.id, task.stato); }}
                                 className={cn(
-                                  'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border shrink-0 hover:opacity-80 transition-opacity',
+                                  'text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 hover:opacity-75 transition-opacity',
                                   STATO_BADGE[task.stato] ?? 'bg-gray-100 text-gray-500'
                                 )}
                               >
@@ -1815,6 +1841,7 @@ const Leads = () => {
                         })}
                       </div>
                     )}
+
                   </TabsContent>
 
                   {/* ── NOTE TAB ── */}
@@ -1969,6 +1996,57 @@ const Leads = () => {
           if (data) setLeadTasks(data);
         }}
       />
+
+      {/* Task Detail Mini Modal */}
+      <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-[1.5rem] border-none shadow-2xl p-0 overflow-hidden gap-0">
+          {taskDetail && (() => {
+            const STATO_BADGE: Record<string, string> = {
+              'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
+              'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
+              'Completata': 'bg-emerald-100 text-emerald-700 border-emerald-200',
+            };
+            return (
+              <>
+                <div className="px-5 py-4 flex items-center gap-3 bg-[#94b0ab]/10 border-b border-[#94b0ab]/15">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#94b0ab] mb-0.5">Task</p>
+                    <p className="text-sm font-bold text-gray-800 truncate">{taskDetail.titolo || 'Task'}</p>
+                    <p className="text-[11px] text-gray-500">{taskDetail.data}{taskDetail.ora ? ` · ${taskDetail.ora.slice(0, 5)}` : ''}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => cycleLeadTaskStato(taskDetail.id, taskDetail.stato)}
+                    className={cn(
+                      'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border shrink-0 hover:opacity-75 transition-opacity',
+                      STATO_BADGE[taskDetail.stato] ?? 'bg-gray-100 text-gray-500'
+                    )}
+                  >
+                    {taskDetail.stato}
+                  </button>
+                </div>
+                <div className="px-5 py-4 space-y-3 bg-white">
+                  <Label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Nota</Label>
+                  <Textarea
+                    value={taskDetailNota}
+                    onChange={(e) => setTaskDetailNota(e.target.value)}
+                    placeholder="Aggiungi una nota a questa task..."
+                    className="rounded-xl border-gray-200 bg-slate-50/60 min-h-[90px] resize-none text-[12px] leading-relaxed"
+                  />
+                </div>
+                <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setTaskDetail(null)} className="rounded-xl h-8 px-4 text-xs font-bold text-gray-500">
+                    Annulla
+                  </Button>
+                  <Button size="sm" onClick={saveTaskNota} disabled={taskDetailSaving} className="rounded-xl h-8 px-4 text-xs font-bold bg-[#94b0ab] hover:bg-[#7a948f] text-white">
+                    {taskDetailSaving ? 'Salvataggio...' : 'Salva nota'}
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Property Picker Dialog */}
       <Dialog open={isPropertyPickerOpen} onOpenChange={(open) => { setIsPropertyPickerOpen(open); if (!open) setPropertySearch(''); }}>

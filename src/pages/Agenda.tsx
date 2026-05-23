@@ -30,7 +30,7 @@ const Agenda = () => {
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [events, setEvents] = useState<Appointment[]>([]);
   const [agents, setAgents] = useState<AgentProfile[]>([]);
-  const [properties, setProperties] = useState<{ id: string; titolo: string }[]>([]);
+  const [properties, setProperties] = useState<{ id: string; titolo: string; copertina_url: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -51,7 +51,7 @@ const Agenda = () => {
       const [{ data: { user } }, { data: agentsData }, { data: propsData }] = await Promise.all([
         supabase.auth.getUser(),
         supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
-        supabase.from('immobili').select('id, titolo').neq('stato', 'Venduto').order('titolo'),
+        supabase.from('immobili').select('id, titolo, copertina_url').neq('stato', 'Venduto').order('titolo'),
       ]);
       if (user) setCurrentUserId(user.id);
       setAgents((agentsData as AgentProfile[]) || []);

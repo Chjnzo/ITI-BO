@@ -1,6 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, rectSortingStrategy, useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -61,6 +69,47 @@ const PREDEFINED_FEATURES = [
   "Domotica", "Allarme", "Piscina", "Pannelli Solari"
 ];
 
+type GalleryItem = { id: string; preview: string; file?: File };
+
+function SortablePhoto({ item, index, total, onRemove }: {
+  item: GalleryItem;
+  index: number;
+  total: number;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative aspect-square rounded-[1.5rem] overflow-hidden group">
+      {/* Drag handle — whole card */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute inset-0 z-10 cursor-grab active:cursor-grabbing"
+      />
+      <img src={item.preview} alt={`Gallery ${index}`} className="w-full h-full object-cover pointer-events-none" />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-all duration-200 pointer-events-none" />
+      {/* Position badge */}
+      <span className="absolute top-2 left-2 w-6 h-6 bg-black/50 text-white text-[10px] font-bold rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
+        {index + 1}
+      </span>
+      {/* Delete — above drag handle via z-20 */}
+      <button
+        onClick={onRemove}
+        className="absolute top-2 right-2 z-20 w-7 h-7 bg-white/90 text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
 const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked }: PropertyWizardProps) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -95,8 +144,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
 
   const [coverImage, setCoverImage] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
-  const [galleryImages, setGalleryImages] = useState<File[]>([]);
-  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
+  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
+  const galleryIdCounter = useRef(0);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const objectUrlsRef = useRef<Set<string>>(new Set());
 
@@ -155,7 +205,10 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       });
       if (!initialData.prezzo) setPrezzoSuRichiesta(true);
       if (initialData.copertina_url) setCoverPreview(initialData.copertina_url);
-      if (initialData.immagini_urls) setGalleryPreviews(initialData.immagini_urls);
+      if (initialData.immagini_urls) setGalleryItems(initialData.immagini_urls.map((url: string) => ({
+        id: `existing-${galleryIdCounter.current++}`,
+        preview: url,
+      })));
     }
   }, [initialData]);
 
@@ -285,15 +338,23 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
 
   const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setGalleryImages(prev => [...prev, ...newFiles]);
-      const newPreviews = newFiles.map(file => {
-        const url = URL.createObjectURL(file);
-        objectUrlsRef.current.add(url);
-        return url;
+      const newItems = Array.from(e.target.files).map(file => {
+        const preview = URL.createObjectURL(file);
+        objectUrlsRef.current.add(preview);
+        return { id: `new-${galleryIdCounter.current++}`, preview, file };
       });
-      setGalleryPreviews(prev => [...prev, ...newPreviews]);
+      setGalleryItems(prev => [...prev, ...newItems]);
     }
+  };
+
+  const handleGalleryDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setGalleryItems(prev => {
+      const oldIndex = prev.findIndex(item => item.id === active.id);
+      const newIndex = prev.findIndex(item => item.id === over.id);
+      return arrayMove(prev, oldIndex, newIndex);
+    });
   };
 
   const uploadToStorage = async (file: File, path: string): Promise<string> => {
@@ -323,12 +384,12 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
 
     setIsCompressing(true);
     let compressedCover: File | null = null;
-    let compressedGallery: File[] = [];
+    let compressedGallery: (File | null)[] = [];
     try {
       if (coverImage) compressedCover = await compressCopertina(coverImage);
-      if (galleryImages.length > 0) {
-        compressedGallery = await Promise.all(galleryImages.map(f => compressGalleria(f)));
-      }
+      compressedGallery = await Promise.all(
+        galleryItems.map(item => item.file ? compressGalleria(item.file) : Promise.resolve(null))
+      );
     } catch (error: any) {
       showError("Errore durante la compressione delle immagini: " + error.message);
       setIsCompressing(false);
@@ -361,18 +422,16 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
         copertinaUrl = await uploadToStorage(compressedCover, `immobili/${immobileId}/copertina_${ts}.webp`);
       }
 
-      const newGalleryUrls = await Promise.all(
-        compressedGallery.map((file, i) =>
-          uploadToStorage(file, `immobili/${immobileId}/galleria_${ts}_${i}.webp`)
-        )
+      const orderedGalleryUrls = await Promise.all(
+        galleryItems.map(async (item, i) => {
+          if (!compressedGallery[i]) return item.preview; // existing http URL
+          return uploadToStorage(compressedGallery[i] as File, `immobili/${immobileId}/galleria_${ts}_${i}.webp`);
+        })
       );
 
       const imagePayload = {
         copertina_url: copertinaUrl,
-        immagini_urls: [
-          ...galleryPreviews.filter(p => p.startsWith('http')),
-          ...newGalleryUrls,
-        ],
+        immagini_urls: orderedGalleryUrls,
       };
 
       const { error } = await supabase
@@ -775,28 +834,32 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
             </div>
 
             <div className="space-y-4">
-              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Galleria Fotografica</Label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-4">
-                {galleryPreviews.map((url, i) => (
-                  <div key={i} className="relative aspect-square rounded-[1.5rem] overflow-hidden group">
-                    <img src={url} alt={`Gallery ${i}`} className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => {
-                        setGalleryImages(prev => prev.filter((_, idx) => idx !== i));
-                        setGalleryPreviews(prev => prev.filter((_, idx) => idx !== i));
-                      }}
-                      className="absolute top-2 right-2 w-8 h-8 bg-white/90 text-red-500 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <X size={16} />
-                    </button>
+              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                Galleria Fotografica
+                {galleryItems.length > 1 && (
+                  <span className="ml-2 text-[10px] font-normal text-gray-400 normal-case tracking-normal">trascina per riordinare</span>
+                )}
+              </Label>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGalleryDragEnd}>
+                <SortableContext items={galleryItems.map(i => i.id)} strategy={rectSortingStrategy}>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {galleryItems.map((item, i) => (
+                      <SortablePhoto
+                        key={item.id}
+                        item={item}
+                        index={i}
+                        total={galleryItems.length}
+                        onRemove={() => setGalleryItems(prev => prev.filter(it => it.id !== item.id))}
+                      />
+                    ))}
+                    <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-[1.5rem] hover:border-[#94b0ab] transition-all flex flex-col items-center justify-center text-gray-400 cursor-pointer group">
+                      <input type="file" multiple accept="image/*" onChange={handleGalleryChange} className="absolute inset-0 opacity-0 cursor-pointer" />
+                      <Plus size={24} className="group-hover:scale-110 transition-transform" />
+                      <span className="text-[10px] font-bold uppercase">Aggiungi</span>
+                    </div>
                   </div>
-                ))}
-                <div className="relative aspect-square border-2 border-dashed border-gray-200 rounded-[1.5rem] hover:border-[#94b0ab] transition-all flex flex-col items-center justify-center text-gray-400 cursor-pointer group">
-                  <input type="file" multiple accept="image/*" onChange={handleGalleryChange} className="absolute inset-0 opacity-0 cursor-pointer" />
-                  <Plus size={24} className="group-hover:scale-110 transition-transform" />
-                  <span className="text-[10px] font-bold uppercase">Aggiungi</span>
-                </div>
-              </div>
+                </SortableContext>
+              </DndContext>
               {isCompressing && (
                 <p className="text-sm text-[#94b0ab] font-medium mt-2 animate-pulse">
                   Ottimizzazione foto in corso...

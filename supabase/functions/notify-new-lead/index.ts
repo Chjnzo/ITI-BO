@@ -151,7 +151,7 @@ Deno.serve(async (req: Request) => {
     },
     body: JSON.stringify({
       from: "noreply@iltuoimmobiliare.it",
-      to: ["info@iltuoimmobiliare.it", "marcoferrari.wk@gmail.com"],
+      to: ["info@iltuoimmobiliare.it"],
       subject,
       html: buildHtmlBody(data),
     }),

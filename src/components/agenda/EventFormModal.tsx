@@ -112,6 +112,7 @@ const getWhatsAppUrl = (phone: string): string => {
 interface Property {
   id: string;
   titolo: string;
+  copertina_url?: string | null;
 }
 
 interface EventFormModalProps {
@@ -421,7 +422,7 @@ const EventFormModal = ({
             <Combobox
               items={[
                 { id: 'none', label: 'Nessuno' },
-                ...properties.map(p => ({ id: p.id, label: p.titolo })),
+                ...properties.map(p => ({ id: p.id, label: p.titolo, image: p.copertina_url ?? undefined })),
               ]}
               value={immobileId}
               onSelect={setImmobileId}

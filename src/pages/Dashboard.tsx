@@ -10,7 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
-import TaskModal, { TIPOLOGIA_CONFIG } from '@/components/TaskModal';
+import TaskModal from '@/components/TaskModal';
 import ProfileSettingsSheet from '@/components/ProfileSettingsSheet';
 import { showSuccess } from '@/utils/toast';
 
@@ -323,19 +323,13 @@ const Dashboard = () => {
             ) : (
               <div className="space-y-3">
                 {pendingTasks.map(task => {
-                  const cfg = task.tipologia ? TIPOLOGIA_CONFIG[task.tipologia] : null;
-                  const Icon = cfg?.icon;
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
+                  const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}` : null;
                   return (
                     <div key={task.id} className="flex items-center gap-3">
-                      {cfg && Icon && (
-                        <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center shrink-0', cfg.bg)}>
-                          <Icon size={14} className={cfg.color} />
-                        </div>
-                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 truncate">
-                          {task.titolo || (task.leads ? `${task.leads.nome} ${task.leads.cognome}` : task.tipologia)}
+                          {task.titolo || leadName || 'Task'}
                         </p>
                         {!isToday && (
                           <p className="text-xs text-gray-400">

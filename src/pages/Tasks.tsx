@@ -4,15 +4,18 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import { showError } from '@/utils/toast';
+import { showError, showSuccess } from '@/utils/toast';
 import { format, parseISO, isToday, isYesterday, isTomorrow, subDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Plus, Search, Check, CalendarIcon, User, StickyNote,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Phone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
@@ -26,8 +29,8 @@ interface Task {
   id: string;
   lead_id: string | null;
   agente_id: string;
-  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento' | null;
   titolo: string | null;
+  telefono: string | null;
   nota: string | null;
   data: string;
   ora: string | null;
@@ -61,29 +64,27 @@ interface TaskCardProps {
   onToggleComplete: (task: Task) => void;
   onOpenLead: (task: Task) => void;
   onUpdateDate: (taskId: string, newDate: string) => void;
+  onOpenDetail: (task: Task) => void;
 }
 
-const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate }: TaskCardProps) => {
-  const [noteExpanded, setNoteExpanded] = useState(false);
+const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate, onOpenDetail }: TaskCardProps) => {
   const [datePicker, setDatePicker] = useState(false);
 
   const isComplete = task.stato === 'Completata';
-
-  const leadName = task.leads
-    ? `${task.leads.nome} ${task.leads.cognome}`.trim()
-    : null;
+  const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}`.trim() : null;
 
   return (
     <div
       className={cn(
-        'flex items-start gap-3 px-5 py-4 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group',
+        'flex items-start gap-3 px-5 py-4 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group cursor-pointer',
         isComplete ? 'border-l-emerald-300 bg-slate-50/80' : 'border-l-transparent bg-white',
       )}
+      onClick={() => onOpenDetail(task)}
     >
       {/* Checkbox */}
       <button
         type="button"
-        onClick={() => onToggleComplete(task)}
+        onClick={(e) => { e.stopPropagation(); onToggleComplete(task); }}
         className={cn(
           'w-6 h-6 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
           isComplete ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-[#94b0ab]',
@@ -92,19 +93,11 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
         {isComplete && <Check size={13} className="text-white" />}
       </button>
 
-
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p
-          className={cn(
-            'text-base font-semibold truncate cursor-pointer',
-            isComplete ? 'line-through text-gray-400' : 'text-gray-800',
-          )}
-          onClick={() => task.lead_id && onOpenLead(task)}
-        >
+        <p className={cn('text-base font-semibold truncate', isComplete ? 'line-through text-gray-400' : 'text-gray-800')}>
           {task.titolo || leadName || 'Task senza titolo'}
         </p>
-
         <div className="flex items-center gap-2 flex-wrap mt-0.5">
           {leadName && task.titolo && (
             <span className="text-sm text-gray-500 font-medium truncate">{leadName}</span>
@@ -116,6 +109,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
             <PopoverTrigger asChild>
               <button
                 type="button"
+                onClick={(e) => e.stopPropagation()}
                 className="flex items-center gap-1 text-sm text-gray-400 hover:text-[#94b0ab] transition-colors"
               >
                 <CalendarIcon size={12} className="shrink-0" />
@@ -127,10 +121,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
                 mode="single"
                 selected={parseISO(task.data)}
                 onSelect={(date) => {
-                  if (date) {
-                    onUpdateDate(task.id, format(date, 'yyyy-MM-dd'));
-                    setDatePicker(false);
-                  }
+                  if (date) { onUpdateDate(task.id, format(date, 'yyyy-MM-dd')); setDatePicker(false); }
                 }}
                 initialFocus
                 locale={it}
@@ -138,11 +129,14 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
             </PopoverContent>
           </Popover>
         </div>
-
-        {noteExpanded && task.nota && (
-          <p className="text-sm text-gray-500 mt-1.5 leading-relaxed bg-gray-50 rounded-lg px-3 py-2 break-words whitespace-pre-wrap">
-            {task.nota}
-          </p>
+        {task.telefono && (
+          <div className="flex items-center gap-1 mt-1">
+            <Phone size={11} className="text-[#94b0ab] shrink-0" />
+            <span className="text-sm font-semibold text-[#94b0ab]">{task.telefono}</span>
+          </div>
+        )}
+        {task.nota && !task.telefono && (
+          <p className="text-xs text-gray-400 mt-1 truncate">{task.nota}</p>
         )}
       </div>
 
@@ -152,7 +146,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
           <button
             type="button"
             title="Apri scheda lead"
-            onClick={() => onOpenLead(task)}
+            onClick={(e) => { e.stopPropagation(); onOpenLead(task); }}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
           >
             <User size={15} />
@@ -161,14 +155,9 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate 
         {task.nota && (
           <button
             type="button"
-            title="Mostra nota"
-            onClick={() => setNoteExpanded(v => !v)}
-            className={cn(
-              'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
-              noteExpanded
-                ? 'text-[#94b0ab] bg-[#94b0ab]/10'
-                : 'text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10',
-            )}
+            title="Modifica nota"
+            onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
           >
             <StickyNote size={15} />
           </button>
@@ -196,6 +185,11 @@ const Tasks = () => {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [taskDetail, setTaskDetail] = useState<Task | null>(null);
+  const [taskDetailNota, setTaskDetailNota] = useState('');
+  const [taskDetailTitolo, setTaskDetailTitolo] = useState('');
+  const [taskDetailTelefono, setTaskDetailTelefono] = useState('');
+  const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
   // Fetch current user + agents once on mount
   useEffect(() => {
@@ -215,7 +209,7 @@ const Tasks = () => {
     const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, titolo, lead_id, agente_id, tipologia, nota, data, ora, stato, leads(id, nome, cognome)')
+      .select('id, titolo, telefono, lead_id, agente_id, nota, data, ora, stato, leads(id, nome, cognome)')
       .or(`stato.eq.Da fare,and(stato.eq.Completata,data.gte.${thirtyDaysAgo})`)
       .order('data', { ascending: true })
       .order('ora', { ascending: true, nullsFirst: true });
@@ -246,6 +240,33 @@ const Tasks = () => {
     if (task.leads?.id) {
       navigate('/leads', { state: { openLeadId: task.leads.id } });
     }
+  };
+
+  const openTaskDetail = (task: Task) => {
+    setTaskDetail(task);
+    setTaskDetailNota(task.nota || '');
+    setTaskDetailTitolo(task.titolo || '');
+    setTaskDetailTelefono(task.telefono || '');
+  };
+
+  const saveTaskDetail = async () => {
+    if (!taskDetail) return;
+    setTaskDetailSaving(true);
+    const { error } = await supabase.from('tasks')
+      .update({ nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null })
+      .eq('id', taskDetail.id);
+    if (error) {
+      showError('Errore nel salvataggio');
+    } else {
+      setTasks(prev => prev.map(t =>
+        t.id === taskDetail.id
+          ? { ...t, nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null }
+          : t
+      ));
+      showSuccess('Task aggiornata');
+      setTaskDetail(null);
+    }
+    setTaskDetailSaving(false);
   };
 
   // ── Derived data ─────────────────────────────────────────────────────────────
@@ -406,6 +427,7 @@ const Tasks = () => {
                               task={task}
                               onToggleComplete={toggleComplete}
                               onOpenLead={openLeadProfile}
+                              onOpenDetail={openTaskDetail}
                               onUpdateDate={updateTaskDate}
                             />
                           ))}
@@ -437,6 +459,7 @@ const Tasks = () => {
                             task={task}
                             onToggleComplete={toggleComplete}
                             onOpenLead={openLeadProfile}
+                              onOpenDetail={openTaskDetail}
                             onUpdateDate={updateTaskDate}
                           />
                         ))}
@@ -497,6 +520,7 @@ const Tasks = () => {
                                   task={task}
                                   onToggleComplete={toggleComplete}
                                   onOpenLead={openLeadProfile}
+                              onOpenDetail={openTaskDetail}
                                   onUpdateDate={updateTaskDate}
                                 />
                               ))}
@@ -519,6 +543,71 @@ const Tasks = () => {
         onClose={() => setIsTaskModalOpen(false)}
         onSaved={() => { setIsTaskModalOpen(false); fetchTasks(); }}
       />
+
+      {/* Task Detail Modal */}
+      <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
+        <DialogContent className="sm:max-w-sm rounded-[1.5rem] border-none shadow-2xl p-0 overflow-hidden gap-0">
+          {taskDetail && (() => {
+            const leadName = taskDetail.leads ? `${taskDetail.leads.nome} ${taskDetail.leads.cognome}`.trim() : null;
+            return (
+              <>
+                {/* Header */}
+                <div className="px-5 py-4 flex items-center gap-3 bg-[#94b0ab]/10 border-b border-[#94b0ab]/15">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-[#94b0ab] mb-0.5">Task</p>
+                    <input
+                      value={taskDetailTitolo}
+                      onChange={(e) => setTaskDetailTitolo(e.target.value)}
+                      placeholder={leadName || 'Titolo task...'}
+                      className="w-full bg-transparent text-sm font-bold text-gray-800 placeholder-gray-400 outline-none border-b border-transparent focus:border-[#94b0ab]/40 transition-colors pb-0.5"
+                    />
+                    {leadName && (
+                      <p className="text-[11px] text-gray-500 truncate mt-0.5">{leadName}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-[11px] font-bold text-gray-600">{format(parseISO(taskDetail.data), 'd MMM', { locale: it })}</p>
+                    {taskDetail.ora && <p className="text-[11px] text-gray-400">{taskDetail.ora.slice(0, 5)}</p>}
+                  </div>
+                </div>
+                {/* Body */}
+                <div className="px-5 py-4 space-y-4 bg-white">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Numero di cellulare</Label>
+                    <div className="flex items-center gap-2 h-10 px-3 rounded-xl border border-gray-200 bg-slate-50/60 focus-within:border-[#94b0ab] transition-colors">
+                      <Phone size={13} className="text-[#94b0ab] shrink-0" />
+                      <input
+                        type="tel"
+                        value={taskDetailTelefono}
+                        onChange={(e) => setTaskDetailTelefono(e.target.value)}
+                        placeholder="+39 333 1234567"
+                        className="flex-1 bg-transparent text-[13px] outline-none text-gray-800 placeholder-gray-400"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Nota</Label>
+                    <Textarea
+                      value={taskDetailNota}
+                      onChange={(e) => setTaskDetailNota(e.target.value)}
+                      placeholder="Aggiungi una nota a questa task..."
+                      className="rounded-xl border-gray-200 bg-slate-50/60 min-h-[90px] resize-none text-[13px] leading-relaxed"
+                    />
+                  </div>
+                </div>
+                <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setTaskDetail(null)} className="rounded-xl h-8 px-4 text-xs font-bold text-gray-500">
+                    Annulla
+                  </Button>
+                  <Button size="sm" onClick={saveTaskDetail} disabled={taskDetailSaving} className="rounded-xl h-8 px-4 text-xs font-bold bg-[#94b0ab] hover:bg-[#7a948f] text-white">
+                    {taskDetailSaving ? 'Salvataggio...' : 'Salva'}
+                  </Button>
+                </div>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 };

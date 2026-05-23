@@ -8,6 +8,7 @@ export interface ComboboxItem {
   id: string;
   label: string;
   sublabel?: string;
+  image?: string;
 }
 
 interface ComboboxProps {
@@ -156,7 +157,7 @@ export const Combobox = ({
                   key={item.id}
                   onMouseDown={(e) => { e.preventDefault(); handleSelect(item.id); }}
                   className={cn(
-                    'flex items-start gap-2 px-3 py-2 cursor-pointer select-none',
+                    'flex items-center gap-2.5 px-3 py-2 cursor-pointer select-none',
                     'hover:bg-slate-50 transition-colors',
                     value === item.id && 'bg-[#94b0ab]/10',
                   )}
@@ -164,14 +165,21 @@ export const Combobox = ({
                   <Check
                     size={14}
                     className={cn(
-                      'mt-0.5 shrink-0 text-[#94b0ab]',
+                      'shrink-0 text-[#94b0ab]',
                       value === item.id ? 'opacity-100' : 'opacity-0',
                     )}
                   />
-                  <span className="flex flex-col">
-                    <span className="text-sm font-medium text-gray-800">{item.label}</span>
+                  {item.image && (
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="w-10 h-10 rounded-lg object-cover shrink-0 bg-gray-100"
+                    />
+                  )}
+                  <span className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-gray-800 truncate">{item.label}</span>
                     {item.sublabel && (
-                      <span className="text-xs text-gray-400">{item.sublabel}</span>
+                      <span className="text-xs text-gray-400 truncate">{item.sublabel}</span>
                     )}
                   </span>
                 </li>

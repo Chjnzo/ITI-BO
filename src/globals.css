@@ -3,6 +3,18 @@
 @tailwind utilities;
 
 @layer base {
+  body {
+    text-transform: capitalize;
+  }
+
+  /* Preserve lowercase for emails, URLs, passwords and code */
+  input[type="email"],
+  input[type="url"],
+  input[type="password"],
+  input[type="search"] {
+    text-transform: none;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;

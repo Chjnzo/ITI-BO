@@ -147,21 +147,21 @@ const DayColumn = memo(({
   const laid = layoutEvents(events);
 
   return (
-    <div className="flex-1 border-l border-gray-100 min-w-0 flex flex-col">
+    <div className="flex-1 border-l border-gray-200 min-w-0 flex flex-col">
       {/* Sticky day header */}
       <div
         className={cn(
-          'sticky top-0 bg-white z-10 flex flex-col items-center justify-center border-b border-gray-50 shrink-0',
+          'sticky top-0 bg-white z-10 flex flex-col items-center justify-center border-b border-gray-200 shrink-0',
         )}
         style={{ height: DAY_HEADER_HEIGHT }}
       >
-        <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
           {format(day, 'EEE', { locale: it })}
         </span>
         <span
           className={cn(
-            'text-xl font-black leading-none mt-0.5',
-            today ? 'text-[#94b0ab]' : 'text-gray-900',
+            'text-xl font-bold leading-none mt-0.5',
+            today ? 'text-[#94b0ab]' : 'text-gray-800',
           )}
         >
           {format(day, 'd')}
@@ -184,12 +184,15 @@ const DayColumn = memo(({
           {HOURS.map(h => (
             <React.Fragment key={h}>
               <div
-                className="absolute left-0 right-0 border-t border-gray-100"
+                className="absolute left-0 right-0 border-t border-gray-200"
                 style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
               />
               <div
-                className="absolute left-0 right-0 border-t border-gray-50"
-                style={{ top: (h - DAY_START) * HOUR_HEIGHT + HOUR_HEIGHT / 2 }}
+                className="absolute left-0 right-0"
+                style={{
+                  top: (h - DAY_START) * HOUR_HEIGHT + HOUR_HEIGHT / 2,
+                  borderTop: '1px dashed #e5e7eb',
+                }}
               />
             </React.Fragment>
           ))}
@@ -228,14 +231,14 @@ const DayColumn = memo(({
                 }}
               >
                 <p
-                  className="text-[12px] font-extrabold leading-tight truncate tracking-tight"
+                  className="text-[11.5px] font-bold leading-tight truncate"
                   style={{ color: colors.text }}
                 >
                   {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
                 </p>
                 {height > 42 && (
                   <p
-                    className="text-[11px] leading-tight truncate font-semibold"
+                    className="text-[11px] leading-tight truncate font-medium opacity-90"
                     style={{ color: colors.text }}
                   >
                     {event.leads
@@ -307,10 +310,10 @@ const WeeklyPlanningView = ({
   }, [events, hiddenAgentIds]);
 
   return (
-    <div className="h-full overflow-hidden rounded-[2rem] border border-gray-100 shadow-sm bg-white flex flex-col">
+    <div className="h-full overflow-hidden rounded-[2rem] border border-gray-200 shadow-sm bg-white flex flex-col">
 
       {/* Agent visibility pills — sticky inside the card */}
-      <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-gray-100">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-gray-200">
         {visibleAgents.map(agent => {
           const color = agentColorMap.get(agent.id) ?? '#94b0ab';
           const hidden = hiddenAgentIds.has(agent.id);
@@ -344,7 +347,7 @@ const WeeklyPlanningView = ({
                 className="absolute left-0 w-full flex items-start justify-end pr-1.5"
                 style={{ top: DAY_HEADER_HEIGHT + TIMELINE_TOP_PADDING + (h - DAY_START) * HOUR_HEIGHT - 6 }}
               >
-                <span className="text-sm text-gray-800 font-bold leading-none select-none">
+                <span className="text-[12px] text-gray-500 font-semibold leading-none select-none tabular-nums">
                   {String(h).padStart(2, '0')}
                 </span>
               </div>
