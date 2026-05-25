@@ -187,24 +187,20 @@ const Leads = () => {
       if (searchQuery.trim()) {
         const sq = searchQuery.trim();
         const phonePattern = sq.replace(/[\s\-]/g, '');
-        const isPhoneSearch = /^\d[\d\s\-]*$/.test(sq) && phonePattern.length >= 4;
-        if (isPhoneSearch) {
-          // Postgres ilike can't strip internal spaces, so fetch all and rely on
-          // client-side normalization (which compares digit-stripped strings).
-          query = (query as any).limit(2000);
-        } else {
-          const clauses = [
-            `nome.ilike.%${sq}%`,
-            `cognome.ilike.%${sq}%`,
-            `email.ilike.%${sq}%`,
-            `telefono.ilike.%${sq}%`,
-            `note_interne.ilike.%${sq}%`,
-            `via_immobile.ilike.%${sq}%`,
-            `zona_venditore.ilike.%${sq}%`,
-          ];
-          if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
-          query = (query as any).or(clauses.join(','));
-        }
+        // Always filter server-side so the result set stays small regardless of
+        // total lead count. For phone searches include both the typed form and
+        // the digit-stripped form so spacing differences don't cause misses.
+        const clauses = [
+          `nome.ilike.%${sq}%`,
+          `cognome.ilike.%${sq}%`,
+          `email.ilike.%${sq}%`,
+          `telefono.ilike.%${sq}%`,
+          `note_interne.ilike.%${sq}%`,
+          `via_immobile.ilike.%${sq}%`,
+          `zona_venditore.ilike.%${sq}%`,
+        ];
+        if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
+        query = (query as any).or(clauses.join(','));
       } else {
         query = (query as any).limit(500);
       }
