@@ -35,6 +35,7 @@ interface Task {
   data: string;
   ora: string | null;
   stato: 'Da fare' | 'Completata';
+  colore: string | null;
   leads?: { id: string; nome: string; cognome: string } | null;
 }
 
@@ -68,17 +69,18 @@ interface TaskCardProps {
 }
 
 const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate, onOpenDetail }: TaskCardProps) => {
-  const [datePicker, setDatePicker] = useState(false);
-
   const isComplete = task.stato === 'Completata';
   const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}`.trim() : null;
+
+  const borderColor = isComplete ? '#6ee7b7' : (task.colore ?? 'transparent');
 
   return (
     <div
       className={cn(
-        'flex items-start gap-3 px-5 py-4 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group cursor-pointer',
-        isComplete ? 'border-l-emerald-300 bg-slate-50/80' : 'border-l-transparent bg-white',
+        'flex items-center gap-2.5 px-4 py-2 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group cursor-pointer',
+        isComplete ? 'bg-slate-50/80' : 'bg-white',
       )}
+      style={{ borderLeftColor: borderColor }}
       onClick={() => onOpenDetail(task)}
     >
       {/* Checkbox */}
@@ -86,58 +88,32 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
         type="button"
         onClick={(e) => { e.stopPropagation(); onToggleComplete(task); }}
         className={cn(
-          'w-6 h-6 mt-0.5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
+          'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all',
           isComplete ? 'bg-emerald-500 border-emerald-500' : 'border-gray-300 hover:border-[#94b0ab]',
         )}
       >
-        {isComplete && <Check size={13} className="text-white" />}
+        {isComplete && <Check size={11} className="text-white" />}
       </button>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className={cn('text-base font-semibold truncate', isComplete ? 'line-through text-gray-400' : 'text-gray-800')}>
+        <p className={cn('text-sm font-semibold truncate', isComplete ? 'line-through text-gray-400' : 'text-gray-800')}>
           {task.titolo || leadName || 'Task senza titolo'}
         </p>
-        <div className="flex items-center gap-2 flex-wrap mt-0.5">
+        <div className="flex items-center gap-2 flex-wrap">
           {leadName && task.titolo && (
-            <span className="text-sm text-gray-500 font-medium truncate">{leadName}</span>
+            <span className="text-xs text-gray-500 truncate">{leadName}</span>
           )}
           {task.ora && (
-            <span className="text-sm text-gray-400 font-medium">{task.ora.slice(0, 5)}</span>
+            <span className="text-xs text-gray-400">{task.ora.slice(0, 5)}</span>
           )}
-          <Popover open={datePicker} onOpenChange={setDatePicker}>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1 text-sm text-gray-400 hover:text-[#94b0ab] transition-colors"
-              >
-                <CalendarIcon size={12} className="shrink-0" />
-                {format(parseISO(task.data), 'd MMM', { locale: it })}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
-              <Calendar
-                mode="single"
-                selected={parseISO(task.data)}
-                onSelect={(date) => {
-                  if (date) { onUpdateDate(task.id, format(date, 'yyyy-MM-dd')); setDatePicker(false); }
-                }}
-                initialFocus
-                locale={it}
-              />
-            </PopoverContent>
-          </Popover>
+          {task.telefono && (
+            <span className="text-xs font-semibold text-[#94b0ab]">{task.telefono}</span>
+          )}
+          {task.nota && (
+            <span className="text-xs text-gray-400 truncate max-w-[180px]">{task.nota}</span>
+          )}
         </div>
-        {task.telefono && (
-          <div className="flex items-center gap-1 mt-1">
-            <Phone size={11} className="text-[#94b0ab] shrink-0" />
-            <span className="text-sm font-semibold text-[#94b0ab]">{task.telefono}</span>
-          </div>
-        )}
-        {task.nota && !task.telefono && (
-          <p className="text-xs text-gray-400 mt-1 truncate">{task.nota}</p>
-        )}
       </div>
 
       {/* Quick actions */}
@@ -147,9 +123,9 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
             type="button"
             title="Apri scheda lead"
             onClick={(e) => { e.stopPropagation(); onOpenLead(task); }}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
           >
-            <User size={15} />
+            <User size={13} />
           </button>
         )}
         {task.nota && (
@@ -159,7 +135,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
             onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
           >
-            <StickyNote size={15} />
+            <StickyNote size={13} />
           </button>
         )}
       </div>
@@ -209,7 +185,7 @@ const Tasks = () => {
     const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, titolo, telefono, lead_id, agente_id, nota, data, ora, stato, leads(id, nome, cognome)')
+      .select('id, titolo, telefono, lead_id, agente_id, nota, data, ora, stato, colore, leads(id, nome, cognome)')
       .or(`stato.eq.Da fare,and(stato.eq.Completata,data.gte.${thirtyDaysAgo})`)
       .order('data', { ascending: true })
       .order('ora', { ascending: true, nullsFirst: true });
@@ -396,32 +372,35 @@ const Tasks = () => {
 
           {/* ── PERSONALE ─────────────────────────────────────────────────── */}
           {viewMode === 'personale' && (
-            <div className="absolute inset-0 overflow-y-auto pb-8">
-              <div className="max-w-4xl mx-auto w-full space-y-5">
+            <div className="absolute inset-0 overflow-y-auto pb-10">
+              <div className="max-w-2xl mx-auto w-full pt-2 space-y-6">
                 {loading ? (
-                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm py-20 text-center text-gray-300 animate-pulse">
-                    Caricamento...
-                  </div>
+                  <div className="py-20 text-center text-gray-300 animate-pulse">Caricamento...</div>
                 ) : sortedDates.length === 0 ? (
-                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm py-20 text-center text-gray-300 italic">
-                    Nessuna task in programma
-                  </div>
+                  <div className="py-20 text-center text-gray-300 italic">Nessuna task in programma</div>
                 ) : (
-                  <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-                    {sortedDates.map((dateStr, idx) => (
-                      <div key={dateStr} className={idx > 0 ? 'border-t border-gray-100' : ''}>
-                        <div className="flex items-center gap-3 px-5 py-3 bg-gray-50/60">
-                          <span className="text-sm font-black uppercase tracking-widest text-gray-600">
-                            {formatDateHeader(dateStr)}
+                  sortedDates.map((dateStr) => {
+                    const label = formatDateHeader(dateStr);
+                    const isToday = label === 'Oggi';
+                    const tasks = personalByDate.get(dateStr)!;
+                    return (
+                      <div key={dateStr} className="space-y-1.5">
+                        {/* Date header */}
+                        <div className="flex items-baseline gap-2.5 px-1 mb-2">
+                          <span className={cn(
+                            'text-xs font-black uppercase tracking-widest',
+                            isToday ? 'text-[#94b0ab]' : 'text-gray-400'
+                          )}>
+                            {label}
                           </span>
-                          <span className="text-sm text-gray-400 font-medium">
-                            {format(parseISO(dateStr), 'd MMM yyyy', { locale: it })}
+                          <span className="text-xs text-gray-300 font-medium">
+                            {format(parseISO(dateStr), 'd MMMM', { locale: it })}
                           </span>
-                          <div className="flex-1 h-px bg-gray-100" />
-                          <span className="text-xs text-gray-300">{personalByDate.get(dateStr)!.length}</span>
+                          <span className="ml-auto text-xs text-gray-300 font-medium tabular-nums">{tasks.length}</span>
                         </div>
-                        <div className="divide-y divide-gray-50">
-                          {personalByDate.get(dateStr)!.map(task => (
+                        {/* Task cards */}
+                        <div className="bg-white border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+                          {tasks.map(task => (
                             <TaskCard
                               key={task.id}
                               task={task}
@@ -433,33 +412,33 @@ const Tasks = () => {
                           ))}
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })
                 )}
 
-                {/* Completed (personal only) */}
+                {/* Completed */}
                 {completedTasks.length > 0 && (
-                  <div>
+                  <div className="pt-2">
                     <button
                       type="button"
                       onClick={() => setCompletedExpanded(v => !v)}
-                      className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl text-sm font-bold text-gray-500 hover:text-gray-700 hover:bg-slate-100 transition-all mb-3 border border-slate-200"
+                      className="flex items-center gap-2 px-1 mb-2 text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-gray-500 transition-colors"
                     >
-                      {completedExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                      <span>Task completate</span>
-                      <span className="bg-slate-200 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                      {completedExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                      <span>Completate</span>
+                      <span className="bg-gray-100 text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded-full ml-1">
                         {completedTasks.length}
                       </span>
                     </button>
                     {completedExpanded && (
-                      <div className="bg-slate-50/50 rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
+                      <div className="bg-white border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
                         {completedTasks.map(task => (
                           <TaskCard
                             key={task.id}
                             task={task}
                             onToggleComplete={toggleComplete}
                             onOpenLead={openLeadProfile}
-                              onOpenDetail={openTaskDetail}
+                            onOpenDetail={openTaskDetail}
                             onUpdateDate={updateTaskDate}
                           />
                         ))}
@@ -546,7 +525,7 @@ const Tasks = () => {
 
       {/* Task Detail Modal */}
       <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-[1.5rem] border-none shadow-2xl p-0 overflow-hidden gap-0">
+        <DialogContent className="max-w-xl w-full border-none shadow-2xl p-0 overflow-hidden gap-0">
           {taskDetail && (() => {
             const leadName = taskDetail.leads ? `${taskDetail.leads.nome} ${taskDetail.leads.cognome}`.trim() : null;
             return (

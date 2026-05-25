@@ -607,7 +607,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
-        className="max-w-3xl w-full max-h-[90vh] flex flex-col rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden"
+        className="max-w-3xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden"
         aria-describedby={undefined}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}

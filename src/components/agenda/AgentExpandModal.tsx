@@ -386,7 +386,7 @@ const AgentExpandModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden flex flex-col [&>button]:hidden">
+        <DialogContent className="max-w-5xl w-[95vw] h-[90vh] border-none shadow-2xl p-0 overflow-hidden flex flex-col [&>button]:hidden">
           {/* Header */}
           <div className="flex items-center gap-4 px-8 pt-6 pb-4 border-b border-gray-100 shrink-0">
             {/* Agent avatar */}

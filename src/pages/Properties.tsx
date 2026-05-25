@@ -374,7 +374,7 @@ const Properties = () => {
 
       <Dialog open={isWizardOpen} onOpenChange={setIsWizardOpen}>
         <DialogContent
-          className="max-w-5xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem]"
+          className="max-w-5xl h-[85vh] p-0 overflow-hidden border-none shadow-2xl"
           hideDefaultClose
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
@@ -394,19 +394,16 @@ const Properties = () => {
         </SheetContent>
       </Sheet>
 
-      <Sheet open={!!unitaProperty} onOpenChange={(open) => !open && setUnitaProperty(null)}>
-        <SheetContent
-          side="right"
-          className="p-0 w-full sm:max-w-[720px] flex flex-col overflow-hidden [&>button]:hidden"
-        >
+      <Dialog open={!!unitaProperty} onOpenChange={(open) => !open && setUnitaProperty(null)}>
+        <DialogContent className="max-w-4xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden" hideDefaultClose>
           {unitaProperty && (
             <UnitaSheet property={unitaProperty} onClose={() => setUnitaProperty(null)} />
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+        <AlertDialogContent className="border-none shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-500 font-medium">L'operazione è immediata e irreversibile.</AlertDialogDescription>

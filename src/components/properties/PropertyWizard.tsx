@@ -215,7 +215,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   const isNC = formData.locali === 'Nuova costruzione';
 
   const buildPayload = () => {
-    const slug = formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+    const baseSlug = formData.titolo.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const slug = `${baseSlug}-${suffix}`;
     return {
       titolo: formData.titolo,
       prezzo: prezzoSuRichiesta ? null : (parseFloat(formData.prezzo) || null),

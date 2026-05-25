@@ -325,7 +325,7 @@ const EventFormModal = ({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
-      <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+      <DialogContent className="max-w-3xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden">
         <DialogHeader className="px-8 pt-8 pb-4 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-xl font-bold text-gray-900">
@@ -340,7 +340,7 @@ const EventFormModal = ({
           </div>
         </DialogHeader>
 
-        <div className="px-8 py-6 space-y-5 overflow-y-auto max-h-[60vh]">
+        <div className="flex-1 overflow-y-auto px-8 py-6 space-y-5">
 
           {/* Tipologia */}
           <div className="space-y-2">

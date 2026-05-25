@@ -29,6 +29,14 @@ interface TaskModalProps {
   defaultLeadName?: string;
 }
 
+const TASK_COLORS = [
+  { id: 'red',    hex: '#ef4444', label: 'Rosso' },
+  { id: 'orange', hex: '#f97316', label: 'Arancione' },
+  { id: 'yellow', hex: '#eab308', label: 'Giallo' },
+  { id: 'teal',   hex: '#14b8a6', label: 'Verde acqua' },
+  { id: 'violet', hex: '#8b5cf6', label: 'Viola' },
+];
+
 const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -38,6 +46,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   const [ora, setOra] = useState('');
   const [nota, setNota] = useState('');
   const [agenteId, setAgenteId] = useState('');
+  const [colore, setColore] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
   const [teamMembers, setTeamMembers] = useState<{ id: string; nome_completo: string | null }[]>([]);
@@ -61,6 +70,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     setSelectedDate(new Date());
     setOra('');
     setNota('');
+    setColore(null);
     if (defaultLeadId) {
       setLeadId(defaultLeadId);
       setLeadItems(defaultLeadName ? [{ id: defaultLeadId, label: defaultLeadName }] : []);
@@ -116,6 +126,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora: ora || null,
       stato: 'Da fare',
+      colore: colore || null,
     });
     setIsSaving(false);
     if (error) {
@@ -130,12 +141,12 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md rounded-[2.5rem] p-0 overflow-hidden">
+      <DialogContent className="max-w-3xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden">
         <DialogHeader className="px-8 pt-8 pb-5 border-b border-slate-100">
           <DialogTitle className="text-xl font-bold text-gray-900">Nuova Task</DialogTitle>
         </DialogHeader>
 
-        <div className="px-8 py-7 space-y-6">
+        <div className="flex-1 overflow-y-auto px-8 py-7 space-y-6">
           {/* Titolo task */}
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Titolo task *</Label>
@@ -147,16 +158,35 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             />
           </div>
 
-          {/* Telefono */}
+          {/* Colore */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Numero di cellulare</Label>
-            <Input
-              type="tel"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              placeholder="+39 333 1234567"
-              className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
-            />
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Colore</Label>
+            <div className="flex items-center gap-2">
+              {TASK_COLORS.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  title={c.label}
+                  onClick={() => setColore(colore === c.hex ? null : c.hex)}
+                  className="w-8 h-8 rounded-full transition-all"
+                  style={{
+                    backgroundColor: c.hex,
+                    outline: colore === c.hex ? `3px solid ${c.hex}` : '3px solid transparent',
+                    outlineOffset: '2px',
+                    transform: colore === c.hex ? 'scale(1.15)' : 'scale(1)',
+                  }}
+                />
+              ))}
+              {colore && (
+                <button
+                  type="button"
+                  onClick={() => setColore(null)}
+                  className="ml-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  Rimuovi
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Agente assegnato */}
@@ -187,7 +217,13 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               <Combobox
                 items={leadItems}
                 value={leadId}
-                onSelect={setLeadId}
+                onSelect={(id) => {
+                  setLeadId(id);
+                  if (!telefono.trim()) {
+                    const found = leadItems.find(i => i.id === id);
+                    if (found?.sublabel) setTelefono(found.sublabel);
+                  }
+                }}
                 onSearch={searchLeads}
                 placeholder="Cerca lead per nome o telefono... (opzionale)"
                 searchPlaceholder="Nome, cognome o telefono..."
@@ -195,6 +231,18 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                 className="h-11"
               />
             )}
+          </div>
+
+          {/* Telefono */}
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Numero di cellulare</Label>
+            <Input
+              type="tel"
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              placeholder="+39 333 1234567"
+              className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
+            />
           </div>
 
           {/* Data + Ora */}

@@ -1139,7 +1139,7 @@ const Leads = () => {
 
       {/* Unified Lead Dialog (create + edit) */}
       <Dialog open={!!selectedLead} onOpenChange={(open) => { if (!open) { setSelectedLead(null); setZoneInput(''); } }}>
-        <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl rounded-[2rem]">
+        <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
           {selectedLead && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
 
@@ -1999,7 +1999,7 @@ const Leads = () => {
 
       {/* Task Detail Mini Modal */}
       <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
-        <DialogContent className="sm:max-w-sm rounded-[1.5rem] border-none shadow-2xl p-0 overflow-hidden gap-0">
+        <DialogContent className="sm:max-w-sm border-none shadow-2xl p-0 overflow-hidden gap-0">
           {taskDetail && (() => {
             const STATO_BADGE: Record<string, string> = {
               'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
@@ -2050,7 +2050,7 @@ const Leads = () => {
 
       {/* Property Picker Dialog */}
       <Dialog open={isPropertyPickerOpen} onOpenChange={(open) => { setIsPropertyPickerOpen(open); if (!open) setPropertySearch(''); }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl rounded-[2rem]">
+        <DialogContent className="max-w-2xl max-h-[80vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
           <DialogHeader className="px-7 pt-6 pb-4 border-b bg-white shrink-0">
             <DialogTitle className="text-lg font-bold text-gray-900">Associa un Immobile</DialogTitle>
             <DialogDescription className="text-sm text-gray-400">
@@ -2146,7 +2146,7 @@ const Leads = () => {
       />
 
       <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+        <AlertDialogContent className="border-none shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-500 font-medium">

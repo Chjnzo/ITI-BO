@@ -221,12 +221,12 @@ const OpenHouses = () => {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-xl rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
-          <DialogHeader className="px-8 pt-8 pb-4">
+        <DialogContent className="max-w-3xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden">
+          <DialogHeader className="px-8 pt-8 pb-4 shrink-0">
             <DialogTitle className="text-2xl font-bold">Nuovo Open House</DialogTitle>
           </DialogHeader>
-          
-          <div className="p-8 space-y-6">
+
+          <div className="flex-1 overflow-y-auto p-8 space-y-6">
             <div className="space-y-3">
               <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Seleziona Immobile</Label>
               <Select onValueChange={(v) => setForm({...form, immobile_id: v})} value={form.immobile_id}>
@@ -301,7 +301,7 @@ const OpenHouses = () => {
             </div>
           </div>
 
-          <DialogFooter className="p-8 bg-gray-50/50">
+          <DialogFooter className="p-8 bg-gray-50/50 shrink-0">
             <Button variant="ghost" onClick={() => setIsCreateOpen(false)} className="rounded-xl font-bold">Annulla</Button>
             <Button 
               onClick={handleCreate}
