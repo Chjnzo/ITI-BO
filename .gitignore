@@ -29,4 +29,5 @@ dist-ssr
 .env.production
 .env
 .env.local
-.env.*.local.claude/
+.env.*.local
+.claude/worktrees/
