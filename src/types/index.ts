@@ -27,7 +27,6 @@ export interface Lead {
   stato: 'Nuovo' | 'Contattato' | 'Trattativa' | 'Chiuso' | 'Perso';
   tipo_cliente: 'Acquirente' | 'Venditore' | 'Ibrido';
   budget?: number;
-  assegnato_a?: string;
   tipologia_ricerca?: string;
   immobile_id?: string;
   created_at: string;

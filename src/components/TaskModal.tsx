@@ -154,7 +154,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               value={titolo}
               onChange={(e) => setTitolo(e.target.value)}
               placeholder="Es: Richiamare cliente, Preparare documentazione..."
-              className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
+              className="h-11 border-slate-200 bg-slate-50/50"
             />
           </div>
 
@@ -193,10 +193,10 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Agente assegnato *</Label>
             <Select value={agenteId} onValueChange={setAgenteId}>
-              <SelectTrigger className="h-11 rounded-xl border-slate-100 bg-slate-50/50">
+              <SelectTrigger className="h-11 border-slate-200 bg-slate-50/50">
                 <SelectValue placeholder="Seleziona agente..." />
               </SelectTrigger>
-              <SelectContent className="rounded-xl">
+              <SelectContent className="rounded-none">
                 {teamMembers.map(m => (
                   <SelectItem key={m.id} value={m.id}>
                     {m.nome_completo ?? m.id.substring(0, 8)}
@@ -210,7 +210,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Lead collegato</Label>
             {defaultLeadId ? (
-              <div className="h-11 flex items-center px-3 rounded-xl border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
+              <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
                 {defaultLeadName || 'Lead selezionato'}
               </div>
             ) : (
@@ -241,7 +241,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               value={telefono}
               onChange={(e) => setTelefono(e.target.value)}
               placeholder="+39 333 1234567"
-              className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
+              className="h-11 border-slate-200 bg-slate-50/50"
             />
           </div>
 
@@ -254,7 +254,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                   <Button
                     variant="outline"
                     className={cn(
-                      'w-full justify-start text-left font-normal rounded-xl bg-gray-50/50 border-gray-100 hover:bg-gray-100 h-11',
+                      'w-full justify-start text-left font-normal rounded-none bg-gray-50/50 border-gray-100 hover:bg-gray-100 h-11',
                       !selectedDate && 'text-muted-foreground',
                     )}
                   >
@@ -262,7 +262,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                     {selectedDate ? format(selectedDate, 'PPP', { locale: it }) : 'Seleziona data'}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
+                <PopoverContent className="w-auto p-0 border-none rounded-none shadow-xl" align="start">
                   <Calendar
                     mode="single"
                     selected={selectedDate}
@@ -279,7 +279,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
                 type="time"
                 value={ora}
                 onChange={(e) => setOra(e.target.value)}
-                className="h-11 rounded-xl border-slate-100 bg-slate-50/50"
+                className="h-11 border-slate-200 bg-slate-50/50"
               />
             </div>
           </div>
@@ -291,7 +291,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               value={nota}
               onChange={(e) => setNota(e.target.value)}
               placeholder="Aggiungi un promemoria..."
-              className="rounded-xl border-slate-100 bg-slate-50/50 min-h-[80px] resize-none"
+              className="border-slate-200 bg-slate-50/50 min-h-[80px] resize-none"
             />
           </div>
         </div>
@@ -301,7 +301,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             type="button"
             variant="outline"
             onClick={onClose}
-            className="flex-1 rounded-xl h-11 border-slate-100"
+            className="flex-1 rounded-none h-11 border-slate-100"
           >
             Annulla
           </Button>
@@ -309,7 +309,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="flex-1 bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-11 font-bold"
+            className="flex-1 bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-none h-11 font-bold"
           >
             {isSaving ? 'Salvataggio...' : 'Crea Task'}
           </Button>

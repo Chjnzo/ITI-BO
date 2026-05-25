@@ -97,7 +97,6 @@ const Dashboard = () => {
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .neq('stato', 'Chiuso');
-      if (!admin) activeLeadsQuery = activeLeadsQuery.eq('assegnato_a', user.id);
 
       let todayAppCountQuery = supabase
         .from('appuntamenti')
@@ -116,7 +115,6 @@ const Dashboard = () => {
         .select('id, nome, cognome, stato, created_at')
         .order('created_at', { ascending: false })
         .limit(5);
-      if (!admin) recentLeadsQuery = recentLeadsQuery.eq('assegnato_a', user.id);
 
       const [
         { count: activeLeadsCount },

@@ -49,7 +49,6 @@ const COLUMNS = [
   { id: 'Chiuso', label: 'Chiusi', color: 'bg-emerald-50/50 border-emerald-100 text-emerald-700' }
 ];
 
-const AGENTS = ["Matteo", "Gabriele"];
 
 const SELLER_STATES: Record<string, string> = {
   'Nuovo':             'bg-blue-50 border border-blue-100 text-blue-700',
@@ -147,7 +146,6 @@ const Leads = () => {
   const [filterBudgetMax, setFilterBudgetMax] = useState<number | null>(null);
   const [filterZona, setFilterZona] = useState('');
   const [filterTipologia, setFilterTipologia] = useState('');
-  const [filterAgente, setFilterAgente] = useState('');
   const [filterStato, setFilterStato] = useState('');
   const [filterDalSito, setFilterDalSito] = useState(false);
 
@@ -156,7 +154,7 @@ const Leads = () => {
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterAgente !== '' || filterStato !== '' || filterDalSito;
+  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '' || filterDalSito;
 
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
@@ -176,7 +174,7 @@ const Leads = () => {
         .from('leads')
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-          assegnato_a, telefono, email, budget, tipologia_ricerca, zone_ricercate,
+          telefono, email, budget, tipologia_ricerca, zone_ricercate,
           zona_venditore, note_interne, via_immobile, fonte,
           lead_immobili(immobili(titolo))
         `)
@@ -235,7 +233,7 @@ const Leads = () => {
         .from('leads')
         .select(`
           id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-          assegnato_a, telefono, email, fonte,
+          telefono, email, fonte,
           lead_immobili(immobili(titolo))
         `, { count: 'exact' })
         .eq('is_deleted', false)
@@ -372,7 +370,7 @@ const Leads = () => {
     return () => controller.abort();
   }, [fetchLeads]);
 
-  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato, filterDalSito]);
+  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
 
   // Load distinct zone names used across all leads for autocomplete
   useEffect(() => {
@@ -437,7 +435,6 @@ const Leads = () => {
         if (!(lead.tipologia_ricerca ?? []).includes(filterTipologia)) return false;
       }
       // Agente filter
-      if (filterAgente && lead.assegnato_a !== filterAgente) return false;
       // Stato filter
       if (filterStato && lead.stato !== filterStato) return false;
       // Fonte filter (client-side guard; DB already filters in paginated mode)
@@ -445,7 +442,7 @@ const Leads = () => {
 
       return true;
     });
-  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterAgente, filterStato, filterDalSito]);
+  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
 
 
 
@@ -482,7 +479,6 @@ const Leads = () => {
       telefono: selectedLead.telefono || null,
       telefono_fisso: (selectedLead as any).telefono_fisso || null,
       email: selectedLead.email || null,
-      assegnato_a: selectedLead.assegnato_a && selectedLead.assegnato_a !== "Nessuno" ? selectedLead.assegnato_a : null,
       tipo_cliente: selectedLead.tipo_cliente || 'Acquirente',
       budget: parseFloat(selectedLead.budget) || null,
       tipologia_ricerca: selectedLead.tipologia_ricerca?.length ? selectedLead.tipologia_ricerca : null,
@@ -529,7 +525,6 @@ const Leads = () => {
           nome: selectedLead.nome.trim(),
           cognome: selectedLead.cognome.trim(),
           tipo_cliente: selectedLead.tipo_cliente,
-          assegnato_a: payload.assegnato_a,
         } : l));
         setZoneInput('');
         setSelectedLead(null);
@@ -550,7 +545,6 @@ const Leads = () => {
       telefono: lead.telefono || null,
       telefono_fisso: lead.telefono_fisso || null,
       email: lead.email || null,
-      assegnato_a: lead.assegnato_a && lead.assegnato_a !== "Nessuno" ? lead.assegnato_a : null,
       tipo_cliente: lead.tipo_cliente || 'Acquirente',
       budget: parseFloat(lead.budget) || null,
       tipologia_ricerca: lead.tipologia_ricerca?.length ? lead.tipologia_ricerca : null,
@@ -578,7 +572,7 @@ const Leads = () => {
       fetchLeadDetail(lead.id);
     } else {
       setSelectedLead((prev: any) => prev?.id === lead.id ? { ...prev, _version: updated[0]._version } : prev);
-      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, nome: lead.nome.trim(), cognome: lead.cognome.trim(), tipo_cliente: lead.tipo_cliente, assegnato_a: payload.assegnato_a } : l));
+      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, nome: lead.nome.trim(), cognome: lead.cognome.trim(), tipo_cliente: lead.tipo_cliente } : l));
       setAutoSaveStatus('saved');
       if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current);
       autoSaveStatusTimerRef.current = setTimeout(() => setAutoSaveStatus('idle'), 2000);
@@ -830,7 +824,7 @@ const Leads = () => {
             Filtri
             {hasActiveFilters && (
               <span className="ml-0.5 w-5 h-5 rounded-full bg-[#94b0ab] text-white text-[10px] font-black flex items-center justify-center">
-                {[filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterAgente !== '', filterStato !== ''].filter(Boolean).length}
+                {[filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterStato !== ''].filter(Boolean).length}
               </span>
             )}
           </Button>
@@ -892,20 +886,6 @@ const Leads = () => {
                   {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
                     <SelectItem key={t} value={t}>{t}</SelectItem>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Agente */}
-            <div className="space-y-1 min-w-[140px]">
-              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Agente</Label>
-              <Select value={filterAgente || '_all'} onValueChange={(v) => setFilterAgente(v === '_all' ? '' : v)}>
-                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
-                  <SelectValue placeholder="Tutti" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="_all">Tutti</SelectItem>
-                  {AGENTS.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

@@ -19,7 +19,7 @@ export const useLeads = (page: number) => {
         .from('leads')
         .select(
           `id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-           assegnato_a, telefono, email,
+           telefono, email,
            lead_immobili(immobili(titolo))`,
           { count: 'exact' },
         )
