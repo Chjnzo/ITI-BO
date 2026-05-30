@@ -10,7 +10,7 @@ import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLOR
 
 const HOUR_HEIGHT = 56;
 const DAY_START = 8;
-const DAY_END = 20;
+const DAY_END = 22;
 const TOTAL_HOURS = DAY_END - DAY_START;
 const TIMELINE_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
 const HOURS = Array.from({ length: TOTAL_HOURS }, (_, i) => DAY_START + i);

@@ -143,6 +143,7 @@ const Leads = () => {
 
   // Advanced filters
   const [showFilters, setShowFilters] = useState(false);
+  const [filterBudgetMin, setFilterBudgetMin] = useState<number | null>(null);
   const [filterBudgetMax, setFilterBudgetMax] = useState<number | null>(null);
   const [filterZona, setFilterZona] = useState('');
   const [filterTipologia, setFilterTipologia] = useState('');
@@ -154,7 +155,7 @@ const Leads = () => {
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const hasActiveFilters = filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '' || filterDalSito;
+  const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '' || filterDalSito;
 
   // Slim query — only fields needed to render the board/list cards
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
@@ -186,21 +187,25 @@ const Leads = () => {
       // "Tutti" is selected and total leads exceed any fixed client-side limit).
       if (searchQuery.trim()) {
         const sq = searchQuery.trim();
-        const phonePattern = sq.replace(/[\s\-]/g, '');
-        // Always filter server-side so the result set stays small regardless of
-        // total lead count. For phone searches include both the typed form and
-        // the digit-stripped form so spacing differences don't cause misses.
-        const clauses = [
-          `nome.ilike.%${sq}%`,
-          `cognome.ilike.%${sq}%`,
-          `email.ilike.%${sq}%`,
-          `telefono.ilike.%${sq}%`,
-          `note_interne.ilike.%${sq}%`,
-          `via_immobile.ilike.%${sq}%`,
-          `zona_venditore.ilike.%${sq}%`,
-        ];
-        if (phonePattern !== sq) clauses.push(`telefono.ilike.%${phonePattern}%`);
-        query = (query as any).or(clauses.join(','));
+        // Split into tokens so "Andrea P" → token "andrea" AND token "p".
+        // Each .or() call becomes an AND condition in Supabase, so every token
+        // must appear in at least one field — enabling cross-field name matching.
+        const tokens = sq.toLowerCase().split(/\s+/).filter(Boolean);
+        for (const token of tokens) {
+          const tokenPhone = token.replace(/[\s\-]/g, '');
+          const clauses = [
+            `nome.ilike.%${token}%`,
+            `cognome.ilike.%${token}%`,
+            `email.ilike.%${token}%`,
+            `telefono.ilike.%${token}%`,
+            `telefono_clean.ilike.%${tokenPhone}%`,
+            `budget_text.ilike.%${token}%`,
+            `note_interne.ilike.%${token}%`,
+            `via_immobile.ilike.%${token}%`,
+            `zona_venditore.ilike.%${token}%`,
+          ];
+          query = (query as any).or(clauses.join(','));
+        }
       } else {
         query = (query as any).limit(500);
       }
@@ -236,6 +241,8 @@ const Leads = () => {
         .order('created_at', { ascending: false });
       query = applyTipoFilter(query as any) as any;
       if (filterDalSito) query = (query as any).eq('fonte', 'sito');
+      if (filterBudgetMin !== null) query = (query as any).gte('budget', filterBudgetMin);
+      if (filterBudgetMax !== null) query = (query as any).lte('budget', filterBudgetMax);
       query = (query as any).range(from, to);
 
       const { data, count, error } = await query;
@@ -366,7 +373,7 @@ const Leads = () => {
     return () => controller.abort();
   }, [fetchLeads]);
 
-  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
+  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
 
   // Load distinct zone names used across all leads for autocomplete
   useEffect(() => {
@@ -399,28 +406,34 @@ const Leads = () => {
 
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    // Normalize phone: strip all spaces and dashes for comparison
-    const qPhone = q.replace(/[\s\-]/g, '');
+    const tokens = q.split(/\s+/).filter(Boolean);
 
     return leads.filter(lead => {
       const zoneText = zoneTextOf(lead);
 
-      // Text search (permissive phone + token-based zone matching)
-      if (q) {
+      // Every token must match at least one field (AND across tokens, OR across fields)
+      if (tokens.length > 0) {
         const phoneNorm = (lead.telefono ?? '').replace(/[\s\-]/g, '');
-        const matchesText =
-          `${lead.nome} ${lead.cognome}`.toLowerCase().includes(q) ||
-          lead.email?.toLowerCase().includes(q) ||
-          (qPhone && phoneNorm.includes(qPhone)) ||
-          (lead.budget != null && String(lead.budget).includes(q)) ||
-          (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
-          allTokensMatch(zoneText, q) ||
-          lead.zona_venditore?.toLowerCase().includes(q) ||
-          lead.note_interne?.toLowerCase().includes(q) ||
-          lead.via_immobile?.toLowerCase().includes(q);
-        if (!matchesText) return false;
+        const fullName = `${lead.nome ?? ''} ${lead.cognome ?? ''}`.toLowerCase();
+        const budgetStr = lead.budget != null ? String(Math.floor(Number(lead.budget))) : '';
+        const matchesAllTokens = tokens.every(token => {
+          const tokenPhone = token.replace(/[\s\-]/g, '');
+          return (
+            fullName.includes(token) ||
+            lead.email?.toLowerCase().includes(token) ||
+            (tokenPhone && phoneNorm.includes(tokenPhone)) ||
+            budgetStr.includes(token) ||
+            (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(token)) ||
+            zoneText.toLowerCase().includes(token) ||
+            lead.zona_venditore?.toLowerCase().includes(token) ||
+            lead.note_interne?.toLowerCase().includes(token) ||
+            lead.via_immobile?.toLowerCase().includes(token)
+          );
+        });
+        if (!matchesAllTokens) return false;
       }
-      // Budget filter
+      // Budget range filter
+      if (filterBudgetMin !== null && (lead.budget == null || Number(lead.budget) < filterBudgetMin)) return false;
       if (filterBudgetMax !== null && (lead.budget == null || Number(lead.budget) > filterBudgetMax)) return false;
       // Zona filter — token-based: each word must appear in the zone text
       if (filterZona.trim()) {
@@ -438,7 +451,7 @@ const Leads = () => {
 
       return true;
     });
-  }, [leads, searchQuery, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
+  }, [leads, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
 
 
 
@@ -820,7 +833,7 @@ const Leads = () => {
             Filtri
             {hasActiveFilters && (
               <span className="ml-0.5 w-5 h-5 rounded-full bg-[#94b0ab] text-white text-[10px] font-black flex items-center justify-center">
-                {[filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterStato !== ''].filter(Boolean).length}
+                {[filterBudgetMin !== null || filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterStato !== ''].filter(Boolean).length}
               </span>
             )}
           </Button>
@@ -838,23 +851,48 @@ const Leads = () => {
       {showFilters && (
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-4 shrink-0">
           <div className="flex flex-wrap gap-4 items-end">
-            {/* Budget max */}
-            <div className="space-y-1 min-w-[160px]">
-              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Budget max</Label>
-              <Select value={filterBudgetMax !== null ? String(filterBudgetMax) : '_all'} onValueChange={(v) => setFilterBudgetMax(v === '_all' ? null : Number(v))}>
-                <SelectTrigger className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm">
-                  <SelectValue placeholder="Qualsiasi" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl">
-                  <SelectItem value="_all">Qualsiasi</SelectItem>
-                  <SelectItem value="100000">Fino a €100.000</SelectItem>
-                  <SelectItem value="150000">Fino a €150.000</SelectItem>
-                  <SelectItem value="200000">Fino a €200.000</SelectItem>
-                  <SelectItem value="300000">Fino a €300.000</SelectItem>
-                  <SelectItem value="500000">Fino a €500.000</SelectItem>
-                  <SelectItem value="750000">Fino a €750.000</SelectItem>
-                </SelectContent>
-              </Select>
+            {/* Budget range */}
+            <div className="space-y-1">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Budget (€)</Label>
+              <div className="flex items-center gap-1.5">
+                <Select value={filterBudgetMin !== null ? String(filterBudgetMin) : '_all'} onValueChange={(v) => setFilterBudgetMin(v === '_all' ? null : Number(v))}>
+                  <SelectTrigger className="h-9 w-[148px] rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                    <SelectValue placeholder="Da..." />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="_all">Da qualsiasi</SelectItem>
+                    <SelectItem value="50000">Da €50.000</SelectItem>
+                    <SelectItem value="100000">Da €100.000</SelectItem>
+                    <SelectItem value="150000">Da €150.000</SelectItem>
+                    <SelectItem value="200000">Da €200.000</SelectItem>
+                    <SelectItem value="250000">Da €250.000</SelectItem>
+                    <SelectItem value="300000">Da €300.000</SelectItem>
+                    <SelectItem value="400000">Da €400.000</SelectItem>
+                    <SelectItem value="500000">Da €500.000</SelectItem>
+                    <SelectItem value="750000">Da €750.000</SelectItem>
+                    <SelectItem value="1000000">Da €1.000.000</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-gray-400 shrink-0">—</span>
+                <Select value={filterBudgetMax !== null ? String(filterBudgetMax) : '_all'} onValueChange={(v) => setFilterBudgetMax(v === '_all' ? null : Number(v))}>
+                  <SelectTrigger className="h-9 w-[148px] rounded-xl border-gray-200 bg-slate-50/50 text-sm">
+                    <SelectValue placeholder="A..." />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    <SelectItem value="_all">A qualsiasi</SelectItem>
+                    <SelectItem value="50000">A €50.000</SelectItem>
+                    <SelectItem value="100000">A €100.000</SelectItem>
+                    <SelectItem value="150000">A €150.000</SelectItem>
+                    <SelectItem value="200000">A €200.000</SelectItem>
+                    <SelectItem value="250000">A €250.000</SelectItem>
+                    <SelectItem value="300000">A €300.000</SelectItem>
+                    <SelectItem value="400000">A €400.000</SelectItem>
+                    <SelectItem value="500000">A €500.000</SelectItem>
+                    <SelectItem value="750000">A €750.000</SelectItem>
+                    <SelectItem value="1000000">A €1.000.000</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Zona */}
@@ -924,7 +962,7 @@ const Leads = () => {
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => { setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); setFilterDalSito(false); }}
+                onClick={() => { setFilterBudgetMin(null); setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); setFilterDalSito(false); }}
                 className="h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border border-red-100"
               >
                 <XIcon size={13} /> Reset filtri
