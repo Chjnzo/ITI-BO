@@ -319,7 +319,7 @@ Deno.serve(async (req) => {
       geocodeQueries.push(`${indirizzoStreet}, ${cittaMain}`);
     }
 
-    const nominatimFetch = async (q: string): Promise<{ lat: number; lng: number } | null> => {
+    const nominatimFetch = async (q: string): Promise<{ lat: number; lng: number; officialCity: string | null } | null> => {
       const params = new URLSearchParams({ format: "json", limit: "1", addressdetails: "1", q });
       const url = `https://nominatim.openstreetmap.org/search?${params}`;
       console.log("Nominatim URL:", url);
@@ -336,10 +336,16 @@ Deno.serve(async (req) => {
       const results = await res.json();
       console.log(`Nominatim results for "${q}":`, results?.length ?? 0);
       if (!Array.isArray(results) || results.length === 0) return null;
-      return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
+      const r = results[0];
+      // Extract the official municipality from Nominatim address details.
+      // "city" covers capoluoghi; "town"/"village"/"municipality" covers smaller comuni.
+      const addr = r.address ?? {};
+      const officialCity: string | null = addr.city ?? addr.municipality ?? addr.town ?? addr.village ?? null;
+      console.log(`Nominatim official city for "${q}": ${officialCity}`);
+      return { lat: parseFloat(r.lat), lng: parseFloat(r.lon), officialCity };
     };
 
-    let geoCoords: { lat: number; lng: number } | null = null;
+    let geoCoords: { lat: number; lng: number; officialCity: string | null } | null = null;
     for (const q of geocodeQueries) {
       geoCoords = await nominatimFetch(q);
       if (geoCoords) break;
@@ -364,15 +370,18 @@ Deno.serve(async (req) => {
       }, 422);
     }
 
-    const { lat, lng } = geoCoords;
-    console.log("Geocoded coords:", lat, lng);
+    const { lat, lng, officialCity } = geoCoords;
+    // Use the official municipality from Nominatim (e.g. "Bergamo") rather than
+    // what the user typed (e.g. "Redona") so nearest_zona_omi matches correctly.
+    const cittaPerOmi = officialCity ?? cittaMain;
+    console.log("Geocoded coords:", lat, lng, "| city for OMI lookup:", cittaPerOmi);
 
     // -----------------------------------------------------------------------
     // 2. POI da Overpass (parallelo con OMI lookup)
     // -----------------------------------------------------------------------
     const [poiResult, zonaIdResult, comparabiliRawResult] = await Promise.allSettled([
       fetchPoiSummary(lat, lng),
-      supabase.rpc("nearest_zona_omi", { p_lon: lng, p_lat: lat, p_comune: citta ?? null }),
+      supabase.rpc("nearest_zona_omi", { p_lon: lng, p_lat: lat, p_comune: cittaPerOmi }),
       supabase.rpc("comparabili_vicini", { p_lon: lng, p_lat: lat, p_raggio_m: 1500, p_limit: 10 }),
     ]);
 

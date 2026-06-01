@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Phone, Home as HomeIcon,
-  User, Search, Save,
+  User, Search, Save, X,
   Calendar, CalendarPlus, Plus, ExternalLink,
   TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
   CheckSquare, Clock, Calculator, Copy, SlidersHorizontal, X as XIcon,
@@ -810,7 +810,17 @@ const Leads = () => {
 
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
+            {searchQuery ? (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X size={15} />
+              </button>
+            ) : (
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={15} />
+            )}
             <Input
               placeholder="Cerca per nome, telefono, email, zona..."
               value={searchQuery}
