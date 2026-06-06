@@ -30,6 +30,7 @@ import {
 import PropertyWizard from '@/components/properties/PropertyWizard';
 import OpenHouseManager from '@/components/properties/OpenHouseManager';
 import UnitaSheet from '@/components/properties/UnitaSheet';
+import EvidenzaModal from '@/components/properties/EvidenzaModal';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -57,6 +58,7 @@ const Properties = () => {
 
   const [ohProperty, setOhProperty] = useState<any>(null);
   const [unitaProperty, setUnitaProperty] = useState<any>(null);
+  const [evidenzaOpen, setEvidenzaOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, debouncedSearch);
@@ -140,13 +142,23 @@ const Properties = () => {
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
             <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
           </div>
-          <Button
-            onClick={() => { setEditingProperty(null); setIsWizardOpen(true); }}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
-          >
-            <Plus className="mr-2" size={20} />
-            Nuovo Immobile
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={() => setEvidenzaOpen(true)}
+              className="rounded-2xl px-6 h-14 font-bold border-gray-200 gap-2 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all"
+            >
+              <Star size={18} className="fill-[#facc15] text-[#facc15]" />
+              In Evidenza
+            </Button>
+            <Button
+              onClick={() => { setEditingProperty(null); setIsWizardOpen(true); }}
+              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+            >
+              <Plus className="mr-2" size={20} />
+              Nuovo Immobile
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-6 gap-4 shrink-0">
@@ -401,6 +413,12 @@ const Properties = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      <EvidenzaModal
+        open={evidenzaOpen}
+        onClose={() => setEvidenzaOpen(false)}
+        onChanged={refetchProperties}
+      />
 
       <AlertDialog open={!!propertyToDelete} onOpenChange={(open) => !open && setPropertyToDelete(null)}>
         <AlertDialogContent className="border-none shadow-2xl">

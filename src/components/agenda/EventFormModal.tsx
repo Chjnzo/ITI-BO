@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Trash2, CalendarIcon, Phone, MessageCircle, Save } from 'lucide-react';
+import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -33,6 +33,7 @@ export interface Appointment {
   ora_inizio: string | null;
   ora_fine: string | null;
   note: string | null;
+  indirizzo_appuntamento: string | null;
   leads?: { nome: string; cognome: string; telefono?: string | null } | null;
   immobili?: { titolo: string } | null;
 }
@@ -149,6 +150,7 @@ const EventFormModal = ({
   const [oraInizio, setOraInizio] = useState('');
   const [oraFine, setOraFine] = useState('');
   const [note, setNote] = useState('');
+  const [indirizzo, setIndirizzo] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -173,6 +175,7 @@ const EventFormModal = ({
       setOraInizio(event.ora_inizio?.slice(0, 5) ?? '');
       setOraFine(event.ora_fine?.slice(0, 5) ?? '');
       setNote(event.note ?? '');
+      setIndirizzo(event.indirizzo_appuntamento ?? '');
     } else {
       setAgenteId(defaultAgentId ?? agents[0]?.id ?? '');
       setTipologia('');
@@ -187,6 +190,7 @@ const EventFormModal = ({
       setOraInizio(initStart);
       setOraFine(addOneHour(initStart));
       setNote('');
+      setIndirizzo('');
     }
   }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
 
@@ -206,6 +210,7 @@ const EventFormModal = ({
         ora_inizio: oraInizio || null,
         ora_fine: oraFine || null,
         note: note.trim() || null,
+        indirizzo_appuntamento: indirizzo.trim() || null,
       };
       if (autosavedIdRef.current) {
         const { error } = await supabase.from('appuntamenti').update(payload).eq('id', autosavedIdRef.current);
@@ -225,7 +230,7 @@ const EventFormModal = ({
 
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isEdit, open, selectedDate, agenteId, tipologia, leadId, immobileId, oraInizio, oraFine, note]);
+  }, [isEdit, open, selectedDate, agenteId, tipologia, leadId, immobileId, oraInizio, oraFine, note, indirizzo]);
 
   const handleClose = () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -260,11 +265,25 @@ const EventFormModal = ({
     })));
   };
 
-  const handleLeadSelect = (id: string) => {
+  const handleLeadSelect = async (id: string) => {
     setLeadId(id);
     if (!id) { setLeadPhone(null); return; }
     const item = leadItems.find(i => i.id === id);
     setLeadPhone(item?.sublabel ?? null);
+
+    // Auto-suggest address only if field is currently empty
+    if (indirizzo.trim()) return;
+    const [{ data: leadData }, { data: valData }] = await Promise.all([
+      supabase.from('leads').select('immobile_id, immobili(indirizzo, citta)').eq('id', id).single(),
+      supabase.from('valutazioni').select('indirizzo, citta').eq('lead_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    ]);
+    const immobileAddr = (leadData as { immobili?: { indirizzo?: string; citta?: string } | null } | null)?.immobili;
+    const valAddr = valData as { indirizzo?: string; citta?: string } | null;
+    const suggested =
+      valAddr?.indirizzo ? `${valAddr.indirizzo}${valAddr.citta ? ', ' + valAddr.citta : ''}` :
+      immobileAddr?.indirizzo ? `${immobileAddr.indirizzo}${immobileAddr.citta ? ', ' + immobileAddr.citta : ''}` :
+      '';
+    if (suggested) setIndirizzo(suggested);
   };
 
   const handleSave = async () => {
@@ -287,6 +306,7 @@ const EventFormModal = ({
       ora_inizio: oraInizio || null,
       ora_fine: oraFine || null,
       note: note.trim() || null,
+      indirizzo_appuntamento: indirizzo.trim() || null,
     };
 
     let error;
@@ -412,6 +432,31 @@ const EventFormModal = ({
                 </a>
               </div>
             )}
+          </div>
+
+          {/* Indirizzo appuntamento */}
+          <div className="space-y-2">
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+              Indirizzo incontro <span className="normal-case font-normal text-gray-400">(opzionale)</span>
+            </Label>
+            <div className="relative">
+              <MapPin size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#94b0ab] pointer-events-none" />
+              <Input
+                value={indirizzo}
+                onChange={(e) => setIndirizzo(e.target.value)}
+                placeholder="Es. Via Roma 10, Bergamo"
+                className="h-12 rounded-xl border-gray-200 bg-slate-50/50 pl-9 pr-9"
+              />
+              {indirizzo && (
+                <button
+                  type="button"
+                  onClick={() => setIndirizzo('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Immobile (opzionale) */}
