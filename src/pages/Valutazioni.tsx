@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -53,20 +52,15 @@ interface Valutazione {
 const fmtEuro = (n: number | null) =>
   n == null ? null : `€${(n / 1000).toFixed(0)}k`;
 
-const StatoBadge = ({ stato }: { stato: string }) => {
-  if (stato === 'Completata') {
-    return (
-      <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50 font-semibold text-[11px] rounded-lg px-2.5 py-1">
-        Completata
-      </Badge>
-    );
-  }
-  return (
-    <Badge className="bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-50 font-semibold text-[11px] rounded-lg px-2.5 py-1">
-      Bozza
-    </Badge>
-  );
-};
+const StatoDot = ({ stato }: { stato: string }) => (
+  <span
+    title={stato}
+    className={cn(
+      'inline-block w-2.5 h-2.5 rounded-full flex-shrink-0',
+      stato === 'Completata' ? 'bg-emerald-400' : 'bg-amber-400',
+    )}
+  />
+);
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -243,15 +237,15 @@ const Valutazioni = () => {
             <p className="text-sm italic">Nessuna valutazione ancora. Creane una!</p>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/60">
                 <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[28%]">Immobile</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[18%]">Lead</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[20%]">Stima</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[10%]">Stato</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[9%]">Data</th>
-                <th className="px-6 py-4 w-[12%]" />
+                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[22%]">Lead</th>
+                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[18%]">Stima</th>
+                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[8%]">Stato</th>
+                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[10%]">Data</th>
+                <th className="px-4 py-4 w-[14%]" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -275,9 +269,9 @@ const Valutazioni = () => {
                     </td>
 
                     {/* Lead */}
-                    <td className="px-6 py-5">
+                    <td className="px-6 py-5 min-w-0">
                       {v.leads
-                        ? <span className="font-medium text-gray-700 truncate block">{v.leads.nome} {v.leads.cognome}</span>
+                        ? <span className="font-medium text-gray-700 truncate block max-w-full">{v.leads.nome} {v.leads.cognome}</span>
                         : <span className="text-gray-300">—</span>}
                     </td>
 
@@ -288,9 +282,9 @@ const Valutazioni = () => {
                         : <span className="text-gray-300">—</span>}
                     </td>
 
-                    {/* Stato badge */}
+                    {/* Stato dot */}
                     <td className="px-6 py-5">
-                      <StatoBadge stato={v.stato} />
+                      <StatoDot stato={v.stato} />
                     </td>
 
                     {/* Data */}
