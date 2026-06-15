@@ -404,6 +404,8 @@ const Leads = () => {
     return tokens.length > 0 && tokens.every(t => text.includes(t));
   };
 
+  const isSearchOrFilterMode = searchQuery.trim() !== '' || hasActiveFilters;
+
   const filteredLeads = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const tokens = q.split(/\s+/).filter(Boolean);
@@ -452,6 +454,11 @@ const Leads = () => {
       return true;
     });
   }, [leads, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
+
+  const displayCount = isSearchOrFilterMode ? filteredLeads.length : totalLeadsCount;
+  const pagedLeads = isSearchOrFilterMode
+    ? filteredLeads.slice((leadsPage - 1) * LEADS_PAGE_SIZE, leadsPage * LEADS_PAGE_SIZE)
+    : filteredLeads;
 
 
 
@@ -794,7 +801,7 @@ const Leads = () => {
         <div>
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
           <p className="text-gray-500 mt-1 font-medium">
-            {totalLeadsCount} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
+            {displayCount} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
           </p>
         </div>
 
@@ -1021,7 +1028,7 @@ const Leads = () => {
                   ))
                 ) : filteredLeads.length === 0 ? (
                   <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun lead trovato</td></tr>
-                ) : filteredLeads.map((lead) => (
+                ) : pagedLeads.map((lead) => (
                   <tr
                     key={lead.id}
                     className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
@@ -1132,10 +1139,10 @@ const Leads = () => {
       </div>
 
       {/* Pagination */}
-      {totalLeadsCount > LEADS_PAGE_SIZE && (
+      {displayCount > LEADS_PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 shrink-0">
           <p className="text-xs text-gray-400 font-medium">
-            {(leadsPage - 1) * LEADS_PAGE_SIZE + 1}–{Math.min(leadsPage * LEADS_PAGE_SIZE, totalLeadsCount)} di {totalLeadsCount}
+            {(leadsPage - 1) * LEADS_PAGE_SIZE + 1}–{Math.min(leadsPage * LEADS_PAGE_SIZE, displayCount)} di {displayCount}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -1150,7 +1157,7 @@ const Leads = () => {
             <Button
               variant="outline"
               size="sm"
-              disabled={leadsPage * LEADS_PAGE_SIZE >= totalLeadsCount}
+              disabled={leadsPage * LEADS_PAGE_SIZE >= displayCount}
               onClick={() => setLeadsPage(p => p + 1)}
               className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
             >
