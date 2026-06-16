@@ -199,7 +199,6 @@ const Leads = () => {
             `email.ilike.%${token}%`,
             `telefono.ilike.%${token}%`,
             `telefono_clean.ilike.%${tokenPhone}%`,
-            `budget_text.ilike.%${token}%`,
             `note_interne.ilike.%${token}%`,
             `via_immobile.ilike.%${token}%`,
             `zona_venditore.ilike.%${token}%`,
@@ -207,7 +206,11 @@ const Leads = () => {
           query = (query as any).or(clauses.join(','));
         }
       } else {
-        query = (query as any).limit(500);
+        if (filterBudgetMin !== null) query = (query as any).gte('budget', filterBudgetMin);
+        if (filterBudgetMax !== null) query = (query as any).lte('budget', filterBudgetMax);
+        if (filterStato)              query = (query as any).eq('stato', filterStato);
+        if (filterTipologia)          query = (query as any).contains('tipologia_ricerca', [filterTipologia]);
+        query = (query as any).limit(2000);
       }
 
       query = applyTipoFilter(query as any) as any;
@@ -261,7 +264,8 @@ const Leads = () => {
 
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters, filterDalSito]);
+  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters, filterDalSito,
+      filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
   // Full query — fired only when a lead dialog is opened
   const fetchLeadDetail = useCallback(async (leadId: string) => {
