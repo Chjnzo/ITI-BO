@@ -165,6 +165,7 @@ const Tasks = () => {
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailTitolo, setTaskDetailTitolo] = useState('');
   const [taskDetailTelefono, setTaskDetailTelefono] = useState('');
+  const [taskDetailDate, setTaskDetailDate] = useState<Date | undefined>(undefined);
   const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
   // Fetch current user + agents once on mount
@@ -223,20 +224,22 @@ const Tasks = () => {
     setTaskDetailNota(task.nota || '');
     setTaskDetailTitolo(task.titolo || '');
     setTaskDetailTelefono(task.telefono || '');
+    setTaskDetailDate(parseISO(task.data));
   };
 
   const saveTaskDetail = async () => {
     if (!taskDetail) return;
     setTaskDetailSaving(true);
+    const newDate = taskDetailDate ? format(taskDetailDate, 'yyyy-MM-dd') : taskDetail.data;
     const { error } = await supabase.from('tasks')
-      .update({ nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null })
+      .update({ nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null, data: newDate })
       .eq('id', taskDetail.id);
     if (error) {
       showError('Errore nel salvataggio');
     } else {
       setTasks(prev => prev.map(t =>
         t.id === taskDetail.id
-          ? { ...t, nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null }
+          ? { ...t, nota: taskDetailNota, titolo: taskDetailTitolo || null, telefono: taskDetailTelefono || null, data: newDate }
           : t
       ));
       showSuccess('Task aggiornata');
@@ -545,7 +548,27 @@ const Tasks = () => {
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-[11px] font-bold text-gray-600">{format(parseISO(taskDetail.data), 'd MMM', { locale: it })}</p>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1 text-[11px] font-bold text-gray-600 hover:text-[#94b0ab] transition-colors"
+                          title="Modifica data"
+                        >
+                          <CalendarIcon size={11} />
+                          {taskDetailDate ? format(taskDetailDate, 'd MMM', { locale: it }) : '—'}
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 border-none rounded-none shadow-xl" align="end">
+                        <Calendar
+                          mode="single"
+                          selected={taskDetailDate}
+                          onSelect={setTaskDetailDate}
+                          initialFocus
+                          locale={it}
+                        />
+                      </PopoverContent>
+                    </Popover>
                     {taskDetail.ora && <p className="text-[11px] text-gray-400">{taskDetail.ora.slice(0, 5)}</p>}
                   </div>
                 </div>

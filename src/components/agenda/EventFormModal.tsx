@@ -4,6 +4,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X } from 'lucide-react';
+import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -154,6 +157,9 @@ const EventFormModal = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [leadSheet, setLeadSheet] = useState(false);
+  const [leadDetail, setLeadDetail] = useState<any>(null);
+  const [isLoadingLeadDetail, setIsLoadingLeadDetail] = useState(false);
 
   const autosavedIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -265,6 +271,19 @@ const EventFormModal = ({
     })));
   };
 
+  const openLeadSheet = async () => {
+    if (!leadId) return;
+    setLeadSheet(true);
+    setIsLoadingLeadDetail(true);
+    const { data } = await supabase
+      .from('leads')
+      .select('id, nome, cognome, email, telefono, tipo_cliente, stato, stato_venditore, budget, via_immobile, zona_venditore, tipologia_ricerca, note_interne, assegnato_a')
+      .eq('id', leadId)
+      .single();
+    setLeadDetail(data ?? null);
+    setIsLoadingLeadDetail(false);
+  };
+
   const handleLeadSelect = async (id: string) => {
     setLeadId(id);
     if (!id) { setLeadPhone(null); return; }
@@ -343,7 +362,124 @@ const EventFormModal = ({
     }
   };
 
+  const formatPrice = (v: number | null) =>
+    v != null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v) : null;
+
   return (
+    <>
+    <Sheet open={leadSheet} onOpenChange={setLeadSheet}>
+      <SheetContent side="right" className="w-[360px] sm:w-[420px] flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b border-gray-100">
+          <SheetTitle className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <User size={18} className="text-[#94b0ab]" />
+            Scheda Lead
+          </SheetTitle>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {isLoadingLeadDetail ? (
+            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Caricamento...</div>
+          ) : leadDetail ? (
+            <div className="space-y-5">
+              {/* Nome */}
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Nome</p>
+                <p className="text-base font-semibold text-gray-900">{leadDetail.nome} {leadDetail.cognome}</p>
+              </div>
+              {/* Tipo cliente + stato */}
+              <div className="flex gap-3 flex-wrap">
+                {leadDetail.tipo_cliente && (
+                  <span className={cn(
+                    'inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-xl border',
+                    leadDetail.tipo_cliente === 'Proprietario' ? 'bg-red-50 text-red-700 border-red-200' :
+                    leadDetail.tipo_cliente === 'Acquirente' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                    'bg-purple-50 text-purple-700 border-purple-200'
+                  )}>
+                    <Tag size={11} />
+                    {leadDetail.tipo_cliente}
+                  </span>
+                )}
+                {leadDetail.stato && (
+                  <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-xl border bg-gray-50 text-gray-700 border-gray-200">
+                    {leadDetail.stato}
+                  </span>
+                )}
+              </div>
+              {/* Contatti */}
+              {leadDetail.telefono && (
+                <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-4 py-3">
+                  <Phone size={14} className="text-green-600 shrink-0" />
+                  <span className="font-bold text-green-800 text-sm flex-1">{leadDetail.telefono}</span>
+                  <a
+                    href={getWhatsAppUrl(leadDetail.telefono)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition-colors"
+                  >
+                    <MessageCircle size={12} />
+                    WA
+                  </a>
+                </div>
+              )}
+              {leadDetail.email && (
+                <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3">
+                  <Mail size={14} className="text-blue-600 shrink-0" />
+                  <span className="text-blue-800 text-sm font-medium flex-1 break-all">{leadDetail.email}</span>
+                </div>
+              )}
+              {/* Indirizzo immobile / zona */}
+              {leadDetail.via_immobile && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Indirizzo immobile</p>
+                  <div className="flex items-start gap-2 text-gray-700">
+                    <Home size={14} className="text-[#94b0ab] shrink-0 mt-0.5" />
+                    <span className="text-sm">{leadDetail.via_immobile}{leadDetail.zona_venditore ? `, ${leadDetail.zona_venditore}` : ''}</span>
+                  </div>
+                </div>
+              )}
+              {!leadDetail.via_immobile && leadDetail.zona_venditore && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Zona</p>
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <MapPin size={14} className="text-[#94b0ab] shrink-0" />
+                    <span className="text-sm">{leadDetail.zona_venditore}</span>
+                  </div>
+                </div>
+              )}
+              {/* Budget */}
+              {leadDetail.budget != null && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Budget</p>
+                  <div className="flex items-center gap-2 text-gray-700">
+                    <Euro size={14} className="text-[#94b0ab] shrink-0" />
+                    <span className="text-sm font-semibold">{formatPrice(leadDetail.budget)}</span>
+                  </div>
+                </div>
+              )}
+              {/* Tipologia ricerca */}
+              {leadDetail.tipologia_ricerca?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Cerca</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {leadDetail.tipologia_ricerca.map((t: string) => (
+                      <span key={t} className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-lg">{t}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Note interne */}
+              {leadDetail.note_interne && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Note interne</p>
+                  <p className="text-sm text-gray-600 bg-gray-50 rounded-xl px-3 py-2 whitespace-pre-line">{leadDetail.note_interne}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Nessun dato trovato.</div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
       <DialogContent className="max-w-3xl w-full h-[85vh] flex flex-col border-none shadow-2xl p-0 overflow-hidden">
         <DialogHeader className="px-8 pt-8 pb-4 border-b border-gray-100">
@@ -415,7 +551,7 @@ const EventFormModal = ({
               searchPlaceholder="Nome, cognome o telefono..."
               emptyMessage="Nessun lead trovato."
             />
-            {/* Phone + WhatsApp */}
+            {/* Phone + WhatsApp + Scheda lead */}
             {leadPhone && (
               <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-4 py-3 mt-2">
                 <Phone size={15} className="text-green-600 shrink-0" />
@@ -430,7 +566,26 @@ const EventFormModal = ({
                   <MessageCircle size={13} />
                   WhatsApp
                 </a>
+                <button
+                  type="button"
+                  onClick={openLeadSheet}
+                  className="flex items-center gap-1.5 bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-3 py-1.5 text-xs font-bold transition-colors shrink-0"
+                >
+                  <User size={13} />
+                  Scheda
+                </button>
               </div>
+            )}
+            {/* Scheda lead anche senza telefono */}
+            {leadId && !leadPhone && (
+              <button
+                type="button"
+                onClick={openLeadSheet}
+                className="flex items-center gap-1.5 text-[#94b0ab] hover:text-[#7a948f] text-xs font-semibold mt-1 transition-colors"
+              >
+                <User size={13} />
+                Vedi scheda lead
+              </button>
             )}
           </div>
 
@@ -575,6 +730,7 @@ const EventFormModal = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 };
 

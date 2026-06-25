@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
-import { showError } from '@/utils/toast';
+import { showError, showSuccess } from '@/utils/toast';
 import { format, isToday, parseISO, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -101,6 +101,21 @@ const Agenda = () => {
     [tipologieRows],
   );
 
+  const handleEventDrop = useCallback(async (event: Appointment, newDate: string, newOraInizio: string, newOraFine: string | null) => {
+    setEvents(prev => prev.map(e => e.id === event.id
+      ? { ...e, data: newDate, ora_inizio: newOraInizio, ora_fine: newOraFine }
+      : e
+    ));
+    const { error } = await supabase
+      .from('appuntamenti')
+      .update({ data: newDate, ora_inizio: newOraInizio, ora_fine: newOraFine })
+      .eq('id', event.id);
+    if (error) {
+      showError('Errore nello spostamento dell\'appuntamento');
+      setEvents(prev => prev.map(e => e.id === event.id ? event : e));
+    }
+  }, []);
+
   const openNewEvent = () => setFormModal({ open: true, defaultDate: selectedDate });
   const openEventEdit = (event: Appointment) => setFormModal({ open: true, event });
   const openSlotCreate = (date: string, time: string) =>
@@ -184,6 +199,7 @@ const Agenda = () => {
               loading={loading}
               onEventClick={openEventEdit}
               onSlotClick={openSlotCreate}
+              onEventDrop={handleEventDrop}
               coloriMap={coloriMap}
             />
           </div>

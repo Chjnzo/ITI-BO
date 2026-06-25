@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, memo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, memo } from 'react';
 import { format, isToday, parseISO, startOfWeek, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -16,6 +16,8 @@ const TIMELINE_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
 const HOURS = Array.from({ length: TOTAL_HOURS }, (_, i) => DAY_START + i);
 const DAY_HEADER_HEIGHT = 52;
 const TIMELINE_TOP_PADDING = 24;
+const GUTTER_WIDTH = 40;
+const DRAG_THRESHOLD = 5;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -69,7 +71,6 @@ const layoutEvents = (events: Appointment[]): PositionedEvent[] => {
     return a.ora_inizio.localeCompare(b.ora_inizio);
   });
 
-  // Each lane tracks the end-time (minutes) of its last event
   const laneEnds: number[] = [];
   const eventLanes: number[] = [];
 
@@ -103,6 +104,31 @@ const layoutEvents = (events: Appointment[]): PositionedEvent[] => {
   });
 };
 
+// ── Drag types ────────────────────────────────────────────────────────────────
+
+interface PendingDrag {
+  event: Appointment;
+  startClientX: number;
+  startClientY: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+interface DragInfo {
+  event: Appointment;
+  offsetX: number;
+  offsetY: number;
+  currentClientX: number;
+  currentClientY: number;
+}
+
+interface DragHandlers {
+  onPointerDown: (event: Appointment, e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (event: Appointment, e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: (event: Appointment, e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerCancel: (event: Appointment) => void;
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface WeeklyPlanningViewProps {
@@ -113,6 +139,7 @@ interface WeeklyPlanningViewProps {
   loading: boolean;
   onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
+  onEventDrop?: (event: Appointment, newDate: string, newOraInizio: string, newOraFine: string | null) => void;
   coloriMap?: TipologieMap;
 }
 
@@ -124,13 +151,14 @@ interface DayColumnProps {
   agentColorMap: Map<string, string>;
   agentNameMap: Map<string, string>;
   loading: boolean;
-  onEventClick: (event: Appointment) => void;
   onSlotClick: (date: string, time: string) => void;
   coloriMap?: TipologieMap;
+  draggingId: string | null;
+  dragHandlers: DragHandlers;
 }
 
 const DayColumn = memo(({
-  day, events, agentColorMap, agentNameMap, loading, onEventClick, onSlotClick, coloriMap,
+  day, events, agentColorMap, agentNameMap, loading, onSlotClick, coloriMap, draggingId, dragHandlers,
 }: DayColumnProps) => {
   const dateStr = format(day, 'yyyy-MM-dd');
   const today = isToday(day);
@@ -150,20 +178,13 @@ const DayColumn = memo(({
     <div className="flex-1 border-l border-gray-200 min-w-0 flex flex-col">
       {/* Sticky day header */}
       <div
-        className={cn(
-          'sticky top-0 bg-white z-10 flex flex-col items-center justify-center border-b border-gray-200 shrink-0',
-        )}
+        className={cn('sticky top-0 bg-white z-10 flex flex-col items-center justify-center border-b border-gray-200 shrink-0')}
         style={{ height: DAY_HEADER_HEIGHT }}
       >
         <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">
           {format(day, 'EEE', { locale: it })}
         </span>
-        <span
-          className={cn(
-            'text-xl font-bold leading-none mt-0.5',
-            today ? 'text-[#94b0ab]' : 'text-gray-800',
-          )}
-        >
+        <span className={cn('text-xl font-bold leading-none mt-0.5', today ? 'text-[#94b0ab]' : 'text-gray-800')}>
           {format(day, 'd')}
         </span>
       </div>
@@ -175,93 +196,88 @@ const DayColumn = memo(({
         </div>
       ) : (
         <div style={{ paddingTop: TIMELINE_TOP_PADDING }}>
-        <div
-          className="relative cursor-pointer"
-          style={{ height: TIMELINE_HEIGHT }}
-          onClick={handleTimelineClick}
-        >
-          {/* Hour lines */}
-          {HOURS.map(h => (
-            <React.Fragment key={h}>
-              <div
-                className="absolute left-0 right-0 border-t border-gray-200"
-                style={{ top: (h - DAY_START) * HOUR_HEIGHT }}
-              />
-              <div
-                className="absolute left-0 right-0"
-                style={{
-                  top: (h - DAY_START) * HOUR_HEIGHT + HOUR_HEIGHT / 2,
-                  borderTop: '1px dashed #e5e7eb',
-                }}
-              />
-            </React.Fragment>
-          ))}
-
-          {/* Today highlight */}
-          {today && (
-            <div className="absolute inset-0 bg-[#94b0ab]/[0.03] pointer-events-none" />
-          )}
-
-          {/* Event blocks */}
-          {laid.map(event => {
-            const cm = coloriMap ?? TIPOLOGIA_COLORS;
-            const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
-            const agentColor = agentColorMap.get(event.agente_id) ?? '#94b0ab';
-            const initials = (agentNameMap.get(event.agente_id) ?? '?').substring(0, 2).toUpperCase();
-            const top = getEventTop(event.ora_inizio);
-            const height = getEventHeight(event.ora_inizio, event.ora_fine);
-            const leftPct = (event.lane / event.totalLanes) * 100;
-            const widthPct = (1 / event.totalLanes) * 100;
-
-            return (
-              <div
-                key={event.id}
-                data-event-block
-                onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                className="absolute rounded-lg overflow-hidden cursor-pointer hover:brightness-90 transition-all px-1.5 py-1"
-                style={{
-                  top,
-                  height,
-                  minHeight: 24,
-                  left: `calc(${leftPct}% + 1px)`,
-                  width: `calc(${widthPct}% - 2px)`,
-                  backgroundColor: colors.bg,
-                  borderLeft: `3px solid ${colors.border}`,
-                  boxShadow: `0 1px 3px 0 ${colors.bg}55`,
-                }}
-              >
-                <p
-                  className="text-[11.5px] font-bold leading-tight truncate"
-                  style={{ color: colors.text }}
-                >
-                  {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
-                </p>
-                {height > 42 && (
-                  <p
-                    className="text-[11px] leading-tight truncate font-medium opacity-90"
-                    style={{ color: colors.text }}
-                  >
-                    {event.leads
-                      ? `${event.leads.nome} ${event.leads.cognome}`
-                      : event.immobili?.titolo ?? ''}
-                  </p>
-                )}
-                {/* Agent color dot — tiny, non-intrusive */}
-                <span
-                  className="absolute bottom-1 right-1 w-2 h-2 rounded-full shrink-0 ring-1 ring-white/40"
-                  style={{ backgroundColor: agentColor }}
+          <div
+            className="relative cursor-pointer"
+            style={{ height: TIMELINE_HEIGHT }}
+            onClick={handleTimelineClick}
+          >
+            {/* Hour lines */}
+            {HOURS.map(h => (
+              <React.Fragment key={h}>
+                <div className="absolute left-0 right-0 border-t border-gray-200" style={{ top: (h - DAY_START) * HOUR_HEIGHT }} />
+                <div
+                  className="absolute left-0 right-0"
+                  style={{ top: (h - DAY_START) * HOUR_HEIGHT + HOUR_HEIGHT / 2, borderTop: '1px dashed #e5e7eb' }}
                 />
-              </div>
-            );
-          })}
+              </React.Fragment>
+            ))}
 
-          {/* Empty state dot */}
-          {events.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <span className="text-[9px] text-gray-200">—</span>
-            </div>
-          )}
-        </div>
+            {today && <div className="absolute inset-0 bg-[#94b0ab]/[0.03] pointer-events-none" />}
+
+            {/* Event blocks */}
+            {laid.map(event => {
+              const cm = coloriMap ?? TIPOLOGIA_COLORS;
+              const colors = cm[event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
+              const agentColor = agentColorMap.get(event.agente_id) ?? '#94b0ab';
+              const top = getEventTop(event.ora_inizio);
+              const height = getEventHeight(event.ora_inizio, event.ora_fine);
+              const leftPct = (event.lane / event.totalLanes) * 100;
+              const widthPct = (1 / event.totalLanes) * 100;
+              const isDragging = draggingId === event.id;
+
+              return (
+                <div
+                  key={event.id}
+                  data-event-block
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+                    dragHandlers.onPointerDown(event, e);
+                  }}
+                  onPointerMove={(e) => dragHandlers.onPointerMove(event, e)}
+                  onPointerUp={(e) => {
+                    (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+                    dragHandlers.onPointerUp(event, e);
+                  }}
+                  onPointerCancel={() => dragHandlers.onPointerCancel(event)}
+                  className="absolute rounded-lg overflow-hidden transition-opacity px-1.5 py-1 select-none touch-none"
+                  style={{
+                    top,
+                    height,
+                    minHeight: 24,
+                    left: `calc(${leftPct}% + 1px)`,
+                    width: `calc(${widthPct}% - 2px)`,
+                    backgroundColor: colors.bg,
+                    borderLeft: `3px solid ${colors.border}`,
+                    boxShadow: `0 1px 3px 0 ${colors.bg}55`,
+                    opacity: isDragging ? 0.35 : 1,
+                    cursor: isDragging ? 'grabbing' : 'grab',
+                  }}
+                >
+                  <p className="text-[11.5px] font-bold leading-tight truncate" style={{ color: colors.text }}>
+                    {event.ora_inizio?.slice(0, 5)}{event.ora_inizio ? ' · ' : ''}{event.tipologia}
+                  </p>
+                  {height > 42 && (
+                    <p className="text-[11px] leading-tight truncate font-medium opacity-90" style={{ color: colors.text }}>
+                      {event.leads
+                        ? `${event.leads.nome} ${event.leads.cognome}`
+                        : event.immobili?.titolo ?? ''}
+                    </p>
+                  )}
+                  <span
+                    className="absolute bottom-1 right-1 w-2 h-2 rounded-full shrink-0 ring-1 ring-white/40"
+                    style={{ backgroundColor: agentColor }}
+                  />
+                </div>
+              );
+            })}
+
+            {events.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span className="text-[9px] text-gray-200">—</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -272,9 +288,20 @@ DayColumn.displayName = 'DayColumn';
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const WeeklyPlanningView = ({
-  events, agents, visibleAgents, selectedDate, loading, onEventClick, onSlotClick, coloriMap,
+  events, agents, visibleAgents, selectedDate, loading, onEventClick, onSlotClick, onEventDrop, coloriMap,
 }: WeeklyPlanningViewProps) => {
   const [hiddenAgentIds, setHiddenAgentIds] = useState<Set<string>>(new Set());
+  const [drag, setDrag] = useState<DragInfo | null>(null);
+
+  // Refs avoid stale closures in stable callbacks without causing DayColumn memo busts
+  const pendingDragRef = useRef<PendingDrag | null>(null);
+  const dragRef = useRef<DragInfo | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const weekDays = useMemo(() => {
+    const monday = startOfWeek(parseISO(selectedDate), { weekStartsOn: 1 });
+    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+  }, [selectedDate]);
 
   const toggleAgent = (id: string) =>
     setHiddenAgentIds(prev => {
@@ -282,11 +309,6 @@ const WeeklyPlanningView = ({
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-
-  const weekDays = useMemo(() => {
-    const monday = startOfWeek(parseISO(selectedDate), { weekStartsOn: 1 });
-    return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
-  }, [selectedDate]);
 
   const agentColorMap = useMemo(
     () => new Map(agents.map(a => [a.id, a.colore_calendario ?? '#94b0ab'])),
@@ -309,10 +331,148 @@ const WeeklyPlanningView = ({
     return map;
   }, [events, hiddenAgentIds]);
 
+  // ── Drag helpers ────────────────────────────────────────────────────────────
+
+  const getDropTarget = useCallback((clientX: number, clientY: number, offsetY: number) => {
+    if (!scrollRef.current) return null;
+    const el = scrollRef.current;
+    const rect = el.getBoundingClientRect();
+    const scrollTop = el.scrollTop;
+    const innerWidth = el.scrollWidth || el.clientWidth;
+    const colWidth = (innerWidth - GUTTER_WIDTH) / 7;
+
+    const x = clientX - rect.left + el.scrollLeft;
+    const colIndex = Math.max(0, Math.min(6, Math.floor((x - GUTTER_WIDTH) / colWidth)));
+
+    const y = clientY - rect.top + scrollTop - DAY_HEADER_HEIGHT - TIMELINE_TOP_PADDING;
+    const rawMinutes = DAY_START * 60 + ((y - offsetY) / HOUR_HEIGHT) * 60;
+    const snapped = snapToQuarter(rawMinutes);
+
+    return { date: format(weekDays[colIndex], 'yyyy-MM-dd'), minutes: snapped };
+  }, [weekDays]);
+
+  // ── Stable drag handlers (read from refs, no state deps) ───────────────────
+
+  const handlePointerDown = useCallback((event: Appointment, e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    pendingDragRef.current = {
+      event,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+  }, []);
+
+  const handlePointerMove = useCallback((event: Appointment, e: React.PointerEvent<HTMLDivElement>) => {
+    const currentDrag = dragRef.current;
+    if (currentDrag?.event.id === event.id) {
+      const updated = { ...currentDrag, currentClientX: e.clientX, currentClientY: e.clientY };
+      dragRef.current = updated;
+      setDrag(updated);
+      return;
+    }
+    const pending = pendingDragRef.current;
+    if (!pending || pending.event.id !== event.id) return;
+    const dx = e.clientX - pending.startClientX;
+    const dy = e.clientY - pending.startClientY;
+    if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+      const newDrag: DragInfo = {
+        event: pending.event,
+        offsetX: pending.offsetX,
+        offsetY: pending.offsetY,
+        currentClientX: e.clientX,
+        currentClientY: e.clientY,
+      };
+      pendingDragRef.current = null;
+      dragRef.current = newDrag;
+      setDrag(newDrag);
+    }
+  }, []);
+
+  const handlePointerUp = useCallback((event: Appointment, e: React.PointerEvent<HTMLDivElement>) => {
+    const pending = pendingDragRef.current;
+    if (pending?.event.id === event.id) {
+      pendingDragRef.current = null;
+      onEventClick(event);
+      return;
+    }
+    const currentDrag = dragRef.current;
+    if (currentDrag?.event.id !== event.id) return;
+
+    dragRef.current = null;
+    setDrag(null);
+
+    const target = getDropTarget(e.clientX, e.clientY, currentDrag.offsetY);
+    if (!target) return;
+
+    const origStart = currentDrag.event.ora_inizio ? timeToMinutes(currentDrag.event.ora_inizio) : DAY_START * 60;
+    const origEnd = currentDrag.event.ora_fine ? timeToMinutes(currentDrag.event.ora_fine) : origStart + 60;
+    const duration = origEnd - origStart;
+    const newStart = minutesToTimeStr(target.minutes);
+    const newEnd = minutesToTimeStr(target.minutes + duration);
+
+    if (target.date === currentDrag.event.data && newStart === currentDrag.event.ora_inizio) return;
+
+    onEventDrop?.(currentDrag.event, target.date, newStart, newEnd);
+  }, [onEventClick, onEventDrop, getDropTarget]);
+
+  const handlePointerCancel = useCallback((event: Appointment) => {
+    if (pendingDragRef.current?.event.id === event.id) pendingDragRef.current = null;
+    if (dragRef.current?.event.id === event.id) {
+      dragRef.current = null;
+      setDrag(null);
+    }
+  }, []);
+
+  const dragHandlers: DragHandlers = useMemo(() => ({
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: handlePointerUp,
+    onPointerCancel: handlePointerCancel,
+  }), [handlePointerDown, handlePointerMove, handlePointerUp, handlePointerCancel]);
+
+  // ── Ghost rendering ─────────────────────────────────────────────────────────
+
+  const ghost = useMemo(() => {
+    if (!drag || !scrollRef.current) return null;
+    const el = scrollRef.current;
+    const innerWidth = el.scrollWidth || el.clientWidth;
+    const colWidth = Math.floor((innerWidth - GUTTER_WIDTH) / 7) - 4;
+    const height = getEventHeight(drag.event.ora_inizio, drag.event.ora_fine);
+    const cm = coloriMap ?? TIPOLOGIA_COLORS;
+    const colors = cm[drag.event.tipologia] ?? cm['Altro'] ?? TIPOLOGIA_COLORS['Altro'];
+
+    const target = getDropTarget(drag.currentClientX, drag.currentClientY, drag.offsetY);
+    const ghostTime = target ? minutesToTimeStr(target.minutes) : drag.event.ora_inizio?.slice(0, 5) ?? '';
+
+    return {
+      style: {
+        position: 'fixed' as const,
+        left: drag.currentClientX - drag.offsetX,
+        top: drag.currentClientY - drag.offsetY,
+        width: colWidth,
+        height,
+        backgroundColor: colors.bg,
+        borderLeft: `3px solid ${colors.border}`,
+        zIndex: 1000,
+        pointerEvents: 'none' as const,
+        borderRadius: 8,
+        opacity: 0.92,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
+        overflow: 'hidden',
+        padding: '4px 6px',
+        cursor: 'grabbing',
+      },
+      colors,
+      ghostTime,
+    };
+  }, [drag, coloriMap, getDropTarget]);
+
   return (
     <div className="h-full overflow-hidden rounded-[2rem] border border-gray-200 shadow-sm bg-white flex flex-col">
 
-      {/* Agent visibility pills — sticky inside the card */}
+      {/* Agent visibility pills */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 px-4 py-2.5 border-b border-gray-200">
         {visibleAgents.map(agent => {
           const color = agentColorMap.get(agent.id) ?? '#94b0ab';
@@ -336,7 +496,7 @@ const WeeklyPlanningView = ({
       </div>
 
       {/* Scrollable grid */}
-      <div className="flex-1 overflow-auto min-h-0">
+      <div ref={scrollRef} className="flex-1 overflow-auto min-h-0">
         <div className="flex" style={{ minWidth: 670 }}>
 
           {/* Time gutter */}
@@ -363,14 +523,29 @@ const WeeklyPlanningView = ({
               agentColorMap={agentColorMap}
               agentNameMap={agentNameMap}
               loading={loading}
-              onEventClick={onEventClick}
               onSlotClick={onSlotClick}
               coloriMap={coloriMap}
+              draggingId={drag?.event.id ?? null}
+              dragHandlers={dragHandlers}
             />
           ))}
 
         </div>
       </div>
+
+      {/* Drag ghost */}
+      {ghost && (
+        <div style={ghost.style}>
+          <p className="text-[11.5px] font-bold leading-tight truncate" style={{ color: ghost.colors.text }}>
+            {ghost.ghostTime} · {drag!.event.tipologia}
+          </p>
+          {ghost.style.height > 42 && drag!.event.leads && (
+            <p className="text-[11px] leading-tight truncate font-medium opacity-90" style={{ color: ghost.colors.text }}>
+              {drag!.event.leads.nome} {drag!.event.leads.cognome}
+            </p>
+          )}
+        </div>
+      )}
 
     </div>
   );
