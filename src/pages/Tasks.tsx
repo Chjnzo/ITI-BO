@@ -41,6 +41,15 @@ interface Task {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const hexWithOpacity = (hex: string, opacity: number): string => {
+  const clean = hex.replace('#', '');
+  if (clean.length !== 6) return `rgba(148,176,171,${opacity})`;
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+};
+
 const formatDateHeader = (dateStr: string): string => {
   const d = parseISO(dateStr);
   if (isToday(d)) return 'Oggi';
@@ -161,6 +170,7 @@ const Tasks = () => {
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailTitolo, setTaskDetailTitolo] = useState('');
@@ -271,6 +281,20 @@ const Tasks = () => {
   const personalByDate = useMemo(() => groupByDate(personalPending), [personalPending]);
   const sortedDates = useMemo(() => [...personalByDate.keys()].sort(), [personalByDate]);
 
+  const toggleAgentVisibility = useCallback((agentId: string) => {
+    setHiddenAgents(prev => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }, []);
+
+  const visibleAgents = useMemo(
+    () => agents.filter(a => !hiddenAgents.has(a.id)),
+    [agents, hiddenAgents],
+  );
+
   // Generale: tasks per agent
   const tasksByAgent = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -297,7 +321,7 @@ const Tasks = () => {
             <p className="text-gray-500 mt-1 font-medium">
               {viewMode === 'personale'
                 ? `${personalPending.length} in programma`
-                : `${filteredPending.length} totali · ${agents.length} agenti`}
+                : `${filteredPending.length} totali · ${visibleAgents.length} agenti`}
             </p>
           </div>
 
@@ -313,6 +337,28 @@ const Tasks = () => {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {/* Agent visibility toggles (Generale only) */}
+            {viewMode === 'generale' && agents.map(agent => {
+              const color = agent.colore_calendario ?? '#94b0ab';
+              const isHidden = hiddenAgents.has(agent.id);
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  title={isHidden ? `Mostra ${agent.nome_completo}` : `Nascondi ${agent.nome_completo}`}
+                  onClick={() => toggleAgentVisibility(agent.id)}
+                  className="rounded-xl px-3 py-1 text-xs font-bold border transition-all h-9"
+                  style={{
+                    backgroundColor: isHidden ? '#f3f4f6' : hexWithOpacity(color, 0.12),
+                    borderColor: isHidden ? '#e5e7eb' : color,
+                    color: isHidden ? '#9ca3af' : color,
+                  }}
+                >
+                  {agent.nome_completo ?? agent.id}
+                </button>
+              );
+            })}
 
             {/* Search */}
             <div className="relative">
@@ -460,7 +506,7 @@ const Tasks = () => {
                 <div className="flex-1 flex items-center justify-center text-gray-300 animate-pulse text-sm">
                   Caricamento...
                 </div>
-              ) : agents.map(agent => {
+              ) : visibleAgents.map(agent => {
                 const agentTasks = tasksByAgent.get(agent.id) ?? [];
                 const color = agent.colore_calendario ?? '#94b0ab';
                 const initials = (agent.nome_completo ?? agent.id).substring(0, 2).toUpperCase();

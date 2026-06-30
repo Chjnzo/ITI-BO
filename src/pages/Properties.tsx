@@ -146,10 +146,10 @@ const Properties = () => {
             <Button
               variant="outline"
               onClick={() => setEvidenzaOpen(true)}
-              className="rounded-2xl px-6 h-14 font-bold border-gray-200 gap-2 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all"
+              title="In Evidenza"
+              className="rounded-2xl w-11 h-11 p-0 border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all"
             >
-              <Star size={18} className="fill-[#facc15] text-[#facc15]" />
-              In Evidenza
+              <Star size={15} className="fill-[#facc15] text-[#facc15]" />
             </Button>
             <Button
               onClick={() => { setEditingProperty(null); setIsWizardOpen(true); }}
