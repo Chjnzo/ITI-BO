@@ -4,16 +4,17 @@ import React, { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
-import { format, isToday, parseISO, startOfWeek, endOfWeek, addDays, addWeeks, subWeeks } from 'date-fns';
+import { format, parseISO, startOfWeek, endOfWeek, addDays, subDays, addWeeks, subWeeks } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
-import { Plus, ChevronLeft, ChevronRight, CalendarIcon } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, CalendarIcon, Columns3, CalendarDays } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import EventFormModal, {
   type Appointment, type AgentProfile, type TipologiaRow, type TipologieMap, TIPOLOGIA_COLORS,
 } from '@/components/agenda/EventFormModal';
 import CategorieSheet from '@/components/agenda/CategorieSheet';
 import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
+import AgentColumnsView from '@/components/agenda/AgentColumnsView';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 
@@ -24,6 +25,7 @@ interface FormModalState {
   event?: Appointment;
   defaultDate?: string;
   defaultTimeStart?: string;
+  defaultAgentId?: string;
 }
 
 const Agenda = () => {
@@ -33,6 +35,7 @@ const Agenda = () => {
   const [properties, setProperties] = useState<{ id: string; titolo: string; copertina_url: string | null }[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [viewMode, setViewMode] = useState<'week' | 'agent'>('week');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [formModal, setFormModal] = useState<FormModalState>({ open: false });
   const [tipologieRows, setTipologieRows] = useState<TipologiaRow[]>([]);
@@ -80,7 +83,11 @@ const Agenda = () => {
 
   // Agents visible in the board (exclude Marco, current user first)
   const visibleAgents = useMemo(() => {
-    const filtered = agents.filter(a => a.nome_completo?.toLowerCase() !== 'marco');
+    const ESCLUSI = ['marco', 'eliana'];
+    const filtered = agents.filter(a => {
+      const nome = a.nome_completo?.toLowerCase() ?? '';
+      return !ESCLUSI.some(n => nome === n || nome.startsWith(n + ' '));
+    });
     if (!currentUserId) return filtered;
     return [
       ...filtered.filter(a => a.id === currentUserId),
@@ -118,16 +125,19 @@ const Agenda = () => {
 
   const openNewEvent = () => setFormModal({ open: true, defaultDate: selectedDate });
   const openEventEdit = (event: Appointment) => setFormModal({ open: true, event });
-  const openSlotCreate = (date: string, time: string) =>
-    setFormModal({ open: true, defaultDate: date, defaultTimeStart: time });
+  const openSlotCreate = (date: string, time: string, agentId?: string) =>
+    setFormModal({ open: true, defaultDate: date, defaultTimeStart: time, defaultAgentId: agentId });
 
   const parsedDate = parseISO(selectedDate);
 
   const periodLabel = useMemo(() => {
+    if (viewMode === 'agent') {
+      return format(parsedDate, 'EEEE d MMMM yyyy', { locale: it });
+    }
     const ws = startOfWeek(parsedDate, { weekStartsOn: 1 });
     const we = endOfWeek(parsedDate, { weekStartsOn: 1 });
     return `Settimana ${format(ws, 'd')}–${format(we, 'd MMMM yyyy', { locale: it })}`;
-  }, [parsedDate]);
+  }, [parsedDate, viewMode]);
 
   return (
     <AdminLayout fullHeight wide>
@@ -140,12 +150,42 @@ const Agenda = () => {
             <span className="text-sm font-semibold text-gray-400 capitalize truncate">{periodLabel}</span>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            {/* View mode toggle */}
+            <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode('week')}
+                className={cn(
+                  'h-11 px-3 flex items-center gap-1.5 text-xs font-bold transition-colors',
+                  viewMode === 'week' ? 'bg-[#94b0ab] text-white' : 'bg-white text-gray-500 hover:bg-gray-50',
+                )}
+              >
+                <CalendarDays size={14} />
+                Settimana
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('agent')}
+                className={cn(
+                  'h-11 px-3 flex items-center gap-1.5 text-xs font-bold transition-colors border-l border-gray-200',
+                  viewMode === 'agent' ? 'bg-[#94b0ab] text-white' : 'bg-white text-gray-500 hover:bg-gray-50',
+                )}
+              >
+                <Columns3 size={14} />
+                Per agente
+              </button>
+            </div>
+
             {/* Nav arrows */}
             <Button
               variant="outline"
               size="icon"
               className="h-11 w-11 rounded-xl border-gray-200"
-              onClick={() => setSelectedDate(format(subWeeks(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+              onClick={() => setSelectedDate(
+                viewMode === 'week'
+                  ? format(subWeeks(parseISO(selectedDate), 1), 'yyyy-MM-dd')
+                  : format(subDays(parseISO(selectedDate), 1), 'yyyy-MM-dd')
+              )}
             >
               <ChevronLeft size={16} />
             </Button>
@@ -153,7 +193,11 @@ const Agenda = () => {
               variant="outline"
               size="icon"
               className="h-11 w-11 rounded-xl border-gray-200"
-              onClick={() => setSelectedDate(format(addWeeks(parseISO(selectedDate), 1), 'yyyy-MM-dd'))}
+              onClick={() => setSelectedDate(
+                viewMode === 'week'
+                  ? format(addWeeks(parseISO(selectedDate), 1), 'yyyy-MM-dd')
+                  : format(addDays(parseISO(selectedDate), 1), 'yyyy-MM-dd')
+              )}
             >
               <ChevronRight size={16} />
             </Button>
@@ -188,20 +232,33 @@ const Agenda = () => {
           </div>
         </div>
 
-        {/* Weekly calendar */}
+        {/* Calendar view */}
         <div className="flex-1 min-h-0 relative">
           <div className="absolute inset-0">
-            <WeeklyPlanningView
-              events={events}
-              agents={agents}
-              visibleAgents={visibleAgents}
-              selectedDate={selectedDate}
-              loading={loading}
-              onEventClick={openEventEdit}
-              onSlotClick={openSlotCreate}
-              onEventDrop={handleEventDrop}
-              coloriMap={coloriMap}
-            />
+            {viewMode === 'week' ? (
+              <WeeklyPlanningView
+                events={events}
+                agents={agents}
+                visibleAgents={visibleAgents}
+                selectedDate={selectedDate}
+                loading={loading}
+                onEventClick={openEventEdit}
+                onSlotClick={openSlotCreate}
+                onEventDrop={handleEventDrop}
+                coloriMap={coloriMap}
+              />
+            ) : (
+              <AgentColumnsView
+                events={events}
+                agents={agents}
+                visibleAgents={visibleAgents}
+                selectedDate={selectedDate}
+                loading={loading}
+                onEventClick={openEventEdit}
+                onSlotClick={openSlotCreate}
+                coloriMap={coloriMap}
+              />
+            )}
           </div>
         </div>
 
