@@ -354,6 +354,7 @@ const WeeklyPlanningView = ({
   // ── Stable drag handlers (read from refs, no state deps) ───────────────────
 
   const handlePointerDown = useCallback((event: Appointment, e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch') return;
     const rect = e.currentTarget.getBoundingClientRect();
     pendingDragRef.current = {
       event,
