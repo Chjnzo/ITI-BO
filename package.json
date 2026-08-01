@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "build": "vite build && cp dist/index.html dist/404.html",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
