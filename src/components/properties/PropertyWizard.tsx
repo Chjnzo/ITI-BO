@@ -338,14 +338,27 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     }
   };
 
-  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newItems = Array.from(e.target.files).map(file => {
-        const preview = URL.createObjectURL(file);
+  const handleGalleryChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const files = Array.from(e.target.files);
+    setIsCompressing(true);
+    try {
+      // Compress immediately so the reorder grid drags smoothly instead of
+      // repainting full-resolution camera photos on every drag frame.
+      const newItems = await Promise.all(files.map(async file => {
+        let compressed = file;
+        try {
+          compressed = await compressGalleria(file);
+        } catch {
+          // Fall back to the original file if compression fails.
+        }
+        const preview = URL.createObjectURL(compressed);
         objectUrlsRef.current.add(preview);
-        return { id: `new-${galleryIdCounter.current++}`, preview, file };
-      });
+        return { id: `new-${galleryIdCounter.current++}`, preview, file: compressed };
+      }));
       setGalleryItems(prev => [...prev, ...newItems]);
+    } finally {
+      setIsCompressing(false);
     }
   };
 
@@ -386,12 +399,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
 
     setIsCompressing(true);
     let compressedCover: File | null = null;
-    let compressedGallery: (File | null)[] = [];
     try {
+      // Gallery items are already compressed on selection (handleGalleryChange).
       if (coverImage) compressedCover = await compressCopertina(coverImage);
-      compressedGallery = await Promise.all(
-        galleryItems.map(item => item.file ? compressGalleria(item.file) : Promise.resolve(null))
-      );
     } catch (error: any) {
       showError("Errore durante la compressione delle immagini: " + error.message);
       setIsCompressing(false);
@@ -426,8 +436,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
 
       const orderedGalleryUrls = await Promise.all(
         galleryItems.map(async (item, i) => {
-          if (!compressedGallery[i]) return item.preview; // existing http URL
-          return uploadToStorage(compressedGallery[i] as File, `immobili/${immobileId}/galleria_${ts}_${i}.webp`);
+          if (!item.file) return item.preview; // existing http URL
+          return uploadToStorage(item.file, `immobili/${immobileId}/galleria_${ts}_${i}.webp`);
         })
       );
 
