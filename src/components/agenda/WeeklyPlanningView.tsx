@@ -112,6 +112,7 @@ interface PendingDrag {
   startClientY: number;
   offsetX: number;
   offsetY: number;
+  pointerType: string;
 }
 
 interface DragInfo {
@@ -354,7 +355,6 @@ const WeeklyPlanningView = ({
   // ── Stable drag handlers (read from refs, no state deps) ───────────────────
 
   const handlePointerDown = useCallback((event: Appointment, e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.pointerType === 'touch') return;
     const rect = e.currentTarget.getBoundingClientRect();
     pendingDragRef.current = {
       event,
@@ -362,6 +362,7 @@ const WeeklyPlanningView = ({
       startClientY: e.clientY,
       offsetX: e.clientX - rect.left,
       offsetY: e.clientY - rect.top,
+      pointerType: e.pointerType,
     };
   }, []);
 
@@ -375,6 +376,7 @@ const WeeklyPlanningView = ({
     }
     const pending = pendingDragRef.current;
     if (!pending || pending.event.id !== event.id) return;
+    if (pending.pointerType === 'touch') return;
     const dx = e.clientX - pending.startClientX;
     const dy = e.clientY - pending.startClientY;
     if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
