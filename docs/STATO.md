@@ -8,8 +8,9 @@
 _Ultimo aggiornamento: 2026-08-20 — audit completo della codebase (struttura, sicurezza, qualità)
 + creazione della migration baseline da introspezione produzione + pulizia sistematica a basso
 rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI minima, collaudo
-RLS di sola lettura) + fix gap RLS `tasks` in produzione + stack Supabase locale via Docker
-avviato e verificato riproducibile da zero._
+RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/`appuntamenti` in
+produzione (con fix di una regressione live su `leads` INSERT causata da un fix precedente nello
+stesso giorno) + stack Supabase locale via Docker avviato e verificato riproducibile da zero._
 
 ## Cosa funziona
 
@@ -74,6 +75,15 @@ nel file baseline, righe indicate):
    `leads` ora non ha più alcuna policy INSERT diretta: solo `upsert_lead` (SECURITY DEFINER,
    owner `postgres` = owner tabella, `relforcerowsecurity=false` → bypassa RLS) può inserire.
    Verificato via `get_advisors` post-fix: nessun advisor residuo su questa policy.
+   **⚠️ REGRESSIONE causata da questo fix, RISOLTA 2026-08-20 (stesso giorno)**: il DROP ha
+   lasciato `leads` **senza alcuna policy INSERT**, anche per `authenticated` —
+   `src/pages/Leads.tsx:605` crea un nuovo contatto con un `.insert()` diretto (non passa dalla
+   RPC), quindi gli agenti hanno iniziato a ricevere `403 Forbidden` in produzione (segnalato
+   dall'utente come "i clienti mi hanno segnalato questo errore"). Fix: aggiunta policy
+   `"Authenticated can insert leads"` (`FOR INSERT TO authenticated WITH CHECK (true)`) —
+   `anon` resta senza percorso diretto (deve passare da `upsert_lead`), gli agenti tornano
+   operativi. Lezione: un DROP di una policy `roles={public}` va sempre verificato anche per
+   `authenticated`, non solo per `anon` — `public` in Postgres include entrambi i ruoli.
 5. ~~`tasks` ha sia una policy permissiva `ALL`/`public` sia policy più strette per
    `authenticated`...~~ **RISOLTO 2026-08-20**: policy `"Team_Può_Fare_Tutto"` (roles=`public`,
    quindi incluso `anon`) droppata in produzione (`apply_migration
@@ -88,23 +98,19 @@ nel file baseline, righe indicate):
 7. `trigger_zone_omi_sync` è probabilmente invocata da un job `pg_cron`, non ancora ispezionato
    (`cron.job` fuori perimetro di questa sessione).
 
-**Nuovo gap RLS trovato 2026-08-20, non ancora risolto — richiede conferma esplicita prima di
-agire**: durante la verifica pre-fix del punto 5, tre tabelle sono risultate protette da
-un'**unica** policy catch-all (`ALL`/`roles=public`/`qual=true`), senza alcuna policy
-`authenticated`-only di riserva:
-- `lead_notes`
-- `profili_agenti`
-- `appuntamenti`
-
-A differenza di `tasks` (che aveva policy `authenticated` già presenti accanto a quella
-permissiva, quindi il drop del punto 5 non ha rotto nulla), qui **droppare la policy senza
-sostituirla lascerebbe le tabelle senza alcuna policy corrispondente** → RLS nega tutto anche
-agli agenti autenticati, rompendo l'app (Agenda per `appuntamenti`, note lead per `lead_notes`,
-profili agente per `profili_agenti`). Serve una policy sostitutiva `authenticated`-only per
-ciascuna, non una semplice `DROP`. Non ancora applicato in produzione: nessuna scrittura fatta,
-in attesa di conferma esplicita dell'utente su come procedere (e se `ITI2.0`, il sito pubblico
-sibling, ha bisogno di lettura anonima su una di queste — da verificare in quel repo, non
-accessibile da questa sessione).
+8. ~~**Gap RLS trovato 2026-08-20**: `lead_notes`, `profili_agenti`, `appuntamenti` protette da
+   un'unica policy catch-all (`ALL`/`roles=public`/`qual=true`), senza policy
+   `authenticated`-only di riserva...~~ **RISOLTO 2026-08-20 (richiesta esplicita dell'utente)**:
+   `apply_migration restore_leads_insert_and_scope_catchall_policies` + migration versionata
+   `supabase/migrations/20260820140000_restore_leads_insert_and_scope_catchall_policies.sql`.
+   Le tre policy permissive (`"Permetti tutto su lead_notes"`, `"Permetti tutto su
+   profili_agenti"`, `"Team_Può_Fare_Tutto_Agenda"`) sono state **sostituite** (non solo
+   droppate) con policy `FOR ALL TO authenticated USING (true) WITH CHECK (true)` — verificato
+   prima via grep sul repo `ITI2.0` (sito pubblico sibling) che nessuna delle tre tabelle è
+   letta da codice anonimo/pubblico. Verificato post-fix via `pg_policies` diretto: `anon` non ha
+   più alcuna policy su queste tre tabelle; `get_advisors` non mostra nuovi warning (solo quelli
+   preesistenti e attesi: `upsert_lead` chiamabile da `anon`/`authenticated` per design, password
+   compromesse non ancora attivato).
 
 **Nuovi finding emersi da `get_advisors` dopo il fix**:
 - ~~`search_path` non fissato su 3 funzioni: `comparabili_vicini`, `update_valutazioni_timestamp`,
@@ -284,7 +290,5 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
    ancora validate da un umano.
 10. ~~Ambiente locale Docker/Supabase...~~ **FATTO 2026-08-20**: vedi punto 3 e debito tecnico
     sopra.
-11. Decidere come risolvere il gap RLS su `lead_notes`/`profili_agenti`/`appuntamenti` (unica
-    policy catch-all, nessuna `authenticated`-only di riserva — vedi "Scoperte che richiedono
-    conferma umana" sopra). Non risolvibile con un semplice `DROP` come fatto per `tasks`: serve
-    una policy sostitutiva per non rompere l'app.
+11. ~~Decidere come risolvere il gap RLS su `lead_notes`/`profili_agenti`/`appuntamenti`...~~
+    **FATTO 2026-08-20**: vedi punto 8 sopra.
