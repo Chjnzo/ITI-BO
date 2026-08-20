@@ -287,6 +287,8 @@ const Leads = () => {
     if (!error && data) {
       const full = { ...data, stato: data.stato === 'nuovo' ? 'Nuovo' : (data.stato || 'Nuovo') };
       setSelectedLead((prev: any) => prev?.id === leadId ? full : prev);
+    } else if (error) {
+      showError('Errore nel caricamento del dettaglio lead');
     }
 
     // Fetch associated valutazione

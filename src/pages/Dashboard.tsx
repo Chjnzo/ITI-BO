@@ -12,7 +12,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
 import TaskModal from '@/components/TaskModal';
 import ProfileSettingsSheet from '@/components/ProfileSettingsSheet';
-import { showSuccess } from '@/utils/toast';
+import { showSuccess, showError } from '@/utils/toast';
 
 interface AgentProfile {
   id: string;
@@ -79,11 +79,12 @@ const Dashboard = () => {
 
       setUserId(user.id);
 
-      const { data: prof } = await supabase
+      const { data: prof, error: profError } = await supabase
         .from('profili_agenti')
         .select('id, nome_completo, colore_calendario, avatar_url, is_admin')
         .eq('id', user.id)
         .single();
+      if (profError) showError('Errore nel caricamento del profilo agente');
 
       const profileData = prof as (AgentProfile & { is_admin?: boolean }) | null;
       setProfile(profileData);
@@ -117,12 +118,12 @@ const Dashboard = () => {
         .limit(5);
 
       const [
-        { count: activeLeadsCount },
-        { count: todayAppCount },
-        { count: pendingTasksCount },
-        { data: appsData },
-        { data: tasksData },
-        { data: leadsData },
+        { count: activeLeadsCount, error: activeLeadsError },
+        { count: todayAppCount, error: todayAppCountError },
+        { count: pendingTasksCount, error: pendingTasksCountError },
+        { data: appsData, error: appsError },
+        { data: tasksData, error: tasksError },
+        { data: leadsData, error: leadsError },
       ] = await Promise.all([
         activeLeadsQuery,
         todayAppCountQuery,
@@ -144,6 +145,9 @@ const Dashboard = () => {
       ]);
 
       if (aborted) return;
+      if (activeLeadsError || todayAppCountError || pendingTasksCountError || appsError || tasksError || leadsError) {
+        showError('Errore nel caricamento dei dati della dashboard');
+      }
       setStats({
         activeLeads: activeLeadsCount ?? 0,
         todayAppointments: todayAppCount ?? 0,

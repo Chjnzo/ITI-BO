@@ -20,16 +20,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
+import { VALUATION_FORM_FEATURES as PREDEFINED_FEATURES } from '@/lib/constants';
 
 interface ValuationFormProps {
   onClose: () => void;
   onSuccess?: () => void;
 }
-
-const PREDEFINED_FEATURES = [
-  "Box Auto", "Posto Auto", "Cantina", "Giardino Privato",
-  "Ascensore", "Balcone", "Terrazzo", "Domotica"
-];
 
 interface ValuationResult {
   descrizione_zona: string;

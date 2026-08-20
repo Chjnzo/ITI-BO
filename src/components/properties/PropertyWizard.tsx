@@ -34,6 +34,7 @@ import {
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 import { z } from 'zod';
 import { PropertySchema } from '@/schemas';
+import { PREDEFINED_FEATURES } from '@/lib/constants';
 
 interface PropertyWizardProps {
   initialData?: any;
@@ -62,12 +63,6 @@ const LOCALI_STANZE: Record<string, number | null> = {
   Capannone: null,
   Terreno: null,
 };
-
-const PREDEFINED_FEATURES = [
-  "Aria Condizionata", "Ascensore", "Balcone", "Terrazzo",
-  "Box Auto", "Posto Auto", "Cantina", "Giardino Privato",
-  "Domotica", "Allarme", "Piscina", "Pannelli Solari"
-];
 
 type GalleryItem = { id: string; preview: string; file?: File };
 
