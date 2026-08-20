@@ -30,3 +30,15 @@ dist-ssr
 .env.staging
 .env.*.local
 .claude/worktrees/
+
+# Ruflo local secrets and runtime data
+.claude-flow/
+.swarm/
+.agents/
+ruvector.db
+.claude/proven-config.json
+.claude/.proven-config-version
+.claude/helpers/
+.claude/skills/
+.claude/.ruflo-status-cache.json
+.claude/.ruflo-status-refresh.lock
