@@ -122,10 +122,10 @@ e come riorganizzare `supabase/migrations/` attorno a questa baseline.
 
 - ~~**Nessun test automatico e nessuna CI**~~ **RISOLTO 2026-08-20 (parziale)**: creato
   `.github/workflows/ci.yml` (checkout, Node 22 LTS, `npm ci`, `npm run lint`, `npm run build`).
-  **Il primo run è atteso rosso**: i 138 errori lint `no-explicit-any` residui (vedi sotto) non
-  sono stati risolti in questa sessione (vivono soprattutto in `Leads.tsx`, file grande escluso
-  dallo scope). Risolvere quel debito è il prossimo passo per rendere la CI verde, non un
-  problema di setup del workflow.
+  **Primo run confermato rosso** (GitHub Actions run `32350146194`, fallito sullo step
+  `npm run lint`): 83 errori lint `no-explicit-any` residui (vedi sotto) non risolti in questa
+  sessione (vivono soprattutto in `Leads.tsx`, file grande escluso dallo scope). Risolvere quel
+  debito è il prossimo passo per rendere la CI verde, non un problema di setup del workflow.
 - ~~**Nessuno script di collaudo RLS per ruolo**~~ **RISOLTO 2026-08-20 (fondamenta)**: creato
   `scripts/collaudo-rls.mjs` (`npm run collaudo:rls`) — verifica con client `anon` che le tabelle
   pubbliche (`immobili`, `open_houses`, `prenotazioni_oh`, `zone_omi`) siano leggibili e che le
@@ -171,11 +171,14 @@ e come riorganizzare `supabase/migrations/` attorno a questa baseline.
   un sottoinsieme filtrato dalla lista canonica invece di una copia indipendente — se una voce
   canonica cambia nome, il sottoinsieme deprecato non può più andare silenziosamente fuori sync.
 - ~~**139 errori + 26 warning ESLint**~~ **PARZIALMENTE RISOLTO 2026-08-20**: fix
-  `tailwind.config.ts:98` (`require()` → `import` ESM statico) — errore count atteso 138.
-  I 138 `no-explicit-any` residui restano fuori scope: concentrati in `src/pages/Leads.tsx`
-  (57 errori, confermati riga per riga con `npx eslint src/pages/Leads.tsx`), il file più grande
-  e più modificato del repo — nessun refactor di file grandi in questa sessione per esplicita
-  richiesta dell'utente.
+  `tailwind.config.ts:98` (`require()` → `import` ESM statico) — errore count confermato da CI
+  (run `32350146194`): **83 errori + 12 warning**. Il numero locale inizialmente riportato (138)
+  era gonfiato da un worktree Git residuo (`.claude/worktrees/sweet-ritchie-a9c8c2`, già
+  `.gitignore`d) che conteneva una copia stantia di `src/` letta per errore da `npx eslint .`;
+  rimosso il worktree, il conteggio locale ora coincide con quello di CI. I 83 `no-explicit-any`
+  residui restano fuori scope: concentrati in `src/pages/Leads.tsx`, il file più grande e più
+  modificato del repo — nessun refactor di file grandi in questa sessione per esplicita richiesta
+  dell'utente.
 - **Correzione a una nota precedente di questo documento**: il causale "tsconfig root permissivo
   → 139 errori `any`" scritto sopra in versioni precedenti **era impreciso**. Letto
   `eslint.config.js` per intero: non c'è alcun collegamento type-aware (`parserOptions.project`/
@@ -230,9 +233,9 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
 5. ~~Introdurre uno script di collaudo RLS per ruolo.~~ **FATTO 2026-08-20 (fondamenta)**:
    `scripts/collaudo-rls.mjs`, solo sola lettura — vedi punto 3 per il seguito.
 6. ~~CI minima (lint + build) su ogni PR.~~ **FATTO 2026-08-20**: `.github/workflows/ci.yml`,
-   primo run atteso rosso finché non si risolvono i 138 errori `any` residui (vedi debito
-   tecnico sopra) — **prossimo passo concreto per sbloccare una CI verde**.
-7. Risolvere i 138 errori `no-explicit-any` residui (concentrati in `Leads.tsx`) per rendere
+   primo run (`32350146194`) confermato rosso come atteso, con 83 errori `any` residui (vedi
+   debito tecnico sopra) — **prossimo passo concreto per sbloccare una CI verde**.
+7. Risolvere gli 83 errori `no-explicit-any` residui (concentrati in `Leads.tsx`) per rendere
    verde la CI appena introdotta — richiede toccare file grandi, quindi rimandato a una sessione
    dedicata con conferma esplicita dell'utente (fuori scope per questa pulizia a basso rischio).
 8. `docs/RUNBOOK.md` e `docs/DECISIONI.md` (rimandati da questa sessione).
