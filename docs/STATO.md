@@ -73,9 +73,14 @@ nel file baseline, righe indicate):
    `leads` ora non ha più alcuna policy INSERT diretta: solo `upsert_lead` (SECURITY DEFINER,
    owner `postgres` = owner tabella, `relforcerowsecurity=false` → bypassa RLS) può inserire.
    Verificato via `get_advisors` post-fix: nessun advisor residuo su questa policy.
-5. `tasks` ha sia una policy permissiva `ALL`/`public` sia policy più strette per
-   `authenticated` — le seconde sono di fatto inerti per semantica OR delle RLS policy. Non
-   ancora affrontato.
+5. ~~`tasks` ha sia una policy permissiva `ALL`/`public` sia policy più strette per
+   `authenticated`...~~ **RISOLTO 2026-08-20**: policy `"Team_Può_Fare_Tutto"` (roles=`public`,
+   quindi incluso `anon`) droppata in produzione (`apply_migration
+   drop_public_all_policy_on_tasks`, richiesta esplicita dell'utente) + migration versionata
+   `supabase/migrations/20260820123500_drop_public_all_policy_on_tasks.sql`. Restano solo le 4
+   policy `authenticated`-only (select/insert/update/delete), coerenti con `CLAUDE.md`.
+   Verificato via query diretta su `pg_policies` post-fix e `get_advisors`: nessun nuovo advisor,
+   nessuna policy INSERT/SELECT/UPDATE/DELETE residua per `anon` su `tasks`.
 6. ~~`process_lead(...)` — **funzione rotta**...~~ **RISOLTO 2026-08-20**: funzione droppata in
    produzione nella stessa migration del punto 4 (zero riferimenti nel repo, confermato prima
    di droppare).
