@@ -1,10 +1,35 @@
-# Ambiente locale — piano di adozione Supabase via Docker
+# Ambiente locale — Supabase via Docker
 
-> Dettaglio tecnico denso richiamato da `docs/STATO.md`. Questo file descrive il piano per
-> sostituire l'ex staging cloud (secondo progetto Supabase + Cloudflare Pages, rimosso dal repo)
-> con uno stack Supabase locale containerizzato. **I comandi qui sotto non sono ancora stati
-> eseguiti** — richiedono Docker Desktop/OrbStack attivo sulla macchina e vanno lanciati in una
-> sessione dedicata, con conferma esplicita prima di ogni comando che scrive su un progetto reale.
+> Dettaglio tecnico denso richiamato da `docs/STATO.md`. **Eseguito 2026-08-20** — lo stack è
+> stato avviato e verificato riproducibile da zero. Questo file ora documenta lo stato reale,
+> non solo il piano.
+
+## Come avviarlo
+
+```bash
+supabase start   # scarica/avvia i container (~10, la prima volta richiede qualche minuto)
+supabase db reset  # ricrea schema (baseline + migration post-baseline) e applica supabase/seed.sql
+npm run dev  # legge .env.development.local (priorità Vite più alta di .env.local) → punta allo stack locale
+```
+
+Per fermarlo senza perdere il volume: `./scripts/stop-locale.sh` (mai `supabase stop --no-backup`).
+
+`.env.development.local` (gitignored, non committato) contiene `VITE_SUPABASE_URL`/
+`VITE_SUPABASE_ANON_KEY` dello stack locale — sovrascrive `.env.local` (che punta a produzione)
+solo per `npm run dev`, senza toccarlo. Cancellarlo per tornare a puntare a produzione in dev.
+
+**Utenti di test** (password `locale123` per entrambi, seed in `supabase/seed.sql`):
+- `admin@locale.test` — agente con `is_admin = true`
+- `agente@locale.test` — agente normale
+
+## Cosa ha richiesto il primo avvio
+
+`supabase db reset` inizialmente falliva: le 11 migration incrementali pre-baseline (datate
+2026-04/2026-05) ricreavano oggetti (es. policy RLS) già presenti in
+`00000000000000_baseline.sql`, causando errori di duplicato. Confermato quindi che quelle
+migration **non sono riproducibili in sequenza dopo la baseline** — spostate in
+`supabase/migrations-archivio/` (vedi README lì dentro), non cancellate. Restano attive solo la
+baseline e le migration datate 2026-08-20 in poi, che si applicano correttamente sopra di essa.
 
 ## Perché
 
