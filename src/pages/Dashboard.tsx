@@ -94,7 +94,7 @@ const Dashboard = () => {
       const today = format(new Date(), 'yyyy-MM-dd');
 
       // Build queries (conditional filters before Promise.all)
-      let activeLeadsQuery = supabase
+      const activeLeadsQuery = supabase
         .from('leads')
         .select('*', { count: 'exact', head: true })
         .neq('stato', 'Chiuso');
@@ -111,7 +111,7 @@ const Dashboard = () => {
         .eq('stato', 'Da fare');
       if (!admin) pendingTasksCountQuery = pendingTasksCountQuery.eq('agente_id', user.id);
 
-      let recentLeadsQuery = supabase
+      const recentLeadsQuery = supabase
         .from('leads')
         .select('id, nome, cognome, stato, created_at')
         .order('created_at', { ascending: false })
@@ -153,9 +153,9 @@ const Dashboard = () => {
         todayAppointments: todayAppCount ?? 0,
         pendingTasks: pendingTasksCount ?? 0,
       });
-      setTodayAppointments((appsData as any) ?? []);
-      setPendingTasks((tasksData as any) ?? []);
-      setRecentLeads((leadsData as any) ?? []);
+      setTodayAppointments((appsData as unknown as TodayAppointment[]) ?? []);
+      setPendingTasks((tasksData as unknown as PendingTask[]) ?? []);
+      setRecentLeads((leadsData as unknown as RecentLead[]) ?? []);
       setLoading(false);
     };
     fetchAll();

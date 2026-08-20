@@ -14,8 +14,16 @@ interface AttendeesSheetProps {
   propertyTitle: string;
 }
 
+interface Attendee {
+  id: string;
+  nome: string;
+  email: string;
+  telefono?: string | null;
+  orario_scelto?: string | null;
+}
+
 const AttendeesSheet = ({ openHouseId, propertyTitle }: AttendeesSheetProps) => {
-  const [attendees, setAttendees] = useState<any[]>([]);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 

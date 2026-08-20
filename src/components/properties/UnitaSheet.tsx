@@ -242,7 +242,7 @@ const UnitaSheet = ({ property, onClose }: UnitaSheetProps) => {
             {/* Stato */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Stato</Label>
-              <Select value={form.stato} onValueChange={(v: any) => setForm(f => ({ ...f, stato: v }))}>
+              <Select value={form.stato} onValueChange={(v: 'Disponibile' | 'Riservato' | 'Venduto') => setForm(f => ({ ...f, stato: v }))}>
                 <SelectTrigger className="h-10 rounded-xl border-gray-200 bg-white text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="Disponibile">Disponibile</SelectItem>

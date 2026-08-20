@@ -36,6 +36,7 @@ import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import { useProperties } from '@/hooks/useProperties';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Property } from '@/types';
 
 const PAGE_SIZE = 20;
 
@@ -53,16 +54,16 @@ const Properties = () => {
   };
 
   const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [editingProperty, setEditingProperty] = useState<any>(null);
-  const [propertyToDelete, setPropertyToDelete] = useState<any>(null);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
 
-  const [ohProperty, setOhProperty] = useState<any>(null);
-  const [unitaProperty, setUnitaProperty] = useState<any>(null);
+  const [ohProperty, setOhProperty] = useState<Property | null>(null);
+  const [unitaProperty, setUnitaProperty] = useState<Property | null>(null);
   const [evidenzaOpen, setEvidenzaOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { data: propertiesData, isFetching: loading } = useProperties(currentPage, filter, debouncedSearch);
-  const properties = (propertiesData?.data ?? []) as any[];
+  const properties = (propertiesData?.data ?? []) as unknown as Property[];
   const totalCount = propertiesData?.count ?? 0;
 
   const refetchProperties = () => queryClient.invalidateQueries({ queryKey: ['properties'] });
@@ -112,7 +113,7 @@ const Properties = () => {
     else refetchProperties();
   };
 
-  const toggleFeatured = async (id: string, currentFeatured: boolean) => {
+  const toggleFeatured = async (id: string, currentFeatured?: boolean) => {
     if (!currentFeatured) {
       const featuredCount = properties.filter(p => p.in_evidenza).length;
       if (featuredCount >= 3) {
@@ -229,7 +230,7 @@ const Properties = () => {
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-gray-900 text-[1.05rem] truncate">{prop.titolo}</div>
-                            <div className="text-sm text-gray-400 truncate mt-0.5 font-medium">{prop.citta}, {prop.zona || prop.indirizzo}</div>
+                            <div className="text-sm text-gray-400 truncate mt-0.5 font-medium">{prop.citta}, {prop.indirizzo}</div>
                           </div>
                         </div>
                       </td>

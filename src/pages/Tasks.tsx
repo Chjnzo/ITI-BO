@@ -203,7 +203,7 @@ const Tasks = () => {
     if (error) {
       showError('Errore nel caricamento task');
     } else {
-      setTasks((data as any) || []);
+      setTasks((data as unknown as Task[]) || []);
     }
     setLoading(false);
   }, []);

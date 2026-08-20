@@ -37,7 +37,7 @@ import {
   MessageSquare, FileText,
 } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
-import EventFormModal, { TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
+import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarPicker } from '@/components/ui/calendar';
@@ -57,8 +57,93 @@ const SELLER_STATES: Record<string, string> = {
 };
 
 
+interface PropertyRef {
+  id: string;
+  titolo: string;
+  prezzo?: number | null;
+  copertina_url?: string | null;
+  stato?: string | null;
+  zone?: { nome: string } | null;
+}
+
+interface LeadImmobileLink {
+  id: string;
+  stato_interesse?: string | null;
+  note?: string | null;
+  created_at?: string;
+  immobili: PropertyRef;
+}
+
+interface LeadRecord {
+  id?: string;
+  nome: string;
+  cognome: string;
+  email?: string | null;
+  telefono?: string | null;
+  telefono_fisso?: string | null;
+  telefono_clean?: string | null;
+  messaggio?: string | null;
+  immobile_interesse?: string | null;
+  stato?: string | null;
+  immobile_id?: string | null;
+  budget?: number | string | null;
+  budget_text?: string | null;
+  tipologia_ricerca?: string[] | null;
+  note_interne?: string | null;
+  tipo_cliente?: string | null;
+  valutazione_stimata?: number | string | null;
+  scadenza_esclusiva?: string | null;
+  motivazione_vendita?: string | null;
+  zona_venditore?: string | null;
+  stato_venditore?: string | null;
+  is_deleted?: boolean;
+  deleted_at?: string | null;
+  _version?: number;
+  zone_ricercate?: string[] | null;
+  via_immobile?: string | null;
+  assegnato_a?: string | null;
+  fonte?: string;
+  created_at?: string;
+  lead_immobili?: LeadImmobileLink[];
+  immobile_primo_contatto?: PropertyRef | null;
+}
+
+interface LeadTaskItem {
+  id: string;
+  titolo?: string | null;
+  tipologia?: string | null;
+  nota?: string | null;
+  data?: string | null;
+  ora?: string | null;
+  stato: string;
+  agente_id?: string | null;
+  telefono?: string | null;
+}
+
+interface LeadEventItem {
+  id: string;
+  tipologia: string;
+  data: string;
+  ora_inizio?: string | null;
+  ora_fine?: string | null;
+  note?: string | null;
+  agente_id?: string | null;
+}
+
+interface LeadNote {
+  id: string;
+  testo: string;
+  autore: string;
+  created_at: string;
+}
+
+interface EventPropertyOption {
+  id: string;
+  titolo: string;
+}
+
 // Pure helper — defined at module level so it's never re-created
-const getClientTypeBadge = (type: string) => {
+const getClientTypeBadge = (type?: string | null) => {
   switch (type) {
     case 'Proprietario': return "bg-red-100 text-red-700 border-red-200";
     case 'Acquirente':   return "bg-blue-100 text-blue-700 border-blue-200";
@@ -67,12 +152,12 @@ const getClientTypeBadge = (type: string) => {
   }
 };
 
-const formatPrice = (price: number) => {
+const formatPrice = (price: number | null | undefined) => {
   if (!price) return 'N/D';
   return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(price);
 };
 
-const safeFormat = (date: any, fmt: string, options?: object): string => {
+const safeFormat = (date: string | number | Date | null | undefined, fmt: string, options?: object): string => {
   if (!date) return '';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
@@ -83,9 +168,9 @@ const Leads = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const pendingOpenLeadIdRef = useRef<string | null>(location.state?.openLeadId ?? null);
-  const [leads, setLeads] = useState<any[]>([]);
+  const [leads, setLeads] = useState<LeadRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedLead, setSelectedLead] = useState<any>(null);
+  const [selectedLead, setSelectedLead] = useState<LeadRecord | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -95,7 +180,7 @@ const Leads = () => {
 
   // Property Picker State
   const [isPropertyPickerOpen, setIsPropertyPickerOpen] = useState(false);
-  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [allProperties, setAllProperties] = useState<PropertyRef[]>([]);
   const [propertySearch, setPropertySearch] = useState('');
   const [isLoadingProperties, setIsLoadingProperties] = useState(false);
 
@@ -103,7 +188,7 @@ const Leads = () => {
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<any | null>(null);
+  const pendingSaveRef = useRef<LeadRecord | null>(null);
   const hasInteractedRef = useRef(false);
 
   const [totalLeadsCount, setTotalLeadsCount] = useState(0);
@@ -115,22 +200,22 @@ const Leads = () => {
   const [leadValutazione, setLeadValutazione] = useState<{ slug: string; stima_min: number | null; stima_max: number | null } | null>(null);
 
   // Tasks State
-  const [leadTasks, setLeadTasks] = useState<any[]>([]);
+  const [leadTasks, setLeadTasks] = useState<LeadTaskItem[]>([]);
   const [isLeadTaskModalOpen, setIsLeadTaskModalOpen] = useState(false);
-  const [taskDetail, setTaskDetail] = useState<any | null>(null);
+  const [taskDetail, setTaskDetail] = useState<LeadTaskItem | null>(null);
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
   // Events State (appuntamenti linked to current lead)
-  const [leadEvents, setLeadEvents] = useState<any[]>([]);
+  const [leadEvents, setLeadEvents] = useState<LeadEventItem[]>([]);
 
   // Event Form Modal (for quick "Nuovo evento" from list)
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [eventModalDefaultLeadId, setEventModalDefaultLeadId] = useState<string | undefined>(undefined);
   const [eventModalDefaultLeadName, setEventModalDefaultLeadName] = useState<string | undefined>(undefined);
-  const [agentsForEventModal, setAgentsForEventModal] = useState<any[]>([]);
-  const [propertiesForEventModal, setPropertiesForEventModal] = useState<any[]>([]);
-  const [editingLeadEvent, setEditingLeadEvent] = useState<any | null>(null);
+  const [agentsForEventModal, setAgentsForEventModal] = useState<AgentProfile[]>([]);
+  const [propertiesForEventModal, setPropertiesForEventModal] = useState<EventPropertyOption[]>([]);
+  const [editingLeadEvent, setEditingLeadEvent] = useState<Appointment | null>(null);
 
   // Quick task from list row
   const [quickTaskLeadId, setQuickTaskLeadId] = useState<string | undefined>(undefined);
@@ -151,7 +236,7 @@ const Leads = () => {
   const [filterDalSito, setFilterDalSito] = useState(false);
 
   // Notes tab
-  const [leadNotes, setLeadNotes] = useState<any[]>([]);
+  const [leadNotes, setLeadNotes] = useState<LeadNote[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
@@ -161,7 +246,7 @@ const Leads = () => {
   const fetchLeads = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
 
-    const applyTipoFilter = (q: ReturnType<typeof supabase.from>) => {
+    const applyTipoFilter = <T extends { or: (filters: string) => T }>(q: T): T => {
       if (tipoClienteFilter === 'Acquirenti')
         return q.or('tipo_cliente.eq.Acquirente,tipo_cliente.eq.Ibrido');
       if (tipoClienteFilter === 'Proprietari')
@@ -192,7 +277,7 @@ const Leads = () => {
         // must appear in at least one field — enabling cross-field name matching.
         const tokens = sq.toLowerCase().split(/\s+/).filter(Boolean);
         for (const token of tokens) {
-          const tokenPhone = token.replace(/[\s\-]/g, '');
+          const tokenPhone = token.replace(/[\s-]/g, '');
           const clauses = [
             `nome.ilike.%${token}%`,
             `cognome.ilike.%${token}%`,
@@ -203,28 +288,28 @@ const Leads = () => {
             `via_immobile.ilike.%${token}%`,
             `zona_venditore.ilike.%${token}%`,
           ];
-          query = (query as any).or(clauses.join(','));
+          query = query.or(clauses.join(','));
         }
       } else {
-        if (filterBudgetMin !== null) query = (query as any).gte('budget', filterBudgetMin);
-        if (filterBudgetMax !== null) query = (query as any).lte('budget', filterBudgetMax);
-        if (filterStato)              query = (query as any).eq('stato', filterStato);
-        if (filterTipologia)          query = (query as any).contains('tipologia_ricerca', [filterTipologia]);
-        query = (query as any).limit(2000);
+        if (filterBudgetMin !== null) query = query.gte('budget', filterBudgetMin);
+        if (filterBudgetMax !== null) query = query.lte('budget', filterBudgetMax);
+        if (filterStato)              query = query.eq('stato', filterStato);
+        if (filterTipologia)          query = query.contains('tipologia_ricerca', [filterTipologia]);
+        query = query.limit(2000);
       }
 
-      query = applyTipoFilter(query as any) as any;
-      if (filterDalSito) query = (query as any).eq('fonte', 'sito');
+      query = applyTipoFilter(query);
+      if (filterDalSito) query = query.eq('fonte', 'sito');
 
       const { data, error } = await query;
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        const sanitized = (data || []).map((l: any) => ({
+        const sanitized = (data || []).map((l) => ({
           ...l,
           stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
-        }));
+        })) as unknown as LeadRecord[];
         setLeads(sanitized);
         setTotalLeadsCount(sanitized.length);
       }
@@ -242,21 +327,21 @@ const Leads = () => {
         `, { count: 'exact' })
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
-      query = applyTipoFilter(query as any) as any;
-      if (filterDalSito) query = (query as any).eq('fonte', 'sito');
-      if (filterBudgetMin !== null) query = (query as any).gte('budget', filterBudgetMin);
-      if (filterBudgetMax !== null) query = (query as any).lte('budget', filterBudgetMax);
-      query = (query as any).range(from, to);
+      query = applyTipoFilter(query);
+      if (filterDalSito) query = query.eq('fonte', 'sito');
+      if (filterBudgetMin !== null) query = query.gte('budget', filterBudgetMin);
+      if (filterBudgetMax !== null) query = query.lte('budget', filterBudgetMax);
+      query = query.range(from, to);
 
       const { data, count, error } = await query;
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nel caricamento CRM");
       } else {
-        const sanitized = (data || []).map((l: any) => ({
+        const sanitized = (data || []).map((l) => ({
           ...l,
           stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
-        }));
+        })) as unknown as LeadRecord[];
         setLeads(sanitized);
         setTotalLeadsCount(count ?? 0);
       }
@@ -286,7 +371,7 @@ const Leads = () => {
 
     if (!error && data) {
       const full = { ...data, stato: data.stato === 'nuovo' ? 'Nuovo' : (data.stato || 'Nuovo') };
-      setSelectedLead((prev: any) => prev?.id === leadId ? full : prev);
+      setSelectedLead((prev) => prev?.id === leadId ? full : prev);
     } else if (error) {
       showError('Errore nel caricamento del dettaglio lead');
     }
@@ -307,10 +392,10 @@ const Leads = () => {
   }, []);
 
   // Opens the dialog immediately with card data, then hydrates with full detail
-  const openLeadDetail = useCallback((lead: any) => {
+  const openLeadDetail = useCallback((lead: LeadRecord) => {
     setLeadValutazione(null);
     setSelectedLead(lead);
-    fetchLeadDetail(lead.id);
+    if (lead.id) fetchLeadDetail(lead.id);
   }, [fetchLeadDetail]);
 
   // Opens the unified dialog in create mode (no id → INSERT path)
@@ -390,7 +475,7 @@ const Leads = () => {
       .then(({ data }) => {
         if (!data) return;
         const unique = Array.from(
-          new Set(data.flatMap((r: any) => r.zone_ricercate ?? []))
+          new Set(data.flatMap((r) => r.zone_ricercate ?? []))
         ).sort() as string[];
         setZoneSuggestions(unique);
       });
@@ -400,7 +485,7 @@ const Leads = () => {
   // This handles the legacy case where zones were stored as a single
   // space-separated string (e.g. "Ranica Torre Boldone Gorle") instead
   // of individual array items.
-  const zoneTextOf = (lead: any) =>
+  const zoneTextOf = (lead: LeadRecord) =>
     (lead.zone_ricercate ?? []).join(' ').toLowerCase();
 
   // Returns true if ALL whitespace-separated tokens in `query` appear
@@ -421,11 +506,11 @@ const Leads = () => {
 
       // Every token must match at least one field (AND across tokens, OR across fields)
       if (tokens.length > 0) {
-        const phoneNorm = (lead.telefono ?? '').replace(/[\s\-]/g, '');
+        const phoneNorm = (lead.telefono ?? '').replace(/[\s-]/g, '');
         const fullName = `${lead.nome ?? ''} ${lead.cognome ?? ''}`.toLowerCase();
         const budgetStr = lead.budget != null ? String(Math.floor(Number(lead.budget))) : '';
         const matchesAllTokens = tokens.every(token => {
-          const tokenPhone = token.replace(/[\s\-]/g, '');
+          const tokenPhone = token.replace(/[\s-]/g, '');
           return (
             fullName.includes(token) ||
             lead.email?.toLowerCase().includes(token) ||
@@ -455,7 +540,7 @@ const Leads = () => {
       // Stato filter
       if (filterStato && lead.stato !== filterStato) return false;
       // Fonte filter (client-side guard; DB already filters in paginated mode)
-      if (filterDalSito && (lead as any).fonte !== 'sito') return false;
+      if (filterDalSito && lead.fonte !== 'sito') return false;
 
       return true;
     });
@@ -499,13 +584,13 @@ const Leads = () => {
       nome: selectedLead.nome.trim(),
       cognome: selectedLead.cognome.trim(),
       telefono: selectedLead.telefono || null,
-      telefono_fisso: (selectedLead as any).telefono_fisso || null,
+      telefono_fisso: selectedLead.telefono_fisso || null,
       email: selectedLead.email || null,
       tipo_cliente: selectedLead.tipo_cliente || 'Acquirente',
-      budget: parseFloat(selectedLead.budget) || null,
+      budget: parseFloat(String(selectedLead.budget)) || null,
       tipologia_ricerca: selectedLead.tipologia_ricerca?.length ? selectedLead.tipologia_ricerca : null,
       zone_ricercate: selectedLead.zone_ricercate?.length ? selectedLead.zone_ricercate : null,
-      valutazione_stimata: parseFloat(selectedLead.valutazione_stimata) || null,
+      valutazione_stimata: parseFloat(String(selectedLead.valutazione_stimata)) || null,
       scadenza_esclusiva: selectedLead.scadenza_esclusiva || null,
       motivazione_vendita: selectedLead.motivazione_vendita || null,
       note_interne: selectedLead.note_interne || null,
@@ -539,7 +624,7 @@ const Leads = () => {
         showError("Errore nel salvataggio");
       } else if (!updated || updated.length === 0) {
         showError('Conflitto: il lead è stato modificato da un altro utente. Ricaricamento...');
-        fetchLeadDetail(selectedLead.id);
+        fetchLeadDetail(selectedLead.id!);
       } else {
         showSuccess("Scheda cliente aggiornata");
         setLeads(prev => prev.map(l => l.id === selectedLead.id ? {
@@ -557,7 +642,7 @@ const Leads = () => {
   };
 
   // Autosave — only fires in edit mode after the user has interacted
-  const performAutoSave = useCallback(async (lead: any) => {
+  const performAutoSave = useCallback(async (lead: LeadRecord) => {
     if (!lead?.id || !lead.nome?.trim()) return;
     setAutoSaveStatus('saving');
     const version = lead._version ?? 1;
@@ -568,10 +653,10 @@ const Leads = () => {
       telefono_fisso: lead.telefono_fisso || null,
       email: lead.email || null,
       tipo_cliente: lead.tipo_cliente || 'Acquirente',
-      budget: parseFloat(lead.budget) || null,
+      budget: parseFloat(String(lead.budget)) || null,
       tipologia_ricerca: lead.tipologia_ricerca?.length ? lead.tipologia_ricerca : null,
       zone_ricercate: lead.zone_ricercate?.length ? lead.zone_ricercate : null,
-      valutazione_stimata: parseFloat(lead.valutazione_stimata) || null,
+      valutazione_stimata: parseFloat(String(lead.valutazione_stimata)) || null,
       scadenza_esclusiva: lead.scadenza_esclusiva || null,
       motivazione_vendita: lead.motivazione_vendita || null,
       note_interne: lead.note_interne || null,
@@ -591,9 +676,9 @@ const Leads = () => {
     } else if (!updated || updated.length === 0) {
       showError('Il lead è stato modificato da un altro utente. Ricaricamento...');
       setAutoSaveStatus('error');
-      fetchLeadDetail(lead.id);
+      if (lead.id) fetchLeadDetail(lead.id);
     } else {
-      setSelectedLead((prev: any) => prev?.id === lead.id ? { ...prev, _version: updated[0]._version } : prev);
+      setSelectedLead((prev) => prev?.id === lead.id ? ({ ...prev, _version: updated[0]._version } as LeadRecord) : prev);
       setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, nome: lead.nome.trim(), cognome: lead.cognome.trim(), tipo_cliente: lead.tipo_cliente } : l));
       setAutoSaveStatus('saved');
       if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current);
@@ -618,10 +703,10 @@ const Leads = () => {
     if (error) {
       showError("Errore nella rimozione");
     } else {
-      setSelectedLead((prev: any) => ({
+      setSelectedLead((prev) => prev ? {
         ...prev,
-        lead_immobili: prev.lead_immobili.filter((li: any) => li.id !== linkId),
-      }));
+        lead_immobili: (prev.lead_immobili ?? []).filter((li) => li.id !== linkId),
+      } : prev);
       setUnlinkConfirmId(null);
     }
   };
@@ -642,7 +727,7 @@ const Leads = () => {
     if (allProperties.length === 0) await fetchAllProperties();
   };
 
-  const handleAssociateProperty = async (immobile: any) => {
+  const handleAssociateProperty = async (immobile: PropertyRef) => {
     if (!selectedLead) return;
     const { error } = await supabase
       .from('lead_immobili')
@@ -658,7 +743,7 @@ const Leads = () => {
     setPropertySearch('');
 
     // Re-fetch full detail so the Immobili tab refreshes without closing the dialog
-    fetchLeadDetail(selectedLead.id);
+    fetchLeadDetail(selectedLead.id!);
   };
 
   // Reset interaction tracking on new lead
@@ -740,7 +825,7 @@ const Leads = () => {
     if (!loading && pendingOpenLeadIdRef.current && leads.length > 0) {
       const id = pendingOpenLeadIdRef.current;
       pendingOpenLeadIdRef.current = null;
-      const lead = leads.find((l: any) => l.id === id);
+      const lead = leads.find((l) => l.id === id);
       if (lead) {
         openLeadDetail(lead);
       } else {
@@ -751,7 +836,7 @@ const Leads = () => {
   }, [loading, leads, openLeadDetail, fetchLeadDetail]);
 
   // Open EventFormModal pre-filled with a lead
-  const openEventForLead = useCallback(async (lead: any) => {
+  const openEventForLead = useCallback(async (lead: LeadRecord) => {
     if (agentsForEventModal.length === 0) {
       const [{ data: agents }, { data: props }] = await Promise.all([
         supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
@@ -769,7 +854,7 @@ const Leads = () => {
     const STATI = ['Da fare', 'In corso', 'Completata'];
     const nextStato = STATI[(STATI.indexOf(currentStato) + 1) % STATI.length];
     setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
-    if (taskDetail?.id === taskId) setTaskDetail((prev: any) => ({ ...prev, stato: nextStato }));
+    if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, stato: nextStato } : prev);
     const { error } = await supabase.from('tasks').update({ stato: nextStato }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento stato');
@@ -1071,7 +1156,7 @@ const Leads = () => {
                             {(['Nuovo', 'Valutazione fatta', 'Chiuso'] as const).map(state => (
                               <DropdownMenuItem
                                 key={state}
-                                onClick={(e) => { e.stopPropagation(); updateSellerState(lead.id, state); }}
+                                onClick={(e) => { e.stopPropagation(); updateSellerState(lead.id!, state); }}
                                 className={cn(
                                   "rounded-lg text-xs font-semibold cursor-pointer",
                                   lead.stato_venditore === state && "bg-gray-100",
@@ -1129,7 +1214,7 @@ const Leads = () => {
                           variant="ghost"
                           size="sm"
                           title="Elimina lead"
-                          onClick={() => setLeadToDelete({ id: lead.id, nome: lead.nome, cognome: lead.cognome })}
+                          onClick={() => setLeadToDelete({ id: lead.id!, nome: lead.nome, cognome: lead.cognome })}
                           className="h-8 w-8 p-0 rounded-xl text-gray-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <Trash2 size={15} />
@@ -1338,8 +1423,8 @@ const Leads = () => {
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Telefono Fisso</Label>
                           <Input
-                            value={(selectedLead as any).telefono_fisso || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, telefono_fisso: e.target.value} as any)}
+                            value={selectedLead.telefono_fisso || ''}
+                            onChange={(e) => setSelectedLead({...selectedLead, telefono_fisso: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1703,7 +1788,7 @@ const Leads = () => {
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {selectedLead.lead_immobili.map((item: any) => (
+                          {selectedLead.lead_immobili.map((item) => (
                             <div key={item.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
                               <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
                                 {item.immobili.copertina_url ? (
@@ -1776,14 +1861,14 @@ const Leads = () => {
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {leadEvents.map((evt: any) => {
+                        {leadEvents.map((evt) => {
                           const colors = TIPOLOGIA_COLORS[evt.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
                           const isPast = evt.data < new Date().toISOString().slice(0, 10);
                           return (
                             <button
                               key={evt.id}
                               type="button"
-                              onClick={() => { setEditingLeadEvent(evt); setIsEventModalOpen(true); }}
+                              onClick={() => { setEditingLeadEvent(evt as unknown as Appointment); setIsEventModalOpen(true); }}
                               className="w-full text-left bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-start gap-3 hover:border-[#94b0ab]/30 transition-all"
                             >
                               <div
@@ -1836,7 +1921,7 @@ const Leads = () => {
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        {leadTasks.map((task: any) => {
+                        {leadTasks.map((task) => {
                           const STATO_BADGE: Record<string, string> = {
                             'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
                             'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
@@ -1888,9 +1973,9 @@ const Leads = () => {
                     {(() => {
                       const siteMsg = selectedLead.note_interne?.trim()
                         ? selectedLead.note_interne
-                        : leadNotes.find((n: any) => n.autore !== 'Agente')?.testo;
+                        : leadNotes.find((n) => n.autore !== 'Agente')?.testo;
                       if (!siteMsg) return null;
-                      const siteDate = leadNotes.find((n: any) => n.autore !== 'Agente')?.created_at;
+                      const siteDate = leadNotes.find((n) => n.autore !== 'Agente')?.created_at;
                       return (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
                           <div className="flex items-center gap-2">
@@ -1909,13 +1994,13 @@ const Leads = () => {
 
                     {/* List of notes */}
                     <div className="space-y-2">
-                      {leadNotes.filter((n: any) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedLead.note_interne && leadNotes.filter((n: any) => n.autore !== 'Agente').length === 0 ? (
+                      {leadNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedLead.note_interne && leadNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
                         <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <FileText className="mx-auto text-gray-200 mb-2" size={26} />
                           <p className="text-xs text-gray-400 italic">Nessuna nota per questo lead.</p>
                         </div>
                       ) : (
-                        leadNotes.filter((n: any) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note: any) => (
+                        leadNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
                           <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>

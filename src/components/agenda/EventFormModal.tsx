@@ -119,6 +119,23 @@ interface Property {
   copertina_url?: string | null;
 }
 
+interface LeadDetail {
+  id: string;
+  nome: string;
+  cognome: string;
+  email?: string | null;
+  telefono?: string | null;
+  tipo_cliente?: string | null;
+  stato?: string | null;
+  stato_venditore?: string | null;
+  budget?: number | null;
+  via_immobile?: string | null;
+  zona_venditore?: string | null;
+  tipologia_ricerca?: string[] | null;
+  note_interne?: string | null;
+  assegnato_a?: string | null;
+}
+
 interface EventFormModalProps {
   open: boolean;
   onClose: () => void;
@@ -158,7 +175,7 @@ const EventFormModal = ({
   const [isDeleting, setIsDeleting] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [leadSheet, setLeadSheet] = useState(false);
-  const [leadDetail, setLeadDetail] = useState<any>(null);
+  const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [isLoadingLeadDetail, setIsLoadingLeadDetail] = useState(false);
 
   const autosavedIdRef = useRef<string | null>(null);

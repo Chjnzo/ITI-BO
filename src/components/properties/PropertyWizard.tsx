@@ -35,9 +35,10 @@ import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 import { z } from 'zod';
 import { PropertySchema } from '@/schemas';
 import { PREDEFINED_FEATURES } from '@/lib/constants';
+import type { Property } from '@/types';
 
 interface PropertyWizardProps {
-  initialData?: any;
+  initialData?: Property;
   onClose: () => void;
   onSuccess: () => void;
   /** ID of the lead that originated this property listing (used for automation hooks). */
@@ -255,8 +256,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
           .single();
         if (error) throw error;
         setDraftId(inserted.id);
-      } catch (err: any) {
-        showError("Errore nel salvataggio bozza: " + err.message);
+      } catch (err) {
+        showError("Errore nel salvataggio bozza: " + (err instanceof Error ? err.message : String(err)));
         setLoading(false);
         return;
       }
@@ -277,7 +278,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
           .insert([{ ...buildPayload(), stato: 'Bozza', copertina_url: null, immagini_urls: [] }]);
         showSuccess("Bozza salvata");
         onSuccess();
-      } catch {}
+      } catch (err) {
+        showError("Errore nel salvataggio della bozza: " + (err instanceof Error ? err.message : String(err)));
+      }
     } else if (draftId) {
       autoSave(draftId);
       onSuccess();
@@ -397,8 +400,8 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     try {
       // Gallery items are already compressed on selection (handleGalleryChange).
       if (coverImage) compressedCover = await compressCopertina(coverImage);
-    } catch (error: any) {
-      showError("Errore durante la compressione delle immagini: " + error.message);
+    } catch (error) {
+      showError("Errore durante la compressione delle immagini: " + (error instanceof Error ? error.message : String(error)));
       setIsCompressing(false);
       return;
     } finally {
@@ -459,9 +462,9 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       onSuccess();
       if (leadId && onLeadLinked) onLeadLinked(leadId, immobileId);
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       Sentry.captureException(error, { tags: { feature: initialData ? 'property_update' : 'property_creation' } });
-      showError(error.message);
+      showError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }

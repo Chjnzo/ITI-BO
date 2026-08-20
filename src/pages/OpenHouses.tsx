@@ -26,13 +26,27 @@ import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import AttendeesSheet from '@/components/properties/AttendeesSheet';
 
+interface OpenHouseEvent {
+  id: string;
+  data_evento: string;
+  ora_inizio: string;
+  ora_fine: string;
+  posti_totali: number;
+  immobili?: { id: string; titolo: string; citta: string; zona?: string; copertina_url?: string } | null;
+}
+
+interface OpenHouseProperty {
+  id: string;
+  titolo: string;
+}
+
 const OpenHouses = () => {
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<OpenHouseEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("upcoming");
-  
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [properties, setProperties] = useState<any[]>([]);
+  const [properties, setProperties] = useState<OpenHouseProperty[]>([]);
   const [newDate, setNewDate] = useState<Date | undefined>(undefined);
   const [form, setForm] = useState({
     immobile_id: '',
@@ -41,7 +55,7 @@ const OpenHouses = () => {
     posti_totali: 15
   });
 
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [selectedEvent, setSelectedEvent] = useState<OpenHouseEvent | null>(null);
 
   const fetchEvents = useCallback(async () => {
     setLoading(true);
@@ -317,7 +331,7 @@ const OpenHouses = () => {
         {selectedEvent && (
           <AttendeesSheet 
             openHouseId={selectedEvent.id} 
-            propertyTitle={selectedEvent.immobili?.titolo} 
+            propertyTitle={selectedEvent.immobili?.titolo ?? ''}
           />
         )}
       </Sheet>

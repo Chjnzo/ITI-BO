@@ -119,8 +119,8 @@ const ValuationForm = ({ onClose, onSuccess }: ValuationFormProps) => {
       const result = await response.json() as ValuationResult;
       setValuation(result);
       setStep(3); // Vai a step di riepilogo
-    } catch (error: any) {
-      showError(`Errore: ${error.message}`);
+    } catch (error) {
+      showError(`Errore: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setGeneratingValuation(false);
     }
@@ -168,8 +168,8 @@ const ValuationForm = ({ onClose, onSuccess }: ValuationFormProps) => {
       showSuccess("Valutazione salvata con successo");
       onSuccess?.();
       onClose();
-    } catch (error: any) {
-      showError(error.message);
+    } catch (error) {
+      showError(error instanceof Error ? error.message : String(error));
     } finally {
       setLoading(false);
     }

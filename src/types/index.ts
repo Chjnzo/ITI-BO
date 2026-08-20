@@ -35,18 +35,35 @@ export interface Lead {
 
 export interface Property {
   id: string;
+  created_at?: string;
   titolo: string;
   prezzo?: number;
-  mq: number;
-  locali: string;
-  citta: string;
+  mq?: number;
+  locali?: string;
+  bagni?: number;
+  piano?: string;
   indirizzo: string;
-  stato: 'Disponibile' | 'Venduto' | 'Ritirato';
+  descrizione?: string;
+  classe_energetica?: string;
+  garage?: boolean;
+  stato: 'Disponibile' | 'In Trattativa' | 'Venduto' | 'Bozza';
+  copertina_url?: string;
+  immagini_urls?: string[];
   slug?: string;
+  stanze?: number;
+  giardino?: boolean;
+  balcone?: boolean;
   in_evidenza?: boolean;
-  zona_id?: string;
-  created_at: string;
-  updated_at: string;
+  link_immobiliare?: string;
+  spese_condominiali?: number;
+  stato_immobile?: string;
+  anno_costruzione?: number;
+  caratteristiche?: string[];
+  proprietario?: string;
+  citta: string;
+  is_deleted?: boolean;
+  deleted_at?: string;
+  visibile?: boolean;
 }
 
 export interface Task {
