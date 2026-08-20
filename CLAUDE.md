@@ -29,7 +29,7 @@ React 19 SPA — Vite + TypeScript + Tailwind + shadcn/ui. CRM for ITI (Il Tuo I
 | `/` | `Dashboard.tsx` | KPI cards, weekly chart, today's appointments, pending tasks, mobile FAB |
 | `/immobili` | `Properties.tsx` | Property listings + `PropertyWizard` for create/edit |
 | `/leads` | `Leads.tsx` | Kanban + list, lead modal with tabs (info, wishlist, task, note) |
-| `/tasks` | `Tasks.tsx` | List + board, filters by date/tipologia/stato/agente |
+| `/tasks` | `Tasks.tsx` | List + board, filters by date/agente (no `tipologia` — removed from the `tasks` table, see schema note below) |
 | `/agenda` | `Agenda.tsx` | Calendar via `react-big-calendar` with drag-drop |
 | `/valutazioni` | `Valutazioni.tsx` | AI property valuations list + `ValuationWizard` |
 | `/report/:slug` | `ValuazioneReport.tsx` | **Public** — no auth guard, shareable report with Recharts trend chart + PDF |
@@ -42,7 +42,7 @@ React 19 SPA — Vite + TypeScript + Tailwind + shadcn/ui. CRM for ITI (Il Tuo I
 ### Key components
 
 - `src/components/layout/AdminLayout.tsx` — sidebar (224px expanded / 64px collapsed, collapsible + pinnable) + mobile header
-- `src/components/TaskModal.tsx` — task create/edit modal; exports `TIPOLOGIA_CONFIG` (used by Dashboard + Tasks)
+- `src/components/TaskModal.tsx` — task create/edit modal (no `tipologia` field — see schema note below)
 - `src/components/ProfileSettingsSheet.tsx` — agent profile settings panel
 - `src/components/properties/PropertyWizard.tsx` — 5-step immobili form
 - `src/components/properties/AttendeesSheet.tsx` — open house attendees sheet
@@ -65,15 +65,20 @@ React 19 SPA — Vite + TypeScript + Tailwind + shadcn/ui. CRM for ITI (Il Tuo I
 - `notify-new-lead/` — email notification on new lead creation
 - `geocode-address/` — address geocoding
 - `find-location-data/` — zone/location data lookup
+- `sync-zone-omi/` — refreshes `zone_omi` pricing data; invoked by `trigger_zone_omi_sync()` (see cron jobs below), not called directly by the frontend
+
+### Cron jobs (`pg_cron`, production only — not in any migration file, live in the `cron.job` catalog)
+
+- `sync-zone-omi-monthly` — 1st of month, 07:00 — `SELECT public.trigger_zone_omi_sync()`
+- `pulizia-task-bimensile` — 1st and 14th of month, 00:00 — `DELETE FROM public.tasks WHERE stato = 'Completata'` (undocumented until 2026-08-20 audit; explains why completed tasks periodically disappear)
 
 ### Database schema (key tables)
 
-- `leads` — `nome`, `cognome`, `email`, `telefono`, `stato` (Nuovo/Contattato/Trattativa/Chiuso/Perso), `tipo_cliente` (Acquirente/Venditore/Ibrido), `assegnato_a`, `budget`, `tipologia_ricerca`, `immobile_id`
-- `tasks` — `lead_id`, `agente_id`, `tipologia` (Chiamata/WhatsApp/Appuntamento), `stato` (Da fare/In corso/Completata), `data`, `ora`, `nota`
+- `leads` — `nome`, `cognome`, `email`, `telefono`, `stato` (Nuovo/Contattato/Trattativa/Chiuso/Perso), `tipo_cliente` (Acquirente/Venditore/Ibrido), `assegnato_a`, `budget`, `tipologia_ricerca` (array), `zone_ricercate` (array), `immobile_id`. **No `lead_zone_ricercate` junction table** — removed in production by a `cleanup_zone_system` migration not present in this repo; `zone_ricercate`/`tipologia_ricerca` plain arrays are the current source of truth.
+- `tasks` — `lead_id`, `agente_id`, `stato` (Da fare/In corso/Completata), `data`, `ora`, `nota`, `titolo`. **No `tipologia` column** — removed from production; do not select/insert it (a stale select caused a live 403/500 on the Dashboard and lead task tab until 2026-08-20, see `docs/STATO.md`). `tipologia` legitimately exists on `appuntamenti` (Chiamata/WhatsApp/Appuntamento), a different table — don't confuse the two.
 - `immobili` — `titolo`, `prezzo`, `stato`, `zona_id`, `slug`, `in_evidenza`
-- `valutazioni` — `indirizzo`, `citta`, `tipologia`, `superficie_mq`, `stato` (Bozza/Completata), `stima_min`, `stima_max`, `motivazione_ai`, `trend_mercato_locale`, `slug`, `lead_id`
+- `valutazioni` — `indirizzo`, `citta`, `tipologia`, `superficie_mq`, `stato` (Bozza/Completata), `stima_min`, `stima_max`, `motivazione_ai`, `trend_mercato_locale`, `slug`, `lead_id`. (A dead duplicate `status` column, always stuck at its default and never read/written by any code, was dropped 2026-08-20 — `stato` is the only real status field.)
 - `lead_immobili` — junction leads ↔ immobili with `stato_interesse`
-- `lead_zone_ricercate` — junction leads ↔ zone
 - `lead_notes` — timestamped notes on leads (also used by `auditLogger` for field changes)
 - `open_houses` / `prenotazioni_oh` — events and bookings
 - `zone` — area master data
@@ -120,7 +125,7 @@ The `/valutazioni` module calls the `generate-evaluation` Edge Function which us
 | Table | Operation | Allowed roles | Notes |
 |---|---|---|---|
 | `leads` | SELECT | `authenticated` | CRM agents only |
-| `leads` | INSERT | `anon`, `authenticated` | Public contact form via `upsert_lead` SECURITY DEFINER RPC only |
+| `leads` | INSERT | `authenticated` (direct), `anon`+`authenticated` (via RPC) | Agents insert directly from the CRM (`Leads.tsx`); public contact form uses `upsert_lead` SECURITY DEFINER RPC only — `anon` has no direct insert policy |
 | `leads` | UPDATE | `authenticated` | CRM agents only |
 | `immobili` | SELECT | `anon`, `authenticated` | Public listing site reads |
 | `immobili` | ALL | `authenticated` | CRM agents only for write ops |
@@ -129,7 +134,7 @@ The `/valutazioni` module calls the `generate-evaluation` Edge Function which us
 | `prenotazioni_oh` | SELECT | `anon`, `authenticated` | Public read for booking confirmation |
 | `prenotazioni_oh` | INSERT | `anon`, `authenticated` | Public booking form |
 | `prenotazioni_oh` | DELETE | `authenticated` | **Agents only** — never expose to anon |
-| `tasks`, `valutazioni`, `lead_notes`, `lead_immobili`, `lead_zone_ricercate` | ALL | `authenticated` | Internal CRM only |
+| `tasks`, `valutazioni`, `lead_notes`, `lead_immobili`, `profili_agenti`, `appuntamenti` | ALL | `authenticated` | Internal CRM only |
 | `zone_omi` | SELECT | `anon`, `authenticated` | OMI data is public |
 | `zone_omi` | ALL | `service_role` | Edge Functions / admin scripts only |
 | `transazioni_chiuse` | SELECT/INSERT/UPDATE | `authenticated` | Agents + own-row write |

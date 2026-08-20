@@ -33,7 +33,6 @@ interface TodayAppointment {
 
 interface PendingTask {
   id: string;
-  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento' | null;
   titolo: string | null;
   stato: string;
   nota: string | null;
@@ -136,7 +135,7 @@ const Dashboard = () => {
           .order('ora_inizio', { ascending: true }),
         supabase
           .from('tasks')
-          .select('id, titolo, tipologia, nota, data, ora, stato, leads(nome, cognome)')
+          .select('id, titolo, nota, data, ora, stato, leads(nome, cognome)')
           .eq('stato', 'Da fare')
           .eq('agente_id', user.id)
           .order('data', { ascending: true })

@@ -10,7 +10,10 @@ _Ultimo aggiornamento: 2026-08-20 — audit completo della codebase (struttura, 
 rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI minima, collaudo
 RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/`appuntamenti` in
 produzione (con fix di una regressione live su `leads` INSERT causata da un fix precedente nello
-stesso giorno) + stack Supabase locale via Docker avviato e verificato riproducibile da zero._
+stesso giorno) + stack Supabase locale via Docker avviato e verificato riproducibile da zero +
+risolti tutti e 7 i `TODO(review)` della baseline, incluso un bug live in produzione
+(`tasks.tipologia` inesistente, rompeva il caricamento della Dashboard) e una colonna morta
+droppata (`valutazioni.status`)._
 
 ## Cosa funziona
 
@@ -63,11 +66,37 @@ locali, il gap era più grave di quanto documentato in precedenza:
 
 **Scoperte che richiedono conferma umana prima di qualunque azione** (marcate `TODO(review)`
 nel file baseline, righe indicate):
-1. `leads.zone_ricercate`/`tipologia_ricerca` sono array semplici, non la tabella
-   `lead_zone_ricercate` — confermato eliminata da `cleanup_zone_system`. `CLAUDE.md` va
-   corretto.
-2. `tasks` **non ha una colonna `tipologia`** in produzione, in contraddizione con `CLAUDE.md`.
-3. `valutazioni` ha sia `stato` (legacy) sia `status` — non chiaro se intenzionale o residuo.
+1. ~~`leads.zone_ricercate`/`tipologia_ricerca` sono array semplici, non la tabella
+   `lead_zone_ricercate`...~~ **RISOLTO 2026-08-20 (richiesta esplicita dell'utente)**:
+   confermato che la tabella è stata eliminata da `cleanup_zone_system` e che zero codice (né in
+   questo repo né in `ITI2.0`) la referenzia più. `CLAUDE.md` corretto: rimossa la riga
+   `lead_zone_ricercate` dallo schema e dalla tabella RLS, documentato che `zone_ricercate` e
+   `tipologia_ricerca` (entrambi array su `leads`) sono l'unica fonte di verità.
+2. ~~`tasks` **non ha una colonna `tipologia`**...~~ **RISOLTO 2026-08-20 (richiesta esplicita
+   dell'utente, confermata rimozione intenzionale)**: non era solo un problema di
+   documentazione — **bug live in produzione**. `src/pages/Dashboard.tsx` selezionava
+   `tasks.tipologia` nella query dei task in sospeso; verificato via query diretta che la colonna
+   non esiste (`42703`), quindi quella query falliva sempre, facendo scattare il ramo di errore
+   combinato del `Promise.all` e mostrando **"Errore nel caricamento dei dati della dashboard"
+   ad ogni caricamento della Dashboard, per ogni agente**. Stesso problema (silenzioso, nessun
+   errore mostrato ma dati sempre vuoti) in due punti di `src/pages/Leads.tsx` (tab task del
+   modale lead, e refresh dopo la creazione di una task). Fix: rimosso `tipologia` dalle 3
+   query e dalle interfacce TypeScript (`PendingTask` in `Dashboard.tsx`, `LeadTaskItem` in
+   `Leads.tsx`) — verificato che il campo non era mai renderizzato in nessuna UI (dead field).
+   `CLAUDE.md` corretto: `tasks` non ha `tipologia`; `appuntamenti` sì, tabella diversa, non
+   confondere. Verificato `npx tsc --noEmit` e `npm run build` puliti dopo il fix (nessuna
+   regressione, solo errori pre-esistenti non correlati).
+3. ~~`valutazioni` ha sia `stato` (legacy) sia `status`...~~ **RISOLTO 2026-08-20 (richiesta
+   esplicita dell'utente)**: verificato che **zero codice** (repo `ITI-BO` o `ITI2.0`) legge o
+   scrive mai `status` — solo `stato` è usato in `ValuationWizard.tsx`, `Valutazioni.tsx`,
+   `ValuazioneReport.tsx`. Confermato via dato live: tutte le 51 righe erano ferme al default di
+   colonna `'draft'`, prova che non è mai stata aggiornata da nessun percorso applicativo (residuo
+   di un rename incompleto, non un campo parallelo con dati reali). Droppata in produzione
+   (`apply_migration drop_dead_status_column_on_valutazioni`, che ha anche rimosso il vincolo
+   `valutazioni_status_check` dipendente) + migration versionata
+   `supabase/migrations/20260820150000_drop_dead_status_column_on_valutazioni.sql`.
+   `supabase/seed.sql` aggiornato (rimosso `status` dall'insert di test). Verificato con
+   `supabase db reset` locale: tutte le migration si applicano ancora pulite da zero.
 4. ~~**Rilevanza sicurezza**: la policy `"Public can insert leads"` su `leads`...~~ **RISOLTO
    2026-08-20**: policy rimossa in produzione (`apply_migration
    fix_leads_insert_bypass_and_drop_dead_function`, richiesta esplicita dell'utente) +
@@ -95,8 +124,15 @@ nel file baseline, righe indicate):
 6. ~~`process_lead(...)` — **funzione rotta**...~~ **RISOLTO 2026-08-20**: funzione droppata in
    produzione nella stessa migration del punto 4 (zero riferimenti nel repo, confermato prima
    di droppare).
-7. `trigger_zone_omi_sync` è probabilmente invocata da un job `pg_cron`, non ancora ispezionato
-   (`cron.job` fuori perimetro di questa sessione).
+7. ~~`trigger_zone_omi_sync` è probabilmente invocata da un job `pg_cron`, non ancora
+   ispezionato...~~ **ISPEZIONATO 2026-08-20 (richiesta esplicita dell'utente, sola lettura —
+   nessuna modifica allo schema valutazioni/zone_omi)**: `select * from cron.job` conferma
+   `sync-zone-omi-monthly` (1° del mese, 07:00, `SELECT public.trigger_zone_omi_sync()`), come
+   documentato. **Trovato anche un secondo job non documentato**: `pulizia-task-bimensile`
+   (1° e 14° del mese, 00:00, `DELETE FROM public.tasks WHERE stato = 'Completata'`) — spiega
+   perché le task completate spariscono periodicamente, comportamento non menzionato in nessun
+   file del repo prima d'ora. Aggiunto a `CLAUDE.md` (nuova sezione "Cron jobs"). Nessuna azione
+   presa, solo ispezione e documentazione.
 
 8. ~~**Gap RLS trovato 2026-08-20**: `lead_notes`, `profili_agenti`, `appuntamenti` protette da
    un'unica policy catch-all (`ALL`/`roles=public`/`qual=true`), senza policy
@@ -144,9 +180,9 @@ Conseguenze pratiche:
   come punto di partenza per un futuro reset della cartella migration (da decidere con l'utente,
   non fatto in questa sessione).
 
-**Prossimo passo consigliato**: un umano rilegge `00000000000000_baseline.sql` riga per riga
-(o almeno le sezioni con `TODO(review)`), conferma o corregge i 7 punti sopra, poi si decide se
-e come riorganizzare `supabase/migrations/` attorno a questa baseline.
+**Tutti e 7 i punti `TODO(review)` sono stati confermati/risolti dall'utente il 2026-08-20**
+(vedi elenco sopra) — la revisione umana della baseline richiesta qui non è più un blocco per
+il resto della roadmap.
 
 ## Debito tecnico noto
 
@@ -265,8 +301,9 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
 
 ## Prossimi passi in ordine
 
-1. **Revisione umana della baseline** (`00000000000000_baseline.sql`) e dei 7 punti
-   `TODO(review)` elencati sopra — blocca tutto il resto perché decide cosa è "vero" schema.
+1. ~~**Revisione umana della baseline**...~~ **FATTO 2026-08-20**: tutti e 7 i punti
+   `TODO(review)` confermati/risolti dall'utente (vedi elenco sopra), incluso un bug live
+   scoperto nel farlo (query rotta su `tasks.tipologia` in `Dashboard.tsx`/`Leads.tsx`).
 2. ~~In base alla revisione, decidere se/come riorganizzare `supabase/migrations/`...~~ **FATTO
    2026-08-20**: le 11 migration incrementali pre-baseline si sono dimostrate empiricamente non
    riproducibili dopo la baseline (`supabase db reset` falliva) e sono state archiviate in

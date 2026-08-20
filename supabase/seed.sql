@@ -84,5 +84,5 @@ INSERT INTO public.prenotazioni_oh (open_house_id, nome, email, telefono, orario
 -- -----------------------------------------------------------------------------
 -- Valutazioni
 -- -----------------------------------------------------------------------------
-INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, status, slug, stima_min, stima_max) VALUES
-    ('00000000-0000-0000-0000-000000000203', '00000000-0000-0000-0000-000000000002', 'Via Roma 8', 'Seriate', 'Villa', 180, '00000000-0000-0000-0000-000000000303', 'Completata', 'published', 'villa-roma-8-seriate', 420000, 480000);
+INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, slug, stima_min, stima_max) VALUES
+    ('00000000-0000-0000-0000-000000000203', '00000000-0000-0000-0000-000000000002', 'Via Roma 8', 'Seriate', 'Villa', 180, '00000000-0000-0000-0000-000000000303', 'Completata', 'villa-roma-8-seriate', 420000, 480000);

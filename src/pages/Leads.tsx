@@ -111,7 +111,6 @@ interface LeadRecord {
 interface LeadTaskItem {
   id: string;
   titolo?: string | null;
-  tipologia?: string | null;
   nota?: string | null;
   data?: string | null;
   ora?: string | null;
@@ -769,7 +768,7 @@ const Leads = () => {
     (async () => {
       const { data } = await supabase
         .from('tasks')
-        .select('id, titolo, tipologia, nota, data, ora, stato, agente_id')
+        .select('id, titolo, nota, data, ora, stato, agente_id')
         .eq('lead_id', selectedLead.id)
         .order('data', { ascending: true });
       setLeadTasks(data || []);
@@ -2112,7 +2111,7 @@ const Leads = () => {
           if (!selectedLead?.id) return;
           const { data } = await supabase
             .from('tasks')
-            .select('id, tipologia, nota, data, ora, stato, agente_id')
+            .select('id, nota, data, ora, stato, agente_id')
             .eq('lead_id', selectedLead.id)
             .order('data', { ascending: true });
           if (data) setLeadTasks(data);
