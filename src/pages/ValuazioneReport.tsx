@@ -303,14 +303,16 @@ const ValuazioneReport = () => {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAdmin(!!session?.user);
-    });
 
-    supabase
-      .from('valutazioni')
-      .select('*, leads(nome, cognome), zone_omi(codice_zona, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio)')
-      .eq('slug', slug)
-      .single()
-      .then(async ({ data, error }) => {
+      const query = session?.user
+        ? supabase
+            .from('valutazioni')
+            .select('*, leads(nome, cognome), zone_omi(codice_zona, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio)')
+            .eq('slug', slug)
+            .single()
+        : supabase.rpc('get_public_valuation_report', { p_slug: slug }).single();
+
+      query.then(async ({ data, error }) => {
         if (error || !data) { setNotFound(true); setLoading(false); return; }
         setVal(data as ValutazioneDetail);
 
@@ -323,6 +325,7 @@ const ValuazioneReport = () => {
         setComparabili((compData ?? []) as ComparabileFetched[]);
         setLoading(false);
       });
+    });
   }, [slug]);
 
   const handleDownloadPdf = useReactToPrint({
