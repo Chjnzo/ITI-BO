@@ -5,15 +5,93 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-08-20 — audit completo della codebase (struttura, sicurezza, qualità)
-+ creazione della migration baseline da introspezione produzione + pulizia sistematica a basso
-rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI minima, collaudo
-RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/`appuntamenti` in
-produzione (con fix di una regressione live su `leads` INSERT causata da un fix precedente nello
-stesso giorno) + stack Supabase locale via Docker avviato e verificato riproducibile da zero +
-risolti tutti e 7 i `TODO(review)` della baseline, incluso un bug live in produzione
-(`tasks.tipologia` inesistente, rompeva il caricamento della Dashboard) e una colonna morta
-droppata (`valutazioni.status`)._
+_Ultimo aggiornamento: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
+(evoluzione da CRM lead-centrico a property-centrico): popolazione e UI della sottofase Kanban,
+ricerca nel Kanban, colonna `ruolo` su `profili_agenti` (solo schema, nessun enforcement), pulizia
+roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora mergiato su `main`**
+(vedi sezione dedicata sotto). Sessione precedente (stesso branch, non ancora annotata qui prima
+d'ora): introdotto lo schema property-centrico (tabelle pipeline/documenti/ownership) e riscritta
+la gestione documenti da Supabase Storage a Google Drive tramite Edge Function proxy._
+
+_Ultimo aggiornamento precedente: 2026-08-20 — audit completo della codebase (struttura,
+sicurezza, qualità) + creazione della migration baseline da introspezione produzione + pulizia
+sistematica a basso rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI
+minima, collaudo RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/
+`appuntamenti` in produzione (con fix di una regressione live su `leads` INSERT causata da un fix
+precedente nello stesso giorno) + stack Supabase locale via Docker avviato e verificato
+riproducibile da zero + risolti tutti e 7 i `TODO(review)` della baseline, incluso un bug live in
+produzione (`tasks.tipologia` inesistente, rompeva il caricamento della Dashboard) e una colonna
+morta droppata (`valutazioni.status`).
+
+## Evoluzione property-centrica (branch `nuovo-Gestionale`, non su `main`)
+
+Lavoro guidato da `specifica-progetto-iti-bo-v1.md` (nuovo documento di specifica, non ancora
+menzionato altrove in questo file). Tutto quanto segue è **su branch `nuovo-Gestionale`, non
+ancora mergiato su `main`** — nessuna di queste modifiche è in produzione. Testato contro lo
+stack Supabase locale Docker (`supabase db reset`), mai contro produzione.
+
+**Gestione documenti spostata da Supabase Storage a Google Drive** (sessione precedente a questa,
+qui documentata per la prima volta): `supabase/functions/drive-documenti/` — nuova Edge Function
+proxy verso Google Apps Script (`google-apps-script/DocumentiDrive.gs`, deployato live); il
+frontend (`PipelineDetailSheet.tsx`) non carica più file su Storage ma tramite questo proxy;
+naming standardizzato dei file su Drive (`{documento} - {indirizzo}.ext`) con logica di
+sostituzione basata su prefisso invece che su ID fisso, e struttura cartelle appiattita. Bucket
+Storage `immobile-documenti` (locale) ora orfano — da rimuovere in una sessione futura, non
+ancora fatto.
+
+**§3.1 (modello dati anagrafica) — chiuso, solo documentazione**: confermato che non esiste e non
+è mai esistita nel codice una tabella "persona" dedicata da rimuovere (verificato via grep
+sull'intero repo). `leads` con `tipo_cliente` (Acquirente/Proprietario/Ibrido) resta l'unica fonte
+di verità; `immobili.proprietario_id` è già una FK reale verso `leads.id`. `specifica-progetto-iti-bo-v1.md`
+§3.1 riscritto per riflettere la decisione come chiusa.
+
+**§3.2 (sottofase pipeline) — implementato**: `immobile_pipeline_stato.sottofase` era sempre
+scritto `null`; ora viene popolato con la prima sottofase della fase macro (selezione manuale,
+default alla prima sottofase quando l'immobile entra in una fase — nessun auto-avanzamento da
+checklist, per decisione esplicita dell'utente). Mappa fase→sottofasi introdotta in
+`src/lib/pipelineChecklist.ts` (`SOTTOFASI_PIPELINE`, ri-esportata da `useImmobiliPipeline.ts` per
+evitare un import circolare): Acquisizione (Contatto→Incontro→Sopralluogo→Rivalutazione→Presa in
+carico), In Vendita (Burocratiche→Marketing→Appuntamenti), Venduto (Vincolo→Preliminare→Rogito),
+Archivio (nessuna). Nuovo `Select` in `PipelineDetailSheet.tsx` per la selezione manuale, nascosto
+per Archivio. **Bug trovato e risolto durante la verifica live** (Playwright + query DB dirette):
+la mutation `aggiornaSottofase` usava un `.update()` semplice, che su un immobile senza ancora una
+riga in `immobile_pipeline_stato` (es. dati pre-pipeline, o creati da Wizard e mai spostati)
+falliva silenziosamente (0 righe toccate, nessun errore, nessun toast) — cambiato a `.upsert(...,
+{ onConflict: 'immobile_id' })`. Riverificato dopo il fix: persistenza confermata sia in DB sia
+nella UI dopo reload.
+
+**§3.3 (Kanban) — portato al 100%**: aggiunta una barra di ricerca sopra le colonne
+(`KanbanBoard.tsx`, filtro client-side case-insensitive su titolo/indirizzo/città/proprietario,
+stesso pattern visivo della vista lista) e un badge sottofase su ogni card (`KanbanCard.tsx`).
+Ragionamento sulla scala per quando gli immobili saranno molti (richiesto esplicitamente
+dall'utente, nessuna azione presa oltre alla ricerca): il fetch attuale (una query con join,
+nessuna paginazione) resta adeguato per i volumi tipici di un'agenzia di Bergamo; paginazione o
+virtualizzazione per-colonna e caricamento separato dell'Archivio sono note per una lavorazione
+futura, non implementate ora per non introdurre complessità non richiesta.
+
+**§3.4 (ruoli) — solo schema/dati, nessun enforcement**: nuova migration
+`supabase/migrations/20260821090000_add_ruolo_profili_agenti.sql` — colonna `ruolo` (Admin/
+Agente/Segreteria, default `Agente`) su `profili_agenti`, backfill `Admin` dove `is_admin = true`.
+Additiva: `is_admin` resta invariato (ancora usato da `Dashboard.tsx` per il filtro client-side).
+**Nessuna UI di assegnazione ruolo, nessuna policy RLS che lo usa** — enforcement esplicitamente
+rimandato a una lavorazione futura separata, per decisione dell'utente. `AgentProfile` in
+`src/types/index.ts` aggiornato con il campo `ruolo?`.
+
+**§3.5 (controllo accessi documenti) — chiuso, solo pulizia roadmap**: confermato che non esiste
+ancora nel codice alcuna logica di controllo accessi ai documenti basata su ruolo. Rimossi i
+riferimenti a questo come "prossimo passo imminente": `specifica-progetto-iti-bo-v1.md` (§3.5
+secondo paragrafo, §6) e `google-apps-script/README.md` ("Debito noto") ora dichiarano
+esplicitamente che il collegamento permessi-documenti↔ruolo è fuori dal perimetro della fase
+corrente, rimandato a una lavorazione futura separata — non più un item aperto da chiudere a
+breve.
+
+**§3.6 (automazioni: alert stagnazione 60gg, matching acquirente/immobile) — non iniziato**, per
+esplicita richiesta dell'utente di tenerlo per dopo la chiusura di §3.1-§3.5.
+
+Verifica eseguita: `npx tsc --noEmit -p .` pulito; `supabase db reset` locale applica tutte le
+migration (incluse quelle di questa fase) senza errori; verifica end-to-end via Playwright sul
+Kanban (login, cambio vista, selezione sottofase con persistenza confermata in DB, ricerca
+funzionante su tutte le colonne).
 
 ## Cosa funziona
 
@@ -329,3 +407,13 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
     sopra.
 11. ~~Decidere come risolvere il gap RLS su `lead_notes`/`profili_agenti`/`appuntamenti`...~~
     **FATTO 2026-08-20**: vedi punto 8 sopra.
+12. §3.6 della `specifica-progetto-iti-bo-v1.md`: automazioni (alert stagnazione 60gg su
+    immobili fermi in una fase, matching acquirente/immobile) — tenuto per dopo la chiusura di
+    §3.1-§3.5 (fatta il 2026-08-21), per richiesta esplicita dell'utente.
+13. Enforcement effettivo dei ruoli (Admin/Agente/Segreteria) introdotti il 2026-08-21: oggi solo
+    schema/dati, nessuna RLS li usa. Da valutare come lavorazione futura separata (include anche
+    il controllo accessi documenti per ruolo rimandato dal §3.5).
+14. Decidere quando e come mergiare `nuovo-Gestionale` su `main` — tutto il lavoro property-centrico
+    (schema, Drive, pipeline/Kanban, ruoli) è oggi solo su questo branch, mai in produzione.
+15. Rimuovere il bucket Storage locale `immobile-documenti`, orfano da quando la gestione
+    documenti è passata a Google Drive.

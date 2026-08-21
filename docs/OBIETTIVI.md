@@ -65,10 +65,18 @@ Adattati dalle policy trasversali del "metodo Serplay" alla realtà di questo pr
   eseguito ad ogni modifica a schema/permessi.
 - **Fase successiva — automazione minima.** CI che almeno esegue lint/build ad ogni PR (oggi
   assente).
+- **Fase successiva — evoluzione property-centrica.** Il CRM evolve da lead-centrico a
+  property-centrico secondo `specifica-progetto-iti-bo-v1.md`: pipeline dell'immobile
+  (Acquisizione → In Vendita → Venduto → Archivio) con checklist documentale e vista Kanban,
+  gestione documenti su Google Drive invece di Supabase Storage, ruoli agente (Admin/Agente/
+  Segreteria) come base per un futuro controllo accessi. Sviluppata su branch `nuovo-Gestionale`,
+  non ancora mergiata su `main` — automazioni (alert stagnazione, matching acquirente/immobile) e
+  ogni enforcement dei ruoli restano fasi successive non ancora iniziate.
 
 ## Riferimenti
 
 - `docs/STATO.md` — fotografia dell'avanzamento reale.
 - `docs/riferimento/ambiente_locale.md` — piano per l'ambiente Docker locale.
+- `specifica-progetto-iti-bo-v1.md` — specifica dell'evoluzione property-centrica.
 - `CLAUDE.md` (radice) — regole operative dettagliate per gli agenti, schema dati, RLS per
   tabella, stack tecnico.
