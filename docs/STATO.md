@@ -5,7 +5,39 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-08-21 — implementata la sezione alert (§3.6): nuova tabella
+_Ultimo aggiornamento: 2026-08-21 — pianificazione (solo design, **nessun codice/migration
+scritto**) del pivot Proprietari/Compratori/Collaboratori: `leads` verrà sostituita da tre
+tabelle separate (`proprietari` con pipeline/kanban dedicata a 4 fasi senza sottofasi,
+`compratori`, `collaboratori`), il kanban immobili perderà la fase "Acquisizione" (assorbita dal
+nuovo kanban proprietari, che crea l'immobile in automatico alla "Presa in carico"), i ruoli
+Admin/Agente/Segreteria passeranno da schema-only a enforcement reale, e gli alert diventeranno
+un motore di regole configurabile da UI. Decisioni di design in `docs/DECISIONI.md` (voce
+"Pivot Proprietari/Compratori/Collaboratori"), obiettivo/roadmap in `docs/OBIETTIVI.md`. Creato
+anche `ITI2.0/PIVOT-CONTATTI-ITI-BO.md` (repo sibling): conclusione, nessuna modifica di codice
+richiesta lì, solo una checklist di collaudo post-cutover. Piano a 7 fasi tracciato con task
+interni all'agente, in attesa di via libera per iniziare dalla Fase 1 (schema). Riepilogo per
+preventivo in `docs/PREVENTIVO-PIVOT-CONTATTI.md`.
+
+_Ultimo aggiornamento precedente: 2026-08-21 — sessione di follow-up/bugfix sulla sezione alert e sul Kanban
+appena implementati, **non ancora committata** (modifiche solo in working tree su
+`nuovo-Gestionale`): (1) `aggiornaSottofase` ora chiama anche `generaChecklistPerFase` — prima un
+immobile mai passato da un drag&drop (dati pre-pipeline) restava con checklist vuota anche dopo
+aver impostato la sottofase da UI; (2) corretto un bug per cui la pill sottofase nella
+`PipelineDetailSheet` non sembrava mai cambiare — `KanbanBoard.tsx` teneva la card selezionata
+come snapshot congelato (`selectedCard`) invece di ricavarla ad ogni render dalla lista live di
+React Query, ora si tiene solo `selectedCardId`; (3) apertura della sheet su un immobile senza
+sottofase imposta ora automaticamente la prima sottofase della fase corrente (invece di lasciare
+la pill vuota in attesa di un click manuale), generando la checklist nello stesso momento; (4) il
+checkbox "Fatto" di un documento è disabilitato finché non ha un file caricato (`drive_file_id`);
+(5) pulsanti carica/visualizza file unificati in una sola icona (graffetta ↔ spunta verde), con
+perdita della funzione "sostituisci file" — segnalata all'utente, non ancora reintrodotta (vedi
+`DECISIONI.md`). Verificato solo `tsc --noEmit` (nessun tool di automazione browser disponibile).
+Investigata anche l'ipotesi di spostare le foto immobili su Google Drive (come già i documenti):
+**decisione di non procedere**, foto restano su Supabase Storage — vedi `DECISIONI.md` per il
+ragionamento e i numeri di produzione verificati (101 immobili, 278,8 MB/1.699 file nel bucket
+`immobili`).
+
+_Ultimo aggiornamento precedente: 2026-08-21 — implementata la sezione alert (§3.6): nuova tabella
 `immobile_alert` per promemoria manuali per immobile, alert automatici (stagnazione fase,
 documento non generato in checklist) calcolati a runtime senza righe persistite, nuova pagina
 `/alert` con badge contatore in `AdminLayout.tsx`, creazione/risoluzione alert manuali da
@@ -14,13 +46,13 @@ aggiornava mai `immobile_pipeline_stato.updated_at` sui cambi fase, rendendo imp
 calcolare la stagnazione. Dettagli sotto (era "design proposto" nell'aggiornamento precedente,
 ora implementato).
 
-_Ultimo aggiornamento precedente: 2026-08-21 — flag `urgente` sulle task (`supabase/migrations/
+_Ultimo aggiornamento precedente 3: 2026-08-21 — flag `urgente` sulle task (`supabase/migrations/
 20260821100000_add_urgente_to_tasks.sql`), evidenziato in rosso su tutte e 4 le superfici che
 mostrano task (`TaskModal.tsx`, `Tasks.tsx`, `Dashboard.tsx`, tab task + mini modale in
 `Leads.tsx`); creati e popolati `docs/RUNBOOK.md` e `docs/DECISIONI.md` (ultimi due dei 4
 documenti vivi del metodo Serplay). Lavoro su branch `nuovo-Gestionale`, non ancora su `main`.
 
-_Ultimo aggiornamento precedente 2: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
+_Ultimo aggiornamento precedente 4: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
 (evoluzione da CRM lead-centrico a property-centrico): popolazione e UI della sottofase Kanban,
 ricerca nel Kanban, colonna `ruolo` su `profili_agenti` (solo schema, nessun enforcement), pulizia
 roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora mergiato su `main`**
@@ -28,7 +60,7 @@ roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora me
 d'ora): introdotto lo schema property-centrico (tabelle pipeline/documenti/ownership) e riscritta
 la gestione documenti da Supabase Storage a Google Drive tramite Edge Function proxy._
 
-_Ultimo aggiornamento precedente 3: 2026-08-20 — audit completo della codebase (struttura,
+_Ultimo aggiornamento precedente 5: 2026-08-20 — audit completo della codebase (struttura,
 sicurezza, qualità) + creazione della migration baseline da introspezione produzione + pulizia
 sistematica a basso rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI
 minima, collaudo RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/
@@ -167,6 +199,53 @@ sessione precedente. Implementazione:
   manuale in browser (nessun tool di automazione browser disponibile nell'ambiente — verificato
   solo `tsc --noEmit`, `npm run build`, `supabase db reset` con controllo grant su
   `immobile_alert`).
+
+### Follow-up bugfix su alert/Kanban, non ancora committati (2026-08-21)
+
+Emersi dall'uso reale della UI subito dopo l'implementazione della sezione alert. **Tutte le
+modifiche sotto sono solo in working tree su `nuovo-Gestionale`, non ancora committate.**
+
+- **`aggiornaSottofase` non generava la checklist**: chiamava solo l'upsert su
+  `immobile_pipeline_stato`, mai `generaChecklistPerFase` (a differenza di `spostaFase`, che la
+  chiama sempre). Un immobile mai passato da un drag&drop reale (es. dati seed, o import diretto)
+  restava con checklist vuota anche dopo aver impostato manualmente la sottofase da UI — bug
+  segnalato dall'utente come "non vedo più la checklist dei documenti" per "Trilocale in Città
+  Alta" (confermato via query dirette sul DB locale: 0 righe in `immobile_documenti`, 4 attese da
+  `documenti_catalogo` per `fase='Acquisizione'`). **Causa concomitante**: la sessione precedente
+  aveva anche eseguito `supabase db reset` per validare la migration `immobile_alert`, che ha
+  cancellato dati di test manuali (checklist generate da precedenti drag&drop) mai presenti in
+  `seed.sql` — non un bug di codice, ma un effetto collaterale del reset non segnalato
+  all'utente al momento.
+- **Pill sottofase che sembrava "non rispondere"**: `KanbanBoard.tsx` teneva la card aperta nella
+  sheet come oggetto snapshot (`selectedCard`, impostato al click) invece di ricavarla ad ogni
+  render dalla lista viva di React Query — dopo una mutation (`aggiornaSottofase`) il valore
+  visualizzato restava congelato a prima del cambio. Corretto tenendo solo `selectedCardId` e
+  derivando la card da `cards?.find(...)`.
+- **Default automatico sottofase**: `PipelineDetailSheet.tsx` ora imposta la prima sottofase della
+  fase corrente non appena la sheet si apre su un immobile che non ne ha ancora una (invece di
+  lasciare la pill vuota in attesa di un click manuale) — chiama `aggiornaSottofase`, che con il
+  fix sopra genera anche la checklist nello stesso momento. Chiuso così anche il caso "immobile in
+  Acquisizione con pill non selezionata non mostra la checklist", segnalato dall'utente.
+- **Checkbox documento vincolato al file caricato**: il checkbox "Fatto" di un documento è ora
+  disabilitato finché il documento non ha un `drive_file_id` — prima si poteva segnare "Fatto"
+  senza aver mai caricato nulla (osservato dall'utente via screenshot). Si può comunque togliere
+  la spunta a un documento già "Fatto" senza file da prima di questo fix (dato pre-esistente non
+  toccato).
+- **Icona carica/visualizza file unificata**: un solo pulsante nella checklist (graffetta se
+  manca il file, spunta verde se presente) al posto di due pulsanti separati — **ha rimosso la
+  possibilità di sostituire un file già caricato**, non ancora reintrodotta (vedi
+  `DECISIONI.md`).
+
+Verifica eseguita: solo `npx tsc --noEmit -p .` (pulito dopo ogni modifica) — nessun tool di
+automazione browser disponibile in questa sessione per un collaudo end-to-end in UI.
+
+### Foto immobili — restano su Supabase Storage (investigato, non implementato)
+
+Valutato uno spostamento delle foto immobili (`copertina_url`/`immagini_urls`) da Supabase
+Storage a Google Drive, sullo stesso modello già usato per i documenti (§3.2 sopra). **Decisione:
+non procedere** — vedi `DECISIONI.md` per il ragionamento (rischio di hotlinking da un sito
+pubblico) e i numeri verificati in produzione: 101 immobili (88 attivi), bucket Storage
+`immobili` a 278,8 MB su 1.699 file. Nessun codice toccato.
 
 ## Cosa funziona
 
@@ -510,3 +589,10 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
     silenziosi in console invece che tramite `logger.error`/Sentry, dipendenze con
     vulnerabilità note (`react-router-dom`, `ws` via `@supabase/realtime-js`) — segnalato
     2026-08-21, da pianificare come lavoro separato su quel repository.
+20. **Committare i 3 file modificati dal follow-up bugfix alert/Kanban del 2026-08-21** (vedi
+    sezione dedicata sopra) — `src/hooks/useImmobiliPipeline.ts`,
+    `src/components/properties/kanban/KanbanBoard.tsx`,
+    `src/components/properties/kanban/PipelineDetailSheet.tsx` sono ancora solo in working tree.
+21. Decidere se reintrodurre un modo per sostituire un file già caricato nella checklist
+    documenti (capacità persa unificando i pulsanti carica/visualizza il 2026-08-21, vedi
+    `DECISIONI.md`) — nessuna richiesta esplicita dell'utente finora.

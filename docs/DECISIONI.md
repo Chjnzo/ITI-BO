@@ -169,6 +169,93 @@ stato aggiornato dopo che la checklist di un immobile era già stata generata) �
 e non ridondante. Segnalare invece ogni documento "Da fare" avrebbe semplicemente duplicato
 un'informazione già visibile nel Kanban/nella scheda pipeline, senza aggiungere valore.
 
+## 2026-08-21 — Foto immobili restano su Supabase Storage, non spostate su Google Drive
+
+**Decisione**: a differenza dei documenti (già spostati da Storage a Google Drive, vedi
+`docs/STATO.md`), le foto degli immobili (`immobili.copertina_url`/`immagini_urls`) restano su
+Supabase Storage. Nessuna modifica di codice.
+
+**Perché**: l'utente ha chiesto di spostare anche le foto su Drive, nella stessa cartella
+dell'immobile, con ITI2.0 (sito pubblico) che le legge da lì. A differenza dei documenti — letti
+solo dal CRM autenticato via un round-trip base64 su richiesta — le foto devono essere servite
+pubblicamente e in modo affidabile a un sito marketing, inclusi i meta tag OG/social. Google
+Drive non è pensato per l'hotlinking da siti terzi: gli URL diretti (`uc?export=view` o
+`thumbnail`) sono spesso rate-limitati/bloccati e non sempre seguiti correttamente dai crawler
+social. Verificati i numeri in produzione prima di decidere (progetto `xzdazmzjltxsxyqokxdh`):
+101 immobili (88 attivi), bucket Storage `immobili` a 278,8 MB su 1.699 file — volumi piccoli,
+quindi non è un problema di scala che spinga verso Drive. Proposta un'alternativa (mirror in
+sola scrittura verso Drive, lettura pubblica invariata da Storage) ma l'utente ha preferito non
+toccare nulla: si resta sull'architettura attuale.
+
+## 2026-08-21 — Checkbox documento checklist bloccato finché non c'è un file caricato
+
+**Decisione**: in `PipelineDetailSheet.tsx`, il checkbox "Fatto" di un documento della checklist
+è disabilitato finché quel documento non ha un `drive_file_id` (cioè un file caricato su Drive).
+Si può comunque togliere la spunta a un documento già segnato "Fatto" in precedenza (anche se
+privo di file, per non alterare dati esistenti pre-fix).
+
+**Perché**: richiesta esplicita dell'utente, osservata da uno screenshot in cui due documenti
+risultavano "Fatto" senza alcun file allegato — la checklist doveva garantire che "Fatto"
+significhi davvero "documento caricato", non solo una spunta manuale.
+
+## 2026-08-21 — Icona caricamento/visualizzazione file unificata, capacità di sostituzione rimossa
+
+**Decisione**: il pulsante graffetta (carica file) e il pulsante spunta verde (visualizza file
+già caricato) nella checklist documenti sono stati unificati in un solo pulsante: graffetta
+quando manca il file, spunta verde quando è presente (clic → visualizza). Prima del cambio,
+cliccare la graffetta anche a file già presente permetteva di **sostituirlo**; questa capacità
+non è stata reintrodotta.
+
+**Perché**: richiesta esplicita dell'utente di semplificare l'icona ("rendi la graffetta una
+spunta quando viene collegato"). La perdita della sostituzione diretta è stata segnalata
+esplicitamente all'utente in chat, non è ancora stato chiesto di reintrodurla — se serve, va
+aggiunta con un'interazione dedicata (es. icona separata solo a file presente) per non
+confondere di nuovo i due stati in un solo pulsante.
+
+## 2026-08-21 — Pivot Proprietari/Compratori/Collaboratori: decisioni di design (pianificazione, nessun codice ancora)
+
+**Decisione**: `leads` viene sostituita da tre tabelle separate — `proprietari` (con
+`proprietari_pratiche` come pipeline/kanban per singolo immobile in acquisizione: Contatto →
+Incontro/Sopralluogo → Rivalutazione → Presa in carico, **senza sottofasi**), `compratori`,
+`collaboratori` (anagrafe/certificatori/notai/responsabili portali, tabella nuova senza dati
+storici). Ogni tabella ha un campo `professione`. Un proprietario può avere più pratiche/immobili;
+via e tipologia dell'immobile si raccolgono sulla pratica (non sull'anagrafica proprietario) e
+diventano il nome annuncio; la pratica genera l'immobile in automatico solo alla "Presa in carico".
+
+**Perché**: richiesta esplicita e diretta dell'utente — cambio di modello di business, i
+proprietari diventano il punto focale del gestionale fino alla firma della presa d'incarico.
+Sovrascrive la decisione precedente del 2026-08-21 ("nessuna entità persona dedicata, `leads`
+unica fonte di verità") con un requisito di prodotto nuovo, non un errore della decisione
+precedente.
+
+**Collegamento generico da tasks/note/appuntamenti a "un contatto qualsiasi"**: tabella base
+condivisa `contatti` (id, agente_id, created_at) a cui le 3 tabelle si appoggiano 1:1 sullo stesso
+id, invece di 3 colonne FK nullable per tabella collegata. Scelta tecnica dell'assistente (Postgres
+non supporta FK polimorfiche pulite verso tabelle diverse), l'utente si è affidato esplicitamente
+("uso la soluzione migliore che ti aspetti").
+
+**Ibridi esistenti**: quando un lead `Ibrido` viene splittato in una riga `proprietari` + una riga
+`compratori` (non collegate tra loro), le task/note/appuntamenti storiche legate a quel lead
+vengono **duplicate**, una copia per il nuovo compratore e una per il nuovo proprietario —
+decisione esplicita dell'utente, non va scelto un solo lato.
+
+**`upsert_lead` invariata per `ITI2.0`**: `ContactForm.tsx` nel repo sibling ha già il toggle
+comprare/vendere (`p_tipo_interesse`) e lo passa già alla RPC; il pivot richiede solo di riscrivere
+il corpo della funzione lato ITI-BO (stessa firma) per scrivere su `proprietari`/`compratori`
+invece che su `leads` — **zero modifiche di codice richieste in `ITI2.0`**. Checklist di collaudo
+post-cutover documentata in `ITI2.0/PIVOT-CONTATTI-ITI-BO.md`.
+
+**Motore alert generalizzato**: la richiesta esplicita di poter configurare da UI dopo quanti
+giorni scatta un alert (per fase del kanban proprietari, ma anche per le fasi della pipeline
+immobili) sostituirà le soglie oggi hardcoded in `useAlerts.ts` (30/60/45gg) con una tabella di
+regole configurabile dagli admin.
+
+**Stato**: solo pianificazione/design in questa sessione, **nessuna migration o codice scritto
+per questo pivot**. Piano a fasi (7 fasi) tracciato con `TaskCreate` nella sessione corrente;
+punti ancora aperti da chiarire quando si arriva alla fase relativa: quali nuovi documenti
+aggiungere alla pipeline immobili, come migrare gli immobili oggi già in fase "Acquisizione" in
+produzione, matrice permessi RLS concreta per l'enforcement dei ruoli.
+
 ## 2026-08-21 — Nessun meccanismo di "silenziamento" alert in questo giro
 
 **Decisione**: un alert manuale può solo essere creato o risolto (`risolto = true`); un alert

@@ -72,6 +72,14 @@ Adattati dalle policy trasversali del "metodo Serplay" alla realtà di questo pr
   Segreteria) come base per un futuro controllo accessi. Sviluppata su branch `nuovo-Gestionale`,
   non ancora mergiata su `main` — automazioni (alert stagnazione, matching acquirente/immobile) e
   ogni enforcement dei ruoli restano fasi successive non ancora iniziate.
+- **Fase successiva — evoluzione contatti-centrica (pivot Proprietari/Compratori/Collaboratori).**
+  `leads` viene sostituita da tre tabelle separate (`proprietari` con pipeline/kanban dedicata a 4
+  fasi, `compratori`, `collaboratori`), i proprietari diventano il punto focale del gestionale
+  fino alla firma della presa d'incarico (che crea in automatico il nuovo immobile), la pipeline
+  immobili perde la fase "Acquisizione", i ruoli Admin/Agente/Segreteria passano da schema-only a
+  enforcement reale, e gli alert diventano un motore di regole configurabile da UI invece di
+  soglie hardcoded. Pianificazione avviata 2026-08-21 (solo design, nessun codice scritto) — piano
+  a fasi e decisioni prese in `docs/DECISIONI.md`, avanzamento in `docs/STATO.md`.
 
 ## Riferimenti
 
