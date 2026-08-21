@@ -105,6 +105,16 @@ export interface ImmobileDocumento {
   drive_file_id?: string | null;
 }
 
+export interface ImmobileAlert {
+  id: string;
+  immobile_id: string;
+  messaggio: string;
+  creato_da?: string | null;
+  risolto: boolean;
+  created_at: string;
+  risolto_at?: string | null;
+}
+
 export interface LeadRicerca {
   id: string;
   lead_id: string;
