@@ -5,13 +5,22 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-08-21 — flag `urgente` sulle task (`supabase/migrations/
+_Ultimo aggiornamento: 2026-08-21 — implementata la sezione alert (§3.6): nuova tabella
+`immobile_alert` per promemoria manuali per immobile, alert automatici (stagnazione fase,
+documento non generato in checklist) calcolati a runtime senza righe persistite, nuova pagina
+`/alert` con badge contatore in `AdminLayout.tsx`, creazione/risoluzione alert manuali da
+`PipelineDetailSheet.tsx`. Corretto anche un bug preesistente: `upsertFasePipeline` non
+aggiornava mai `immobile_pipeline_stato.updated_at` sui cambi fase, rendendo impossibile
+calcolare la stagnazione. Dettagli sotto (era "design proposto" nell'aggiornamento precedente,
+ora implementato).
+
+_Ultimo aggiornamento precedente: 2026-08-21 — flag `urgente` sulle task (`supabase/migrations/
 20260821100000_add_urgente_to_tasks.sql`), evidenziato in rosso su tutte e 4 le superfici che
 mostrano task (`TaskModal.tsx`, `Tasks.tsx`, `Dashboard.tsx`, tab task + mini modale in
 `Leads.tsx`); creati e popolati `docs/RUNBOOK.md` e `docs/DECISIONI.md` (ultimi due dei 4
 documenti vivi del metodo Serplay). Lavoro su branch `nuovo-Gestionale`, non ancora su `main`.
 
-_Ultimo aggiornamento precedente: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
+_Ultimo aggiornamento precedente 2: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
 (evoluzione da CRM lead-centrico a property-centrico): popolazione e UI della sottofase Kanban,
 ricerca nel Kanban, colonna `ruolo` su `profili_agenti` (solo schema, nessun enforcement), pulizia
 roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora mergiato su `main`**
@@ -19,7 +28,7 @@ roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora me
 d'ora): introdotto lo schema property-centrico (tabelle pipeline/documenti/ownership) e riscritta
 la gestione documenti da Supabase Storage a Google Drive tramite Edge Function proxy._
 
-_Ultimo aggiornamento precedente 2: 2026-08-20 — audit completo della codebase (struttura,
+_Ultimo aggiornamento precedente 3: 2026-08-20 — audit completo della codebase (struttura,
 sicurezza, qualità) + creazione della migration baseline da introspezione produzione + pulizia
 sistematica a basso rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI
 minima, collaudo RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/
@@ -119,28 +128,45 @@ live in questa sessione (nessun tool di automazione browser disponibile nell'amb
 pattern replica esattamente `toggleComplete`/`cycleLeadTaskStato`, già in produzione e verificati
 in precedenza.
 
-### Sezione alert (§3.6) — design proposto, non implementato (2026-08-21)
+### Sezione alert (§3.6) — implementata (2026-08-21)
 
-Richiesta esplicita dell'utente di "iniziare a pensare" a una sezione che controlli gli alert,
-oltre alle due automazioni già previste dalla spec (§3.6: alert stagnazione 60gg in "In
-Vendita", matching acquirente/immobile). Proposta di design (in attesa di conferma prima di
-implementare):
+Approvata dall'utente ("procedi con l'implementazione degli alert") sul design proposto nella
+sessione precedente. Implementazione:
 
-- **Alert manuali per immobile**: nuova tabella `immobile_alert` (`immobile_id`, `messaggio`,
-  `creato_da`, `risolto boolean default false`, `created_at`) — un agente annota un promemoria
-  libero su un immobile specifico (es. "aspettare planimetria aggiornata prima di pubblicare").
-- **Alert standard automatici** (calcolati, non righe persistite): stagnazione fase (già in
-  spec, generalizzabile oltre "In Vendita" a soglie per fase, non solo 60gg fissi) e documento
-  mancante (confronto tra `documenti_catalogo` atteso per fase/sottofase e `immobile_documenti`
-  presenti).
-- **Superficie UI**: un contatore/badge sul menu laterale (`AdminLayout.tsx`) più una vista
-  dedicata (nuova route, es. `/alert`, o un pannello dentro `/immobili`) che lista tutti gli
-  alert attivi (manuali + automatici) ordinati per immobile, con link diretto alla scheda
-  pipeline dell'immobile.
-- **Non ancora deciso, da confermare con l'utente prima di procedere**: se gli alert automatici
-  vanno calcolati a runtime (query, nessuna tabella) o materializzati da un job schedulato;
-  soglie esatte per fase (60gg è solo per "In Vendita" nella spec); se un alert può essere
-  "silenziato" temporaneamente senza risolverlo.
+- **Alert manuali per immobile**: nuova tabella `immobile_alert` (migration
+  `20260821110000_add_immobile_alert.sql`: `immobile_id`, `messaggio`, `creato_da`, `risolto
+  boolean default false`, `created_at`, `risolto_at`, RLS `ALL` per `authenticated`). Creazione e
+  risoluzione da `PipelineDetailSheet.tsx` (nuova sezione "Alert" sopra la checklist documenti).
+- **Alert automatici**, calcolati a runtime in `src/hooks/useAlerts.ts` (nessuna tabella,
+  nessun job schedulato — scelta esplicita per non introdurre infrastruttura non richiesta finché
+  il volume di immobili resta quello attuale, vedi `docs/DECISIONI.md`):
+  - *Stagnazione fase*: `immobile_pipeline_stato.updated_at` più vecchio di una soglia per fase
+    (Acquisizione 30gg, In Vendita 60gg — valore esplicito della spec, Venduto 45gg; Archivio
+    esente). Le soglie diverse da "In Vendita" sono una stima non confermata dall'utente, da
+    tarare se si rivelano sbagliate in pratica.
+  - *Documento non generato*: confronto tra `documenti_catalogo` atteso per la fase corrente
+    dell'immobile e le righe realmente presenti in `immobile_documenti` (per presenza riga, non
+    per stato "Fatto"/"Da fare" — quello è già visibile nella checklist stessa; questo alert
+    cattura solo il caso in cui il catalogo è stato aggiornato dopo la generazione della
+    checklist per quell'immobile).
+- **Bug corretto come prerequisito**: `upsertFasePipeline` (`src/lib/pipelineChecklist.ts`) non
+  includeva mai `updated_at` nel payload dell'upsert — Postgrest aggiorna solo le colonne
+  presenti nel payload in caso di conflitto, quindi il timestamp restava congelato alla
+  creazione della riga per ogni immobile, rendendo impossibile calcolare la stagnazione. Corretto
+  aggiungendo `updated_at: new Date().toISOString()` esplicitamente in quella funzione (non in
+  `aggiornaSottofase`, che non deve resettare il timer di stagnazione per un cambio di sola
+  sottofase).
+- **Superficie UI**: nuova pagina `/alert` (`src/pages/Alerts.tsx`) che lista alert manuali e
+  automatici separatamente, ciascuno con link diretto alla scheda Kanban dell'immobile (apre
+  `/immobili` in vista Kanban con la sheet già aperta sulla card giusta, via `location.state`).
+  Badge contatore rosso sulla voce "Alert" del menu laterale (`AdminLayout.tsx`), somma di alert
+  manuali non risolti + alert automatici correnti.
+- **Non implementato, deliberatamente fuori scope per questo giro**: nessun meccanismo di
+  "silenziamento" temporaneo di un alert automatico (non richiesto esplicitamente, e avrebbe
+  richiesto una tabella di stato aggiuntiva solo per gli alert calcolati); nessuna verifica
+  manuale in browser (nessun tool di automazione browser disponibile nell'ambiente — verificato
+  solo `tsc --noEmit`, `npm run build`, `supabase db reset` con controllo grant su
+  `immobile_alert`).
 
 ## Cosa funziona
 
@@ -461,9 +487,9 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
     sopra.
 11. ~~Decidere come risolvere il gap RLS su `lead_notes`/`profili_agenti`/`appuntamenti`...~~
     **FATTO 2026-08-20**: vedi punto 8 sopra.
-12. §3.6 della `specifica-progetto-iti-bo-v1.md`: automazioni (alert stagnazione 60gg su
-    immobili fermi in una fase, matching acquirente/immobile) — tenuto per dopo la chiusura di
-    §3.1-§3.5 (fatta il 2026-08-21), per richiesta esplicita dell'utente.
+12. §3.6 della `specifica-progetto-iti-bo-v1.md`: alert stagnazione/documento mancante **FATTO
+    2026-08-21** (vedi sezione dedicata sopra). Resta aperto solo il matching acquirente/immobile,
+    la seconda automazione prevista dallo stesso paragrafo, non ancora affrontata.
 13. Enforcement effettivo dei ruoli (Admin/Agente/Segreteria) introdotti il 2026-08-21: oggi solo
     schema/dati, nessuna RLS li usa. Da valutare come lavorazione futura separata (include anche
     il controllo accessi documenti per ruolo rimandato dal §3.5).
@@ -476,8 +502,9 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
 16. ~~Guida al cambio cartella Google Drive (test → reale)~~ **FATTO 2026-08-21**:
     `docs/riferimento/cambio_cartella_drive.md`, richiamata da `google-apps-script/README.md`.
 17. Flag `urgente` sulle task: **FATTO 2026-08-21** (vedi sezione dedicata sopra).
-18. §3.6/alert: design proposto 2026-08-21 (vedi sezione dedicata sopra), non ancora
-    implementato — in attesa di conferma dell'utente prima di procedere.
+18. §3.6/alert (manuali + stagnazione + documento mancante): **FATTO 2026-08-21** (vedi sezione
+    dedicata sopra e punto 12). Resta il matching acquirente/immobile, non affrontato in questo
+    giro.
 19. Hardening `OpenHouseBooking.tsx` in `ITI2.0` (repo sibling, fuori da questo repository):
     nessun rate-limit/regex email lato client a differenza di `ContactForm.tsx`, errori
     silenziosi in console invece che tramite `logger.error`/Sentry, dipendenze con

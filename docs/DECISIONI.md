@@ -129,3 +129,54 @@ livelli (bassa/media/alta/urgente).
 **Perché**: la richiesta esplicita era "un tasto che rende rossa e più visibile una task" — un
 caso binario (urgente sì/no). Una scala multi-livello sarebbe stata complessità non richiesta;
 si introduce se e quando emerge davvero il bisogno di distinguere più di due livelli.
+
+## 2026-08-21 — Alert automatici (§3.6) calcolati a runtime, nessuna tabella né job schedulato
+
+**Decisione**: gli alert "standard" (stagnazione fase, documento non generato in checklist) non
+sono righe persistite: `src/hooks/useAlerts.ts` li calcola ad ogni fetch confrontando
+`immobile_pipeline_stato.updated_at`/`documenti_catalogo`/`immobile_documenti` correnti. Solo gli
+alert manuali (promemoria liberi per immobile) vivono in una tabella (`immobile_alert`).
+
+**Perché**: l'utente ha approvato l'implementazione ("procedi") senza rispondere esplicitamente
+alla domanda aperta runtime-vs-job lasciata nel design proposto. Al volume attuale di immobili
+(decine/basse centinaia) una query aggiuntiva ad ogni caricamento della sidebar/pagina alert non
+è un problema di performance misurato; introdurre un `pg_cron` che materializza alert in una
+tabella avrebbe aggiunto infrastruttura (job, gestione stato "già segnalato", invalidazione) non
+giustificata da un problema reale. Da rivalutare se il volume di immobili crescerà molto.
+
+## 2026-08-21 — Soglie di stagnazione per fase diverse da "In Vendita" sono una stima, non da spec
+
+**Decisione**: `SOGLIA_STAGNAZIONE_GIORNI` in `src/hooks/useAlerts.ts` usa 60gg per "In Vendita"
+(valore esplicito della spec §3.6), ma anche 30gg per "Acquisizione" e 45gg per "Venduto"
+(Archivio esente, è fuori dal cruscotto operativo).
+
+**Perché**: la spec definisce la soglia solo per "In Vendita"; l'utente ha detto "procedi" senza
+rispondere alla domanda esplicita sulle soglie per le altre fasi lasciata aperta nel design. Ho
+scelto valori ragionevoli (fasi più brevi nella pratica dell'agenzia) piuttosto che non generare
+l'alert per quelle fasi, così da avere un default utilizzabile subito — ma sono valori non
+confermati dall'utente, da correggere se si rivelano sbagliati in pratica (non hardcoded altrove,
+un solo posto da cambiare).
+
+## 2026-08-21 — Alert "documento mancante" per presenza di riga, non per stato "Fatto"
+
+**Decisione**: l'alert automatico confronta se esiste una riga in `immobile_documenti` per ogni
+documento atteso da `documenti_catalogo` nella fase corrente — non se lo stato è "Fatto". Un
+documento "Da fare" non genera questo alert (è già visibile nella checklist della pipeline).
+
+**Perché**: `generaChecklistPerFase` crea automaticamente tutte le righe previste ad ogni cambio
+fase, quindi "riga mancante" può accadere solo per un disallineamento reale (es. il catalogo è
+stato aggiornato dopo che la checklist di un immobile era già stata generata) — un segnale utile
+e non ridondante. Segnalare invece ogni documento "Da fare" avrebbe semplicemente duplicato
+un'informazione già visibile nel Kanban/nella scheda pipeline, senza aggiungere valore.
+
+## 2026-08-21 — Nessun meccanismo di "silenziamento" alert in questo giro
+
+**Decisione**: un alert manuale può solo essere creato o risolto (`risolto = true`); un alert
+automatico non può essere "silenziato" temporaneamente — resta visibile finché la condizione che
+lo genera (fase ferma, documento mancante) non cambia.
+
+**Perché**: era una delle domande esplicitamente lasciate aperte nel design proposto, non
+risposta dall'utente. Un meccanismo di silenziamento per gli alert automatici (calcolati, non
+persistiti) avrebbe richiesto comunque una tabella di stato dedicata solo per questo — complessità
+non giustificata finché non emerge un caso d'uso reale in cui un alert automatico va ignorato a
+lungo senza che la condizione sottostante cambi.
