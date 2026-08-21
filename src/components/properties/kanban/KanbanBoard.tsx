@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -16,11 +16,27 @@ import KanbanColumn from './KanbanColumn';
 import KanbanCard from './KanbanCard';
 import PipelineDetailSheet from './PipelineDetailSheet';
 
-const KanbanBoard = () => {
+interface KanbanBoardProps {
+  autoOpenId?: string;
+  onAutoOpened?: () => void;
+}
+
+const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
   const { data: cards, isLoading, spostaFase } = useImmobiliPipeline();
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const [selectedCard, setSelectedCard] = useState<PipelineCard | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Link diretto dalla pagina Alert: apre la scheda dell'immobile segnalato
+  // non appena le card sono caricate, poi segnala al chiamante di consumare
+  // lo stato di navigazione (altrimenti riaprirebbe la sheet ad ogni render).
+  useEffect(() => {
+    if (!autoOpenId || !cards) return;
+    const match = cards.find((c) => c.id === autoOpenId);
+    if (match) setSelectedCard(match);
+    onAutoOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenId, cards]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

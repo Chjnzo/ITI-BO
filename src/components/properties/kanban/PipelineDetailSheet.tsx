@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Paperclip, Check, Loader2, ChevronDown } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Paperclip, Check, Loader2, ChevronDown, AlertTriangle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import { FASI_PIPELINE, SOTTOFASI_PIPELINE, useImmobiliPipeline, type PipelineCard } from '@/hooks/useImmobiliPipeline';
+import { useAlerts } from '@/hooks/useAlerts';
 import type { ImmobileDocumento } from '@/types';
 
 const fileToBase64 = (file: File): Promise<string> =>
@@ -40,9 +42,11 @@ interface PipelineDetailSheetProps {
 const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
   const queryClient = useQueryClient();
   const { aggiornaSottofase } = useImmobiliPipeline();
+  const { manuali, creaAlert, risolviAlert } = useAlerts();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadDoc = useRef<ImmobileDocumento | null>(null);
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+  const [nuovoAlert, setNuovoAlert] = useState('');
   // Fasi completate che l'utente ha espanso manualmente: di default una fase
   // con checklist completa parte collassata (l'utente vuole poterla comunque
   // riaprire per consultarla), le fasi non complete restano sempre aperte.
@@ -50,7 +54,17 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
 
   useEffect(() => {
     setFasiEspanse(new Set());
+    setNuovoAlert('');
   }, [card?.id]);
+
+  const alertImmobile = card ? manuali.filter((a) => a.immobile_id === card.id) : [];
+
+  const handleCreaAlert = () => {
+    const messaggio = nuovoAlert.trim();
+    if (!card || !messaggio) return;
+    creaAlert({ immobileId: card.id, messaggio });
+    setNuovoAlert('');
+  };
 
   const { data: documenti, isLoading } = useQuery<ImmobileDocumento[]>({
     queryKey: ['immobile-documenti', card?.id],
@@ -197,6 +211,51 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               className="hidden"
               onChange={handleFileInputChange}
             />
+
+            <div className="mt-6">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Alert</h4>
+              {alertImmobile.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {alertImmobile.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className="flex items-start gap-2 rounded-xl border-l-4 border-amber-400 bg-amber-50/60 px-3 py-2.5"
+                    >
+                      <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-sm text-gray-700 flex-1">{alert.messaggio}</p>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-emerald-600 hover:text-emerald-700"
+                        title="Segna come risolto"
+                        onClick={() => risolviAlert(alert.id)}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <Textarea
+                  value={nuovoAlert}
+                  onChange={(e) => setNuovoAlert(e.target.value)}
+                  placeholder="Aggiungi un promemoria per questo immobile..."
+                  className="min-h-[2.5rem] text-sm rounded-xl"
+                  rows={1}
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-xl bg-[#94b0ab] hover:bg-[#7a948f]"
+                  disabled={!nuovoAlert.trim()}
+                  onClick={handleCreaAlert}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
             <div className="mt-6">
               <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Checklist documenti</h4>

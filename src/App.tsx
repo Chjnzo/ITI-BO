@@ -14,6 +14,7 @@ const Leads = lazy(() => import('./pages/Leads'));
 const Agenda = lazy(() => import('./pages/Agenda'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Valutazioni = lazy(() => import('./pages/Valutazioni'));
+const Alerts = lazy(() => import('./pages/Alerts'));
 const ValuazioneReport = lazy(() => import('./pages/ValuazioneReport'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -74,6 +75,7 @@ const App = () => (
               <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
               <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
               <Route path="/valutazioni" element={<ProtectedRoute><Valutazioni /></ProtectedRoute>} />
+              <Route path="/alert" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
               <Route path="/report/:slug" element={<ValuazioneReport />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

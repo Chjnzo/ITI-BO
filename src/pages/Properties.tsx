@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
@@ -43,7 +44,12 @@ import type { Property } from '@/types';
 const PAGE_SIZE = 20;
 
 const Properties = () => {
-  const [view, setView] = useState<'lista' | 'kanban'>('lista');
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Link diretto dalla pagina Alert (state.openImmobileId): apre la board
+  // Kanban già sulla scheda pipeline dell'immobile segnalato.
+  const openImmobileId = (location.state as { openImmobileId?: string } | null)?.openImmobileId;
+  const [view, setView] = useState<'lista' | 'kanban'>(openImmobileId ? 'kanban' : 'lista');
   const [filter, setFilter] = useState<'active' | 'sold'>('active');
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -176,7 +182,10 @@ const Properties = () => {
         </div>
 
         {view === 'kanban' ? (
-          <KanbanBoard />
+          <KanbanBoard
+            autoOpenId={openImmobileId}
+            onAutoOpened={() => navigate(location.pathname, { replace: true, state: {} })}
+          />
         ) : (
         <>
         <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-6 gap-4 shrink-0">
