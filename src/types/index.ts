@@ -16,6 +16,7 @@ export interface AgentProfile {
   colore_calendario: string | null;
   avatar_url: string | null;
   sidebar_collapsed?: boolean;
+  ruolo?: 'Admin' | 'Agente' | 'Segreteria';
 }
 
 export interface Lead {
