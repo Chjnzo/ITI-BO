@@ -45,13 +45,43 @@ INSERT INTO public.immobili (id, titolo, prezzo, mq, locali, bagni, indirizzo, s
     ('00000000-0000-0000-0000-000000000102', 'Bilocale Malpensata', 155000, 55, '2', 1, 'Via Broseta 40', 'Disponibile', 'bilocale-malpensata', 'Bergamo', false, true),
     ('00000000-0000-0000-0000-000000000103', 'Villa con giardino a Seriate', 480000, 180, '5', 2, 'Via Roma 8', 'In Trattativa', 'villa-giardino-seriate', 'Seriate', true, true);
 
+-- Edge case: immobile appena creato al primo contatto (fase Acquisizione), come da
+-- decisione "la card nasce già a 'Contatto', non solo a incarico firmato" --
+-- scheda incompleta, non ancora visibile pubblicamente, nessuno slug.
+INSERT INTO public.immobili (id, titolo, prezzo, mq, locali, bagni, indirizzo, stato, slug, citta, in_evidenza, visibile) VALUES
+    ('00000000-0000-0000-0000-000000000104', 'Via Zambonate 22', NULL, NULL, NULL, NULL, 'Via Zambonate 22', 'Bozza', NULL, 'Bergamo', false, false);
+
+-- Edge case: immobile già archiviato/venduto, per testare il ramo 'Venduto' del backfill.
+INSERT INTO public.immobili (id, titolo, prezzo, mq, locali, bagni, indirizzo, stato, slug, citta, in_evidenza, visibile) VALUES
+    ('00000000-0000-0000-0000-000000000105', 'Attico in Piazza Pontida', 410000, 120, '4', 2, 'Piazza Pontida 5', 'Venduto', 'attico-piazza-pontida', 'Bergamo', false, false);
+
 -- -----------------------------------------------------------------------------
 -- Leads
 -- -----------------------------------------------------------------------------
+-- NOTE: leads.tipo_cliente valori reali usati da Leads.tsx sono
+-- Acquirente/Proprietario/Ibrido -- 'Venditore' non esiste mai nei dati veri
+-- (era un errore nel seed originale, corretto qui: Paolo è 'Proprietario').
 INSERT INTO public.leads (id, nome, cognome, email, telefono, stato, tipo_cliente, immobile_id, budget, assegnato_a, fonte) VALUES
     ('00000000-0000-0000-0000-000000000201', 'Luca', 'Bianchi', 'luca.bianchi@example.test', '3331234567', 'Nuovo', 'Acquirente', '00000000-0000-0000-0000-000000000101', 300000, '00000000-0000-0000-0000-000000000002', 'manuale'),
     ('00000000-0000-0000-0000-000000000202', 'Giulia', 'Verdi', 'giulia.verdi@example.test', '3339876543', 'Contattato', 'Acquirente', '00000000-0000-0000-0000-000000000102', 160000, '00000000-0000-0000-0000-000000000001', 'sito'),
-    ('00000000-0000-0000-0000-000000000203', 'Paolo', 'Rossi', 'paolo.rossi@example.test', '3335551122', 'Trattativa', 'Venditore', '00000000-0000-0000-0000-000000000103', NULL, '00000000-0000-0000-0000-000000000002', 'manuale');
+    ('00000000-0000-0000-0000-000000000203', 'Paolo', 'Rossi', 'paolo.rossi@example.test', '3335551122', 'Trattativa', 'Proprietario', '00000000-0000-0000-0000-000000000103', NULL, '00000000-0000-0000-0000-000000000002', 'manuale');
+
+-- Edge case: lead Ibrido -- vende un immobile (la card appena creata in Bozza) e
+-- allo stesso tempo cerca casa. Un'unica riga deve alimentare sia il ramo
+-- proprietario_id sia lead_ricerca del backfill.
+INSERT INTO public.leads (id, nome, cognome, email, telefono, stato, tipo_cliente, immobile_id, budget, zone_ricercate, tipologia_ricerca, zona_venditore, motivazione_vendita, scadenza_esclusiva, assegnato_a, fonte) VALUES
+    ('00000000-0000-0000-0000-000000000204', 'Elena', 'Colombo', 'elena.colombo@example.test', '3334445566', 'Contattato', 'Ibrido', '00000000-0000-0000-0000-000000000104', 250000, ARRAY['Malpensata'], ARRAY['Bilocale'], 'Zambonate', 'Trasferimento per lavoro', CURRENT_DATE + 180, '00000000-0000-0000-0000-000000000002', 'manuale');
+
+-- Edge case: Proprietario contattato ma senza ancora una card immobile collegata
+-- (immobile_id NULL) -- il backfill non deve fare nulla per questo lead, senza errori.
+INSERT INTO public.leads (id, nome, cognome, email, telefono, stato, tipo_cliente, immobile_id, assegnato_a, fonte) VALUES
+    ('00000000-0000-0000-0000-000000000205', 'Marco', 'Fumagalli', 'marco.fumagalli@example.test', '3337778811', 'Nuovo', 'Proprietario', NULL, '00000000-0000-0000-0000-000000000001', 'manuale');
+
+-- Edge case: Acquirente con criteri di ricerca completamente vuoti (nessun
+-- budget/zona/tipologia indicati ancora) -- deve comunque generare una riga
+-- lead_ricerca "guscio", non essere saltato.
+INSERT INTO public.leads (id, nome, cognome, email, telefono, stato, tipo_cliente, assegnato_a, fonte) VALUES
+    ('00000000-0000-0000-0000-000000000206', 'Chiara', 'Ferrari', 'chiara.ferrari@example.test', '3339990022', 'Nuovo', 'Acquirente', '00000000-0000-0000-0000-000000000002', 'sito');
 
 INSERT INTO public.lead_notes (lead_id, testo, autore) VALUES
     ('00000000-0000-0000-0000-000000000201', 'Interessato a una visita nel weekend.', 'Marco Agente'),
@@ -86,3 +116,13 @@ INSERT INTO public.prenotazioni_oh (open_house_id, nome, email, telefono, orario
 -- -----------------------------------------------------------------------------
 INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, slug, stima_min, stima_max) VALUES
     ('00000000-0000-0000-0000-000000000203', '00000000-0000-0000-0000-000000000002', 'Via Roma 8', 'Seriate', 'Villa', 180, '00000000-0000-0000-0000-000000000303', 'Completata', 'villa-roma-8-seriate', 420000, 480000);
+
+-- Edge case: valutazione richiesta da un lead che non ha (ancora) un immobile_id
+-- collegato -- il backfill deve lasciare immobile_id NULL, senza errori.
+INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, slug, stima_min, stima_max) VALUES
+    ('00000000-0000-0000-0000-000000000205', '00000000-0000-0000-0000-000000000001', 'Via Broseta 12', 'Bergamo', 'Bilocale', 60, '00000000-0000-0000-0000-000000000302', 'Bozza', 'bilocale-broseta-12', NULL, NULL);
+
+-- Edge case: valutazione orfana, nessun lead_id (richiesta pubblica senza lead
+-- CRM associato) -- il backfill non deve toccarla né fallire su lead_id NULL.
+INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, slug, stima_min, stima_max) VALUES
+    (NULL, NULL, 'Via Sudorno 3', 'Bergamo', 'Trilocale', 90, NULL, 'Bozza', 'trilocale-sudorno-3', NULL, NULL);
