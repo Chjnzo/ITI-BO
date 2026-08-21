@@ -24,8 +24,14 @@ interface KanbanBoardProps {
 const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
   const { data: cards, isLoading, spostaFase } = useImmobiliPipeline();
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
-  const [selectedCard, setSelectedCard] = useState<PipelineCard | null>(null);
+  // Si tiene solo l'id, non l'oggetto card: la card selezionata va ricavata
+  // ad ogni render dalla lista aggiornata di React Query, altrimenti dopo una
+  // mutation (es. cambio sottofase) la sheet resterebbe agganciata alla copia
+  // "congelata" presa al momento dell'apertura e non rifletterebbe il nuovo
+  // valore (la pill sottofase sembrava "non rispondere" per questo motivo).
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const selectedCard = selectedCardId ? cards?.find((c) => c.id === selectedCardId) ?? null : null;
 
   // Link diretto dalla pagina Alert: apre la scheda dell'immobile segnalato
   // non appena le card sono caricate, poi segnala al chiamante di consumare
@@ -33,7 +39,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
   useEffect(() => {
     if (!autoOpenId || !cards) return;
     const match = cards.find((c) => c.id === autoOpenId);
-    if (match) setSelectedCard(match);
+    if (match) setSelectedCardId(match.id);
     onAutoOpened?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenId, cards]);
@@ -118,7 +124,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
               key={fase}
               fase={fase}
               cards={cardsByFase[fase]}
-              onOpen={setSelectedCard}
+              onOpen={(card) => setSelectedCardId(card.id)}
               activeId={activeCard?.id ?? null}
             />
           ))}
@@ -131,7 +137,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
 
       <PipelineDetailSheet
         card={selectedCard}
-        onClose={() => setSelectedCard(null)}
+        onClose={() => setSelectedCardId(null)}
       />
     </>
   );

@@ -126,6 +126,11 @@ export const useImmobiliPipeline = () => {
         .from('immobile_pipeline_stato')
         .upsert({ immobile_id: immobileId, fase, sottofase }, { onConflict: 'immobile_id' });
       if (error) throw error;
+      // Stesso motivo di spostaFase: un immobile che non era mai passato da
+      // un drag&drop non ha ancora righe in immobile_documenti per la fase
+      // corrente. generaChecklistPerFase è idempotente, quindi chiamarla qui
+      // non tocca nulla se la checklist esiste già.
+      await generaChecklistPerFase(immobileId, fase);
     },
     onMutate: async ({ immobileId, sottofase }) => {
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
@@ -141,8 +146,11 @@ export const useImmobiliPipeline = () => {
       }
       showError('Aggiornamento sottofase non riuscito.');
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      if (variables) {
+        queryClient.invalidateQueries({ queryKey: ['immobile-documenti', variables.immobileId] });
+      }
     },
   });
 

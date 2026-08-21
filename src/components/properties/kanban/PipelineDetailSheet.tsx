@@ -57,6 +57,21 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     setNuovoAlert('');
   }, [card?.id]);
 
+  // Un immobile senza riga immobile_pipeline_stato (dati pre-esistenti alla
+  // pipeline, mai passati da un drag&drop) arriva qui con sottofase null: la
+  // pill risulterebbe vuota e, non essendo mai stata scritta una sottofase
+  // reale, generaChecklistPerFase non è mai scattata (la checklist resta
+  // vuota). Si imposta qui la prima sottofase della fase corrente non appena
+  // la sheet si apre, così la pill parte già valorizzata e la checklist si
+  // genera senza richiedere una selezione manuale.
+  useEffect(() => {
+    if (!card || card.sottofase) return;
+    const primaSottofase = SOTTOFASI_PIPELINE[card.fase][0];
+    if (primaSottofase) {
+      aggiornaSottofase({ immobileId: card.id, fase: card.fase, sottofase: primaSottofase });
+    }
+  }, [card?.id, card?.fase, card?.sottofase, aggiornaSottofase]);
+
   const alertImmobile = card ? manuali.filter((a) => a.immobile_id === card.id) : [];
 
   const handleCreaAlert = () => {
@@ -313,9 +328,16 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
                             key={doc.id}
                             className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 hover:bg-gray-50 transition-colors"
                           >
-                            <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
+                            <label
+                              className={cn(
+                                'flex items-center gap-3 flex-1 min-w-0',
+                                doc.stato === 'Fatto' || doc.drive_file_id ? 'cursor-pointer' : 'cursor-not-allowed',
+                              )}
+                              title={doc.stato !== 'Fatto' && !doc.drive_file_id ? 'Carica prima il file per poterlo segnare come fatto' : undefined}
+                            >
                               <Checkbox
                                 checked={doc.stato === 'Fatto'}
+                                disabled={doc.stato !== 'Fatto' && !doc.drive_file_id}
                                 onCheckedChange={() => toggleDocumento.mutate(doc)}
                               />
                               <span className={cn(
@@ -325,29 +347,19 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
                                 {doc.documento}
                               </span>
                             </label>
-                            {doc.drive_file_id && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 shrink-0 text-green-600 hover:text-green-700"
-                                title="Visualizza file caricato"
-                                onClick={() => handleViewFile(doc)}
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                            )}
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 shrink-0"
-                              title={doc.drive_file_id ? 'Sostituisci file' : 'Carica file'}
+                              className={cn('h-8 w-8 shrink-0', doc.drive_file_id && 'text-green-600 hover:text-green-700')}
+                              title={doc.drive_file_id ? 'Visualizza file caricato' : 'Carica file'}
                               disabled={uploadingDocId === doc.id}
-                              onClick={() => handleUploadClick(doc)}
+                              onClick={() => (doc.drive_file_id ? handleViewFile(doc) : handleUploadClick(doc))}
                             >
                               {uploadingDocId === doc.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : doc.drive_file_id ? (
+                                <Check className="h-4 w-4" />
                               ) : (
                                 <Paperclip className="h-4 w-4" />
                               )}
