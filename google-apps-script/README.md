@@ -92,6 +92,13 @@ curl -s -X POST "$DRIVE_WEBAPP_URL" \
   -d '{"token":"IL_TUO_TOKEN","action":"upload","immobileId":"test-123","immobileTitolo":"Prova","immobileIndirizzo":"Via di Prova 1","fase":"Acquisizione","documento":"Test Doc","fileName":"test.txt","mimeType":"text/plain","fileBase64":"'"$(echo -n 'ciao' | base64)"'"}'
 ```
 
+## Cambiare la cartella Drive (da cartella di prova a cartella reale)
+
+La cartella impostata oggi in `ROOT_FOLDER_ID` è solo di prova. Quando l'agenzia avrà creato la
+cartella definitiva (dopo l'incontro col team), segui
+`docs/riferimento/cambio_cartella_drive.md` — è solo una modifica alle Proprietà script su
+script.google.com, nessuna modifica a questo repository è necessaria.
+
 ## Debito noto / prossimi passi
 
 - L'Edge Function proxy (`supabase/functions/drive-documenti/`) e il rewiring
