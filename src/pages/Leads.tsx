@@ -34,7 +34,7 @@ import {
   Calendar, CalendarPlus, Plus, ExternalLink,
   TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
   CheckSquare, Clock, Calculator, Copy, SlidersHorizontal, X as XIcon,
-  MessageSquare, FileText,
+  MessageSquare, FileText, AlertTriangle,
 } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
@@ -117,6 +117,7 @@ interface LeadTaskItem {
   stato: string;
   agente_id?: string | null;
   telefono?: string | null;
+  urgente?: boolean;
 }
 
 interface LeadEventItem {
@@ -768,8 +769,9 @@ const Leads = () => {
     (async () => {
       const { data } = await supabase
         .from('tasks')
-        .select('id, titolo, nota, data, ora, stato, agente_id')
+        .select('id, titolo, nota, data, ora, stato, agente_id, telefono, urgente')
         .eq('lead_id', selectedLead.id)
+        .order('urgente', { ascending: false })
         .order('data', { ascending: true });
       setLeadTasks(data || []);
     })();
@@ -858,6 +860,18 @@ const Leads = () => {
     if (error) {
       showError('Errore aggiornamento stato');
       setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
+    }
+  };
+
+  const toggleLeadTaskUrgente = async (taskId: string, currentUrgente: boolean | undefined) => {
+    const newUrgente = !currentUrgente;
+    setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: newUrgente } : t));
+    if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: newUrgente } : prev);
+    const { error } = await supabase.from('tasks').update({ urgente: newUrgente }).eq('id', taskId);
+    if (error) {
+      showError('Errore aggiornamento urgenza');
+      setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: currentUrgente } : t));
+      if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: currentUrgente } : prev);
     }
   };
 
@@ -1926,15 +1940,22 @@ const Leads = () => {
                             'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
                             'Completata': 'bg-emerald-100 text-emerald-700 border-emerald-200',
                           };
+                          const isUrgent = !!task.urgente && task.stato !== 'Completata';
                           return (
                             <div
                               key={task.id}
-                              className="bg-white rounded-xl border border-gray-100 shadow-sm px-3 py-2.5 flex items-center gap-3 hover:border-[#94b0ab]/40 hover:shadow-md transition-all cursor-pointer group"
+                              className={cn(
+                                'rounded-xl border shadow-sm px-3 py-2.5 flex items-center gap-3 hover:shadow-md transition-all cursor-pointer group',
+                                isUrgent
+                                  ? 'bg-red-50/70 border-red-200 hover:border-red-300'
+                                  : 'bg-white border-gray-100 hover:border-[#94b0ab]/40',
+                              )}
                               onClick={() => { setTaskDetail(task); setTaskDetailNota(task.nota || ''); }}
                             >
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="text-[11px] font-bold text-gray-700 truncate">{task.titolo || 'Task'}</span>
+                                  {isUrgent && <AlertTriangle size={11} className="text-red-500 shrink-0" />}
+                                  <span className={cn('text-[11px] font-bold truncate', isUrgent ? 'text-red-700' : 'text-gray-700')}>{task.titolo || 'Task'}</span>
                                   <span className="text-[11px] text-gray-400">{task.data}{task.ora ? ` · ${task.ora.slice(0, 5)}` : ''}</span>
                                 </div>
                                 {task.telefono && (
@@ -1947,6 +1968,17 @@ const Leads = () => {
                                   <p className="text-[11px] text-gray-500 leading-snug truncate mt-0.5">{task.nota}</p>
                                 )}
                               </div>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); toggleLeadTaskUrgente(task.id, task.urgente); }}
+                                title={task.urgente ? 'Rimuovi urgenza' : 'Segna come urgente'}
+                                className={cn(
+                                  'shrink-0 p-1 rounded-full transition-opacity',
+                                  task.urgente ? 'text-red-500 opacity-100' : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:text-red-400',
+                                )}
+                              >
+                                <AlertTriangle size={13} />
+                              </button>
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); cycleLeadTaskStato(task.id, task.stato); }}
@@ -2129,12 +2161,32 @@ const Leads = () => {
             };
             return (
               <>
-                <div className="px-5 py-4 flex items-center gap-3 bg-[#94b0ab]/10 border-b border-[#94b0ab]/15">
+                <div className={cn(
+                  'px-5 py-4 flex items-center gap-3 border-b',
+                  taskDetail.urgente ? 'bg-red-50/70 border-red-200' : 'bg-[#94b0ab]/10 border-[#94b0ab]/15',
+                )}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#94b0ab] mb-0.5">Task</p>
-                    <p className="text-sm font-bold text-gray-800 truncate">{taskDetail.titolo || 'Task'}</p>
+                    <p className={cn(
+                      'text-[10px] font-black uppercase tracking-widest mb-0.5',
+                      taskDetail.urgente ? 'text-red-500' : 'text-[#94b0ab]',
+                    )}>Task</p>
+                    <div className="flex items-center gap-1.5">
+                      {taskDetail.urgente && <AlertTriangle size={12} className="text-red-500 shrink-0" />}
+                      <p className={cn('text-sm font-bold truncate', taskDetail.urgente ? 'text-red-700' : 'text-gray-800')}>{taskDetail.titolo || 'Task'}</p>
+                    </div>
                     <p className="text-[11px] text-gray-500">{taskDetail.data}{taskDetail.ora ? ` · ${taskDetail.ora.slice(0, 5)}` : ''}</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleLeadTaskUrgente(taskDetail.id, taskDetail.urgente)}
+                    title={taskDetail.urgente ? 'Rimuovi urgenza' : 'Segna come urgente'}
+                    className={cn(
+                      'shrink-0 p-1.5 rounded-full transition-colors',
+                      taskDetail.urgente ? 'text-red-500 bg-red-100 hover:bg-red-200' : 'text-gray-300 hover:text-red-400 hover:bg-red-50',
+                    )}
+                  >
+                    <AlertTriangle size={14} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => cycleLeadTaskStato(taskDetail.id, taskDetail.stato)}

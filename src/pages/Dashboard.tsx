@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import {
-  Users, Calendar, ListTodo, Plus, X, Check, CheckCircle2, ArrowRight,
+  Users, Calendar, ListTodo, Plus, X, Check, CheckCircle2, ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -38,6 +38,7 @@ interface PendingTask {
   nota: string | null;
   data: string;
   ora: string | null;
+  urgente: boolean;
   leads?: { nome: string; cognome: string } | null;
 }
 
@@ -135,9 +136,10 @@ const Dashboard = () => {
           .order('ora_inizio', { ascending: true }),
         supabase
           .from('tasks')
-          .select('id, titolo, nota, data, ora, stato, leads(nome, cognome)')
+          .select('id, titolo, nota, data, ora, stato, urgente, leads(nome, cognome)')
           .eq('stato', 'Da fare')
           .eq('agente_id', user.id)
+          .order('urgente', { ascending: false })
           .order('data', { ascending: true })
           .limit(5),
         recentLeadsQuery,
@@ -327,11 +329,20 @@ const Dashboard = () => {
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
                   const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}` : null;
                   return (
-                    <div key={task.id} className="flex items-center gap-3">
+                    <div
+                      key={task.id}
+                      className={cn(
+                        'flex items-center gap-3',
+                        task.urgente && 'bg-red-50/70 -mx-2 px-2 py-1.5 rounded-xl',
+                      )}
+                    >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">
-                          {task.titolo || leadName || 'Task'}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {task.urgente && <AlertTriangle size={12} className="text-red-600 shrink-0" />}
+                          <p className="text-sm font-semibold text-gray-900 truncate">
+                            {task.titolo || leadName || 'Task'}
+                          </p>
+                        </div>
                         {!isToday && (
                           <p className="text-xs text-gray-400">
                             {format(new Date(task.data), 'd MMM', { locale: it })}

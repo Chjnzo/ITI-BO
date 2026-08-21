@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Plus, Search, Check, CalendarIcon, User, StickyNote,
-  ChevronDown, ChevronRight, Phone,
+  ChevronDown, ChevronRight, Phone, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
@@ -36,6 +36,7 @@ interface Task {
   ora: string | null;
   stato: 'Da fare' | 'Completata';
   colore: string | null;
+  urgente: boolean;
   leads?: { id: string; nome: string; cognome: string } | null;
 }
 
@@ -72,22 +73,24 @@ const groupByDate = (tasks: Task[]): Map<string, Task[]> => {
 interface TaskCardProps {
   task: Task;
   onToggleComplete: (task: Task) => void;
+  onToggleUrgente: (task: Task) => void;
   onOpenLead: (task: Task) => void;
   onUpdateDate: (taskId: string, newDate: string) => void;
   onOpenDetail: (task: Task) => void;
 }
 
-const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate, onOpenDetail }: TaskCardProps) => {
+const TaskCard = React.memo(({ task, onToggleComplete, onToggleUrgente, onOpenLead, onUpdateDate, onOpenDetail }: TaskCardProps) => {
   const isComplete = task.stato === 'Completata';
+  const isUrgent = task.urgente && !isComplete;
   const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}`.trim() : null;
 
-  const borderColor = isComplete ? '#6ee7b7' : (task.colore ?? 'transparent');
+  const borderColor = isComplete ? '#6ee7b7' : isUrgent ? '#ef4444' : (task.colore ?? 'transparent');
 
   return (
     <div
       className={cn(
         'flex items-center gap-2.5 px-4 py-2 border-l-4 shadow-sm hover:shadow-md hover:bg-gray-50/80 transition-all group cursor-pointer',
-        isComplete ? 'bg-slate-50/80' : 'bg-white',
+        isComplete ? 'bg-slate-50/80' : isUrgent ? 'bg-red-50/70' : 'bg-white',
       )}
       style={{ borderLeftColor: borderColor }}
       onClick={() => onOpenDetail(task)}
@@ -106,9 +109,16 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <p className={cn('text-sm font-semibold truncate', isComplete ? 'line-through text-gray-400' : 'text-gray-800')}>
-          {task.titolo || leadName || 'Task senza titolo'}
-        </p>
+        <div className="flex items-center gap-1.5">
+          {isUrgent && (
+            <span className="flex items-center gap-0.5 text-[10px] font-black uppercase tracking-wide text-red-600 shrink-0">
+              <AlertTriangle size={11} /> Urgente
+            </span>
+          )}
+          <p className={cn('text-sm font-semibold truncate', isComplete ? 'line-through text-gray-400' : 'text-gray-800')}>
+            {task.titolo || leadName || 'Task senza titolo'}
+          </p>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           {leadName && task.titolo && (
             <span className="text-xs text-gray-500 truncate">{leadName}</span>
@@ -126,13 +136,26 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
       </div>
 
       {/* Quick actions */}
-      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          type="button"
+          title={task.urgente ? 'Rimuovi urgenza' : 'Segna come urgente'}
+          onClick={(e) => { e.stopPropagation(); onToggleUrgente(task); }}
+          className={cn(
+            'w-7 h-7 rounded-lg flex items-center justify-center transition-all shrink-0',
+            task.urgente
+              ? 'text-red-600 bg-red-100 hover:bg-red-200 opacity-100'
+              : 'text-gray-400 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100',
+          )}
+        >
+          <AlertTriangle size={13} />
+        </button>
         {task.lead_id && (
           <button
             type="button"
             title="Apri scheda lead"
             onClick={(e) => { e.stopPropagation(); onOpenLead(task); }}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
           >
             <User size={13} />
           </button>
@@ -142,7 +165,7 @@ const TaskCard = React.memo(({ task, onToggleComplete, onOpenLead, onUpdateDate,
             type="button"
             title="Modifica nota"
             onClick={(e) => { e.stopPropagation(); onOpenDetail(task); }}
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-all opacity-0 group-hover:opacity-100 shrink-0"
           >
             <StickyNote size={13} />
           </button>
@@ -196,7 +219,7 @@ const Tasks = () => {
     const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, titolo, telefono, lead_id, agente_id, nota, data, ora, stato, colore, leads(id, nome, cognome)')
+      .select('id, titolo, telefono, lead_id, agente_id, nota, data, ora, stato, colore, urgente, leads(id, nome, cognome)')
       .or(`stato.eq.Da fare,and(stato.eq.Completata,data.gte.${thirtyDaysAgo})`)
       .order('data', { ascending: true })
       .order('ora', { ascending: true, nullsFirst: true });
@@ -215,6 +238,13 @@ const Tasks = () => {
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, stato: newStato } : t));
     const { error } = await supabase.from('tasks').update({ stato: newStato }).eq('id', task.id);
     if (error) { showError('Errore aggiornamento stato'); fetchTasks(); }
+  };
+
+  const toggleUrgente = async (task: Task) => {
+    const newUrgente = !task.urgente;
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, urgente: newUrgente } : t));
+    const { error } = await supabase.from('tasks').update({ urgente: newUrgente }).eq('id', task.id);
+    if (error) { showError('Errore aggiornamento urgenza'); fetchTasks(); }
   };
 
   const updateTaskDate = async (taskId: string, newDate: string) => {
@@ -454,6 +484,7 @@ const Tasks = () => {
                               key={task.id}
                               task={task}
                               onToggleComplete={toggleComplete}
+                              onToggleUrgente={toggleUrgente}
                               onOpenLead={openLeadProfile}
                               onOpenDetail={openTaskDetail}
                               onUpdateDate={updateTaskDate}
@@ -486,6 +517,7 @@ const Tasks = () => {
                             key={task.id}
                             task={task}
                             onToggleComplete={toggleComplete}
+                              onToggleUrgente={toggleUrgente}
                             onOpenLead={openLeadProfile}
                             onOpenDetail={openTaskDetail}
                             onUpdateDate={updateTaskDate}
@@ -547,6 +579,7 @@ const Tasks = () => {
                                   key={task.id}
                                   task={task}
                                   onToggleComplete={toggleComplete}
+                              onToggleUrgente={toggleUrgente}
                                   onOpenLead={openLeadProfile}
                               onOpenDetail={openTaskDetail}
                                   onUpdateDate={updateTaskDate}
