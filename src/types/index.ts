@@ -25,7 +25,7 @@ export interface Lead {
   email: string;
   telefono: string;
   stato: 'Nuovo' | 'Contattato' | 'Trattativa' | 'Chiuso' | 'Perso';
-  tipo_cliente: 'Acquirente' | 'Venditore' | 'Ibrido';
+  tipo_cliente: 'Acquirente' | 'Proprietario' | 'Ibrido';
   budget?: number;
   tipologia_ricerca?: string;
   immobile_id?: string;
@@ -64,6 +64,54 @@ export interface Property {
   is_deleted?: boolean;
   deleted_at?: string;
   visibile?: boolean;
+  proprietario_id?: string;
+  zona_venditore?: string;
+  motivazione_vendita?: string;
+  scadenza_esclusiva?: string;
+  scheda_completa?: boolean;
+  venduto?: boolean;
+  zona_omi_id?: string;
+  tipologia?: string;
+}
+
+export type FasePipeline = 'Acquisizione' | 'In Vendita' | 'Venduto' | 'Archivio';
+
+export interface ImmobilePipelineStato {
+  id: string;
+  immobile_id: string;
+  fase: FasePipeline;
+  sottofase?: string;
+  updated_at: string;
+}
+
+export interface DocumentoCatalogo {
+  id: string;
+  fase: FasePipeline;
+  sottofase?: string;
+  documento: string;
+  ordine: number;
+}
+
+export interface ImmobileDocumento {
+  id: string;
+  immobile_id: string;
+  fase: FasePipeline;
+  documento: string;
+  stato: 'Da fare' | 'Fatto';
+  responsabile_id?: string;
+  completato_at?: string;
+  created_at: string;
+  drive_file_id?: string | null;
+}
+
+export interface LeadRicerca {
+  id: string;
+  lead_id: string;
+  budget?: number;
+  zone_ricercate?: string[];
+  tipologia_ricerca?: string[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Task {

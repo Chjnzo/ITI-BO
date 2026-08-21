@@ -5,7 +5,8 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
   Plus, Pencil, Trash2, Home, CheckCircle2,
-  RotateCcw, Search, Star, Calendar, Building2, Eye, EyeOff
+  RotateCcw, Search, Star, Calendar, Building2, Eye, EyeOff,
+  List, LayoutGrid
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -28,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import PropertyWizard from '@/components/properties/PropertyWizard';
+import KanbanBoard from '@/components/properties/kanban/KanbanBoard';
 import OpenHouseManager from '@/components/properties/OpenHouseManager';
 import UnitaSheet from '@/components/properties/UnitaSheet';
 import EvidenzaModal from '@/components/properties/EvidenzaModal';
@@ -41,6 +43,7 @@ import type { Property } from '@/types';
 const PAGE_SIZE = 20;
 
 const Properties = () => {
+  const [view, setView] = useState<'lista' | 'kanban'>('lista');
   const [filter, setFilter] = useState<'active' | 'sold'>('active');
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -144,6 +147,16 @@ const Properties = () => {
             <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
           </div>
           <div className="flex items-center gap-3">
+            <Tabs value={view} onValueChange={(v) => setView(v as 'lista' | 'kanban')} className="w-auto">
+              <TabsList className="grid grid-cols-2 w-[140px] rounded-full p-1 bg-muted/50 border border-gray-100">
+                <TabsTrigger value="lista" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  <List size={14} />
+                </TabsTrigger>
+                <TabsTrigger value="kanban" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  <LayoutGrid size={14} />
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Button
               variant="outline"
               onClick={() => setEvidenzaOpen(true)}
@@ -162,6 +175,10 @@ const Properties = () => {
           </div>
         </div>
 
+        {view === 'kanban' ? (
+          <KanbanBoard />
+        ) : (
+        <>
         <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-6 gap-4 shrink-0">
           <Tabs value={filter} onValueChange={setFilter} className="w-auto">
             <TabsList className="grid grid-cols-2 w-[220px] rounded-full p-1 bg-muted/50 border border-gray-100">
@@ -354,10 +371,12 @@ const Properties = () => {
 
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* Pagination — fuori dalla card, sempre visibile */}
-      {totalCount > PAGE_SIZE && (
+      {view === 'lista' && totalCount > PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 shrink-0">
           <p className="text-xs text-gray-400 font-medium">
             {Math.min((currentPage - 1) * PAGE_SIZE + 1, totalCount)}–{Math.min(currentPage * PAGE_SIZE, totalCount)} di {totalCount}
