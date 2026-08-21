@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestionale Immobili</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f7f6f4;--surface:#fff;--border:#e8e5e0;--border2:#d4d0ca;
+  --ink:#1c1c1a;--ink2:#44433f;--ink3:#7a7872;--ink4:#b0aea8;
+  --sp:#f1f3f5;--sc:#64748b;
+  --pp:#f3f0fc;--pc:#7c3aed;
+  --vp:#e8f5f3;--vc:#0d7a6e;
+  --tp:#fef3e0;--tc:#b45309;
+  --op:#fff0e8;--oc:#c2410c;
+  --mp:#fef0f0;--mc:#b91c1c;
+  --ap:#eff4ff;--ac:#1d4ed8;
+  --dp:#edf7ef;--dc:#166534;
+  --rp:#f3f4f6;--rc:#374151;
+  --eli:#0d7a6e;--mat:#7c3aed;--gab:#b45309;--tat:#1d4ed8;
+  --r:8px;--cw:300px;
+}
+body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:13px;min-height:100vh}
+
+/* TOPBAR */
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.25rem;height:50px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:300}
+.logo{font-size:13px;font-weight:700;letter-spacing:-.01em}
+.tabs{display:flex;gap:2px}
+.tab{font-size:12px;color:var(--ink3);padding:.3rem .65rem;border-radius:5px;cursor:pointer;font-weight:500;transition:all .12s;border:none;background:none}
+.tab:hover{background:var(--bg);color:var(--ink)}
+.tab.active{background:var(--bg);color:var(--ink);font-weight:600}
+.topbar-r{display:flex;align-items:center;gap:.6rem}
+.btn{background:var(--ink);color:#fff;border:none;border-radius:6px;padding:.35rem .8rem;font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.8}
+.btn-ghost{background:var(--bg);color:var(--ink2);border:1px solid var(--border2);border-radius:6px;padding:.32rem .75rem;font-size:12px;font-weight:500;cursor:pointer;position:relative;transition:all .12s}
+.btn-ghost:hover{border-color:var(--ink3)}
+.badge{position:absolute;top:-5px;right:-5px;background:var(--mc);color:#fff;font-size:9px;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid var(--surface)}
+
+/* FILTERBAR */
+.filterbar{padding:.6rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:.75rem;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap}
+.chips{display:flex;gap:.35rem;flex-wrap:wrap}
+.chip{font-size:11.5px;font-weight:500;padding:.25rem .65rem;border-radius:20px;border:1px solid var(--border2);background:var(--bg);color:var(--ink2);cursor:pointer;transition:all .12s}
+.chip:hover{border-color:var(--ink3)}
+.chip.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.legend{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:.3rem;font-size:11px;color:var(--ink3)}
+.av{width:20px;height:20px;border-radius:50%;font-size:8.5px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0}
+
+/* VIEWS */
+.view{display:none}
+.view.active{display:block}
+
+/* BOARD */
+.board{padding:1rem 1.25rem;display:flex;gap:.85rem;overflow-x:auto;align-items:flex-start;min-height:calc(100vh - 115px)}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);width:var(--cw);flex-shrink:0;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .15s}
+.card:hover{box-shadow:0 3px 10px rgba(0,0,0,.08)}
+.card-hd{padding:.8rem .9rem .6rem;border-bottom:1px solid var(--border)}
+.card-title{font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:.15rem}
+.card-addr{font-size:11px;color:var(--ink4);margin-bottom:.45rem}
+.stato-row{display:flex;align-items:center;gap:.4rem;margin-bottom:.35rem}
+.stato-badge{display:inline-flex;align-items:center;gap:.3rem;font-size:10.5px;font-weight:600;padding:.18rem .5rem;border-radius:4px;white-space:nowrap;cursor:pointer;transition:opacity .15s}
+.stato-badge:hover{opacity:.8}
+.deadline-pill{display:inline-flex;align-items:center;gap:.3rem;font-size:10.5px;padding:.18rem .5rem;border-radius:4px;cursor:pointer;border:1px dashed transparent;transition:border-color .12s}
+.deadline-pill:hover{border-color:var(--border2)}
+.deadline-pill input[type=date]{border:none;background:transparent;font:inherit;color:inherit;cursor:pointer;outline:none;width:90px}
+.dl-ok{color:var(--dc)}
+.dl-warn{color:#92610a}
+.dl-urgent{color:var(--mc);font-weight:600}
+.dl-past{color:var(--ink4);text-decoration:line-through}
+.prog-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin:.35rem 0 .1rem}
+.prog-fill{height:100%;background:var(--dc);border-radius:2px;transition:width .3s}
+.card-meta{display:flex;align-items:center;justify-content:space-between}
+.meta-pct{font-size:10.5px;color:var(--ink4)}
+.avs{display:flex}
+.avs .av{margin-left:-4px;border:1.5px solid var(--surface)}
+
+/* PHASES */
+.phases{padding:.35rem 0}
+.ph-row{display:flex;align-items:center;padding:.32rem .9rem;gap:.5rem;cursor:pointer;transition:background .1s}
+.ph-row:hover{background:var(--bg)}
+.ph-check{width:14px;height:14px;border:1.5px solid var(--border2);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;cursor:pointer}
+.ph-check.done{background:var(--dc);border-color:var(--dc)}
+.ph-check.done::after{content:'';width:7px;height:4.5px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg) translate(1px,-1px)}
+.ph-name{font-size:12px;font-weight:500;color:var(--ink2);flex:1}
+.ph-name.done{color:var(--ink4);text-decoration:line-through}
+.ph-name.dim{color:var(--ink4)}
+.ph-pct{font-size:10px;color:var(--ink4);font-weight:500;min-width:24px;text-align:right}
+.ph-arrow{font-size:9px;color:var(--ink4);transition:transform .15s;flex-shrink:0}
+.ph-arrow.open{transform:rotate(90deg)}
+
+/* DELIVERABLES */
+.delivs{display:none;padding:.2rem .9rem .4rem 2.2rem;flex-direction:column;gap:.1rem}
+.delivs.open{display:flex}
+.dv-item{display:flex;align-items:center;gap:.45rem;padding:.2rem 0;border-bottom:1px solid var(--bg);position:relative}
+.dv-item:last-child{border-bottom:none}
+.dv-check{width:12px;height:12px;border:1.5px solid var(--border2);border-radius:2px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center}
+.dv-check.done{background:var(--dc);border-color:var(--dc)}
+.dv-check.done::after{content:'';width:5.5px;height:3px;border-left:1.5px solid #fff;border-bottom:1.5px solid #fff;transform:rotate(-45deg) translate(.5px,-.5px)}
+.dv-label{font-size:11px;color:var(--ink3);flex:1;line-height:1.35}
+.dv-label.done{color:var(--ink4);text-decoration:line-through}
+.dv-date{font-size:10px;font-weight:600;padding:.1rem .3rem;border-radius:3px;border:none;background:transparent;font-family:inherit;cursor:pointer;outline:none;color:var(--ink4);max-width:82px;flex-shrink:0}
+.dv-date:hover,.dv-date:focus{background:var(--bg)}
+.dv-date.w{color:#92610a}
+.dv-date.u{color:var(--mc)}
+.dv-owner{flex-shrink:0}
+
+/* VISITE inline */
+.visits-section{padding:.2rem .9rem .4rem 2.2rem}
+.visit-item{display:flex;align-items:center;gap:.45rem;padding:.25rem 0;border-bottom:1px solid var(--bg)}
+.visit-item:last-child{border-bottom:none}
+.visit-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.visit-name{font-size:11px;font-weight:500;color:var(--ink2);flex:1}
+.visit-date{font-size:10.5px;color:var(--ink3)}
+.visit-esito{font-size:10px;padding:.1rem .35rem;border-radius:3px;font-weight:500}
+.esito-int{background:#e8f5f3;color:var(--vc)}
+.esito-neu{background:#f1f3f5;color:var(--sc)}
+.esito-non{background:#fef0f0;color:var(--mc)}
+.btn-add-visit{display:flex;align-items:center;gap:.3rem;font-size:10.5px;color:var(--ink4);cursor:pointer;padding:.2rem 0;margin-top:.2rem;border:none;background:none;font-family:inherit;transition:color .12s}
+.btn-add-visit:hover{color:var(--ink2)}
+
+/* FILES */
+.card-files{border-top:1px solid var(--border);padding:.5rem .9rem}
+.files-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem}
+.files-lbl{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink4)}
+.files-add{font-size:11px;color:var(--ink3);cursor:pointer;display:flex;align-items:center;gap:.2rem;padding:.12rem .35rem;border-radius:4px;border:1px dashed var(--border2);transition:all .12s}
+.files-add:hover{border-color:var(--ink3);color:var(--ink)}
+.files-list{display:flex;flex-wrap:wrap;gap:.3rem}
+.file-chip{display:inline-flex;align-items:center;gap:.25rem;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:.18rem .45rem;font-size:10.5px;color:var(--ink2);cursor:pointer;transition:border-color .12s}
+.file-chip:hover{border-color:var(--ink3)}
+
+/* NOTE */
+.card-note{border-top:1px solid var(--border);padding:.35rem .9rem}
+.note-in{width:100%;border:none;background:transparent;font-size:11px;color:var(--ink3);font-family:inherit;resize:none;outline:none;padding:0}
+.note-in::placeholder{color:var(--ink4)}
+
+/* FOOTER */
+.card-ft{border-top:1px solid var(--border);padding:.45rem .9rem;display:flex;align-items:center;justify-content:space-between}
+.next-lbl{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink4);margin-right:.3rem}
+.next-txt{font-size:11px;color:var(--ink2)}
+.pm-txt{font-size:10.5px;color:var(--ink4)}
+
+/* DRAG STATO */
+.drag-hint{font-size:10px;color:var(--ink4);display:flex;align-items:center;gap:.2rem;margin-top:.2rem;opacity:.7}
+.stato-track{display:flex;gap:3px;margin:.3rem 0;overflow-x:auto;padding:.1rem 0}
+.stato-step{flex-shrink:0;height:5px;border-radius:3px;flex:1;min-width:18px;cursor:pointer;transition:opacity .2s}
+.stato-step.active{opacity:1}
+.stato-step.inactive{opacity:.25}
+.stato-step:hover{opacity:.7}
+
+/* ─── VISTA PIPELINE ─────────────────────── */
+#view-pipeline{padding:1rem 1.25rem;overflow-x:auto;min-height:calc(100vh - 115px)}
+.pipeline-board{display:flex;gap:.85rem;align-items:flex-start;min-width:max-content}
+.pipeline-col{width:210px;flex-shrink:0}
+.pipeline-col-hd{font-size:11px;font-weight:600;padding:.4rem .6rem;border-radius:5px 5px 0 0;display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem}
+.pipeline-col-hd .cnt{font-size:10px;opacity:.7}
+.pipeline-mini{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.6rem .7rem;margin-bottom:.4rem;cursor:grab;transition:box-shadow .15s}
+.pipeline-mini:hover{box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.pipeline-mini.dragging{opacity:.4;cursor:grabbing}
+.pm-title{font-size:12px;font-weight:600;color:var(--ink)}
+.pm-addr{font-size:10.5px;color:var(--ink4);margin-top:.1rem}
+.pm-row{display:flex;align-items:center;justify-content:space-between;margin-top:.4rem}
+.pm-pct{font-size:10px;color:var(--ink4)}
+.drop-zone{min-height:60px;border-radius:6px;border:2px dashed transparent;transition:all .2s;padding:.2rem}
+.drop-zone.over{border-color:var(--border2);background:rgba(0,0,0,.02)}
+
+/* ─── VISTA PERSONALE ──────────────────── */
+#view-team{padding:1rem 1.25rem;overflow-x:auto;min-height:calc(100vh - 115px)}
+.team-board{display:flex;gap:.85rem;align-items:flex-start}
+.team-col{flex:1;min-width:220px}
+.team-col-hd{display:flex;align-items:center;gap:.5rem;padding:.5rem .7rem .5rem;border-radius:6px 6px 0 0;margin-bottom:.5rem}
+.team-col-hd .av{width:28px;height:28px;font-size:11px}
+.team-col-hd-info h4{font-size:13px;font-weight:700;color:var(--ink)}
+.team-col-hd-info p{font-size:10.5px;color:var(--ink3)}
+.team-task{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.6rem .75rem;margin-bottom:.4rem}
+.team-task-title{font-size:12px;font-weight:500;color:var(--ink)}
+.team-task-sub{font-size:10.5px;color:var(--ink4);margin-top:.1rem}
+.team-task-row{display:flex;align-items:center;justify-content:space-between;margin-top:.4rem}
+.team-task-date{font-size:10.5px;font-weight:600;padding:.15rem .4rem;border-radius:3px}
+.td-ok{background:var(--dp);color:var(--dc)}
+.td-w{background:#fef9e0;color:#92610a}
+.td-u{background:var(--mp);color:var(--mc)}
+.team-task-stato{font-size:10px;color:var(--ink4)}
+
+/* ─── CALENDARIO ────────────────────────── */
+#view-calendar{padding:1rem 1.25rem;min-height:calc(100vh - 115px)}
+.cal-nav{display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+.cal-nav h3{font-size:16px;font-weight:700;flex:1}
+.cal-nav-btn{background:var(--bg);border:1px solid var(--border2);border-radius:5px;padding:.3rem .65rem;font-size:12px;cursor:pointer;transition:all .12s}
+.cal-nav-btn:hover{border-color:var(--ink3)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.cal-dow{background:var(--bg);padding:.4rem;text-align:center;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink4)}
+.cal-day{background:var(--surface);min-height:90px;padding:.4rem;position:relative;vertical-align:top}
+.cal-day.other-month{background:#fafaf9}
+.cal-day.today .cal-day-num{background:var(--ink);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.cal-day-num{font-size:11.5px;font-weight:500;color:var(--ink3);width:22px;height:22px;display:flex;align-items:center;justify-content:center;margin-bottom:.2rem}
+.cal-event{font-size:10px;font-weight:500;padding:.15rem .35rem;border-radius:3px;margin-bottom:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;transition:opacity .12s}
+.cal-event:hover{opacity:.8}
+.cal-event.rogito{background:var(--ap);color:var(--ac)}
+.cal-event.visita{background:var(--vp);color:var(--vc)}
+.cal-event.scad{background:var(--tp);color:var(--tc)}
+.cal-event.urgent{background:var(--mp);color:var(--mc)}
+.cal-more{font-size:10px;color:var(--ink4);cursor:pointer;margin-top:.1rem}
+.cal-more:hover{color:var(--ink)}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.25rem;right:1.25rem;background:var(--ink);color:#fff;padding:.55rem 1rem;border-radius:6px;font-size:12px;font-weight:500;opacity:0;transform:translateY(5px);transition:all .2s;pointer-events:none;z-index:999}
+.toast.show{opacity:1;transform:translateY(0)}
+
+/* MODAL */
+.modal-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.22);z-index:500;align-items:center;justify-content:center}
+.modal-ov.open{display:flex}
+.modal{background:var(--surface);border-radius:10px;padding:1.1rem;width:280px;box-shadow:0 8px 28px rgba(0,0,0,.14)}
+.modal h3{font-size:13px;font-weight:700;margin-bottom:.85rem}
+.stato-opt{display:flex;align-items:center;gap:.55rem;padding:.45rem .55rem;border-radius:5px;cursor:pointer;transition:background .1s;font-size:12px}
+.stato-opt:hover{background:var(--bg)}
+.stato-opt.sel{background:var(--bg);font-weight:600}
+.modal-close{margin-top:.6rem;width:100%;text-align:center;font-size:11.5px;color:var(--ink4);cursor:pointer;padding:.3rem}
+.modal-close:hover{color:var(--ink)}
+
+/* MODAL VISITA */
+.modal-visita{width:320px}
+.form-row{margin-bottom:.65rem}
+.form-lbl{font-size:11px;font-weight:600;color:var(--ink3);margin-bottom:.25rem;display:block}
+.form-in{width:100%;border:1px solid var(--border2);border-radius:5px;padding:.4rem .55rem;font-size:12px;font-family:inherit;outline:none;transition:border-color .12s;background:var(--surface)}
+.form-in:focus{border-color:var(--ac)}
+.form-row-2{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.esito-btns{display:flex;gap:.4rem}
+.esito-btn{flex:1;padding:.3rem;border:1px solid var(--border2);border-radius:4px;font-size:11px;cursor:pointer;text-align:center;transition:all .12s;background:var(--bg)}
+.esito-btn.sel-i{background:var(--vp);border-color:var(--vc);color:var(--vc);font-weight:600}
+.esito-btn.sel-n{background:var(--sp);border-color:var(--sc);color:var(--sc);font-weight:600}
+.esito-btn.sel-x{background:var(--mp);border-color:var(--mc);color:var(--mc);font-weight:600}
+.btn-confirm{width:100%;background:var(--ink);color:#fff;border:none;border-radius:6px;padding:.45rem;font-size:12.5px;font-weight:600;cursor:pointer;margin-top:.5rem}
+.btn-confirm:hover{opacity:.85}
+
+/* AGENDA PANEL */
+.agenda-panel{display:none;position:fixed;top:50px;right:0;width:300px;height:calc(100vh - 50px);background:var(--surface);border-left:1px solid var(--border);z-index:300;overflow-y:auto;box-shadow:-4px 0 14px rgba(0,0,0,.06)}
+.agenda-panel.open{display:block}
+.ag-hd{padding:.85rem 1rem .7rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.ag-hd h3{font-size:13px;font-weight:700}
+.ag-close{font-size:15px;cursor:pointer;color:var(--ink4);line-height:1}
+.ag-close:hover{color:var(--ink)}
+.ag-grp{padding:.65rem 1rem 0}
+.ag-grp-lbl{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink4);margin-bottom:.4rem}
+.ag-item{display:flex;align-items:flex-start;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--bg)}
+.ag-item:last-child{border-bottom:none}
+.ag-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:.28rem}
+.ag-txt{flex:1}
+.ag-title{font-size:12px;font-weight:500;color:var(--ink2);line-height:1.3}
+.ag-sub{font-size:10.5px;color:var(--ink4);margin-top:.08rem}
+.ag-date{font-size:11px;font-weight:600;white-space:nowrap;flex-shrink:0}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left" style="display:flex;align-items:center;gap:1.25rem">
+    <div class="logo">Gestionale Immobili</div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchView('cards',this)">Vista Immobili</button>
+      <button class="tab" onclick="switchView('pipeline',this)">Pipeline</button>
+      <button class="tab" onclick="switchView('team',this)">Per Persona</button>
+      <button class="tab" onclick="switchView('calendar',this)">📅 Calendario</button>
+    </div>
+  </div>
+  <div class="topbar-r">
+    <button class="btn-ghost" onclick="toggleAgenda()" id="agBtn">📋 Scadenze<span class="badge">3</span></button>
+    <button class="btn">+ Nuovo immobile</button>
+  </div>
+</div>
+
+<!-- FILTERBAR (cards only) -->
+<div class="filterbar" id="filterbar">
+  <div class="chips">
+    <div class="chip active" onclick="filterCards('tutti',this)">Tutti <span style="font-size:10px;opacity:.6">15</span></div>
+    <div class="chip" onclick="filterCards('In vendita',this)">In vendita</div>
+    <div class="chip" onclick="filterCards('In trattativa',this)">In trattativa</div>
+    <div class="chip" onclick="filterCards('In preparazione',this)">In preparazione</div>
+    <div class="chip" onclick="filterCards('In attesa di atto',this)">In attesa di atto</div>
+    <div class="chip" onclick="filterCards('In attesa mutuo',this)">In attesa mutuo</div>
+    <div class="chip" onclick="filterCards('Proposta accettata',this)">Proposta accettata</div>
+    <div class="chip" onclick="filterCards('Presa incarico',this)">Presa incarico</div>
+    <div class="chip" onclick="filterCards('Venduta',this)">Venduta</div>
+    <div class="chip" onclick="filterCards('Incarico ritirato',this)">Ritirato</div>
+  </div>
+  <div class="legend">
+    <div class="legend-item"><div class="av" style="background:var(--eli)">EL</div> Eliana</div>
+    <div class="legend-item"><div class="av" style="background:var(--mat)">MA</div> Matteo</div>
+    <div class="legend-item"><div class="av" style="background:var(--gab)">GA</div> Gabriele</div>
+    <div class="legend-item"><div class="av" style="background:var(--tat)">TA</div> Tati</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ VISTA IMMOBILI ═══ -->
+<div id="view-cards" class="view active">
+<div class="board" id="board">
+
+<!-- CARD DATA injected by JS -->
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════ VISTA PIPELINE ═══ -->
+<div id="view-pipeline" class="view">
+  <div class="pipeline-board" id="pipeline-board"></div>
+</div>
+
+<!-- ═══════════════════════════════ VISTA TEAM ═══════ -->
+<div id="view-team" class="view">
+  <div class="team-board" id="team-board"></div>
+</div>
+
+<!-- ═══════════════════════════════ CALENDARIO ═══════ -->
+<div id="view-calendar" class="view">
+  <div class="cal-nav">
+    <button class="cal-nav-btn" onclick="calPrev()">‹</button>
+    <h3 id="cal-month-label"></h3>
+    <button class="cal-nav-btn" onclick="calNext()">›</button>
+  </div>
+  <div class="cal-grid" id="cal-grid"></div>
+</div>
+
+<!-- AGENDA PANEL -->
+<div class="agenda-panel" id="agendaPanel">
+  <div class="ag-hd"><h3>Scadenze imminenti</h3><span class="ag-close" onclick="toggleAgenda()">✕</span></div>
+  <div id="ag-content"></div>
+</div>
+
+<!-- MODAL STATO -->
+<div class="modal-ov" id="statoModal" onclick="closeModal(event,'statoModal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Cambia stato</h3>
+    <div id="statoOptions"></div>
+    <div class="modal-close" onclick="closeModal(null,'statoModal')">Annulla</div>
+  </div>
+</div>
+
+<!-- MODAL VISITA -->
+<div class="modal-ov" id="visitaModal" onclick="closeModal(event,'visitaModal')">
+  <div class="modal modal-visita" onclick="event.stopPropagation()">
+    <h3>Aggiungi visita acquirente</h3>
+    <div class="form-row">
+      <label class="form-lbl">Nome acquirente</label>
+      <input class="form-in" id="v-name" placeholder="Es. Marco Bianchi">
+    </div>
+    <div class="form-row-2">
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-lbl">Data visita</label>
+        <input class="form-in" id="v-date" type="date">
+      </div>
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-lbl">Ora</label>
+        <input class="form-in" id="v-time" type="time" value="10:00">
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:.65rem">
+      <label class="form-lbl">Esito visita</label>
+      <div class="esito-btns">
+        <div class="esito-btn" onclick="selectEsito(this,'int')">Interessato</div>
+        <div class="esito-btn" onclick="selectEsito(this,'neu')">Neutro</div>
+        <div class="esito-btn" onclick="selectEsito(this,'non')">Non interessato</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <label class="form-lbl">Note</label>
+      <input class="form-in" id="v-note" placeholder="Impressioni, obiezioni...">
+    </div>
+    <button class="btn-confirm" onclick="confirmVisita()">Salva visita</button>
+    <div class="modal-close" onclick="closeModal(null,'visitaModal')">Annulla</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+// DATA
+// ══════════════════════════════════════════
+const STATI = [
+  {l:'Presa incarico',    c:'#64748b',bg:'#f1f3f5'},
+  {l:'In preparazione',  c:'#7c3aed',bg:'#f3f0fc'},
+  {l:'In vendita',       c:'#0d7a6e',bg:'#e8f5f3'},
+  {l:'In trattativa',    c:'#b45309',bg:'#fef3e0'},
+  {l:'Proposta accettata',c:'#c2410c',bg:'#fff0e8'},
+  {l:'In attesa mutuo',  c:'#b91c1c',bg:'#fef0f0'},
+  {l:'In attesa di atto',c:'#1d4ed8',bg:'#eff4ff'},
+  {l:'Venduta',          c:'#166534',bg:'#edf7ef'},
+  {l:'Incarico ritirato',c:'#374151',bg:'#f3f4f6'},
+];
+
+const PEOPLE = {
+  EL:{name:'Eliana',role:'Appuntamenti',color:'#0d7a6e'},
+  MA:{name:'Matteo',role:'Proprietari',color:'#7c3aed'},
+  GA:{name:'Gabriele',role:'Acquirenti',color:'#b45309'},
+  TA:{name:'Tati',role:'Documentazione',color:'#1d4ed8'},
+};
+
+const IMMOBILI = [
+  {id:1,title:'Via Brembo 14',addr:'Bergamo Alta',prop:'Rossi Carlo',stato:'In vendita',pct:35,
+   deadline:{label:'Rogito previsto',date:'2025-09-20',icon:'🏛'},
+   team:['MA','EL'],pm:'MA',next:'Follow-up acquirenti',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[
+      {t:'Contratto incarico firmato',done:true,owner:'MA'},
+      {t:'Documento identità proprietario',done:true,owner:'TA'},
+      {t:'Atto di provenienza',done:true,owner:'TA'},
+    ]},
+    {name:'In preparazione',done:true,delivs:[
+      {t:'Foto e video immobile',done:true,owner:'MA'},
+      {t:'Annuncio caricato sui portali',done:true,owner:'EL'},
+    ]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[
+      {t:'Prima visita acquirente',done:true,owner:'EL'},
+      {t:'Follow-up acquirenti',done:false,owner:'GA',date:'2025-07-25'},
+    ],
+    visite:[
+      {name:'Luisa Conti',date:'2025-06-10',time:'10:00',esito:'int',note:'Molto interessata, chiede info mutuo'},
+      {name:'Marco Ferretti',date:'2025-06-18',time:'15:30',esito:'non',note:'Troppo piccola'},
+    ]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Contratto.pdf','Planimetria.png','APE.pdf'],
+   note:'Fotografo confermato giovedì'},
+
+  {id:2,title:'Corso Vittorio 38',addr:'Centro storico',prop:'Ferri Anna',stato:'In trattativa',pct:65,
+   deadline:{label:'Risposta proprietaria entro',date:'2025-07-11',icon:'⏰'},
+   team:['MA','GA','EL'],pm:'MA',next:'Conferma risposta proprietaria',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Paolo Manzoni',date:'2025-05-20',time:'11:00',esito:'int',note:'Vuole fare proposta'},
+    ]},
+    {name:'In trattativa',done:false,delivs:[
+      {t:'Proposta acquirente ricevuta',done:true,owner:'GA'},
+      {t:'Proposta presentata al proprietario',done:true,owner:'MA'},
+      {t:'Risposta proprietario confermata',done:false,owner:'MA',date:'2025-07-11'},
+    ]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Proposta_acquirente.pdf','Planimetria.png'],
+   note:'Proprietaria vuole rispondere entro venerdì'},
+
+  {id:3,title:'Viale Piave 7',addr:'Longuelo',prop:'Brambilla Sergio',stato:'In preparazione',pct:20,
+   deadline:{label:'Video previsto entro',date:'2025-07-18',icon:'📸'},
+   team:['MA','TA'],pm:'MA',next:'Video immobile',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:false,delivs:[
+      {t:'Sopralluogo e foto',done:true,owner:'MA'},
+      {t:'Video immobile',done:false,owner:'MA',date:'2025-07-18'},
+      {t:'Scheda tecnica completa',done:false,owner:'TA',date:'2025-07-22'},
+      {t:'Caricamento annuncio portali',done:false,owner:'EL'},
+    ]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[],visite:[]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Incarico_firmato.pdf'],
+   note:'Video in attesa fotografo'},
+
+  {id:4,title:'Via Masone 22',addr:'Redona',prop:'Comi Luca',stato:'In attesa di atto',pct:88,
+   deadline:{label:'Rogito — Notaio Verdi',date:'2025-07-15',icon:'🏛'},
+   team:['MA','GA','TA'],pm:'MA',next:'Comunicare IBAN al notaio',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Elena Rossi',date:'2025-04-12',time:'10:30',esito:'int',note:'Acquirente finale'},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:true,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[
+      {t:'Richiesta documenti completa',done:true,owner:'TA'},
+      {t:'Data rogito confermata con notaio',done:true,owner:'TA'},
+      {t:'IBAN acquirente comunicato',done:false,owner:'GA',date:'2025-07-10'},
+      {t:'Cartella Drive pratica completa',done:false,owner:'TA',date:'2025-07-13'},
+    ]},
+   ],
+   files:['Preliminare.pdf','Visura.pdf','APE_2024.pdf','Planimetria.png'],
+   note:'Rogito fissato 15 luglio ore 10:00'},
+
+  {id:5,title:'Largo Belotti 5',addr:'Città Bassa',prop:'Manzoni Elena',stato:'Venduta',pct:100,
+   deadline:{label:'Rogito completato',date:'2025-06-03',icon:'✅',past:true},
+   team:['MA','EL','GA','TA'],pm:'MA',next:'Archiviata',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Roberto Villa',date:'2025-03-05',time:'10:00',esito:'int',note:''},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:true,delivs:[]},
+    {name:'Rogito notarile',done:true,delivs:[]},
+   ],
+   files:['Atto_rogito.pdf','Preliminare.pdf','Fattura.pdf'],
+   note:'Pratica chiusa 3 giugno 2025 ✓'},
+
+  {id:6,title:'Via Corridoni 9',addr:'Campagnola',prop:'Gori Flavio',stato:'Presa incarico',pct:10,
+   deadline:{label:'Sopralluogo entro',date:'2025-07-20',icon:'📋'},
+   team:['MA'],pm:'MA',next:'Sopralluogo da fissare',
+   phases:[
+    {name:'Presa incarico',done:false,delivs:[
+      {t:'Contratto incarico firmato',done:true,owner:'MA'},
+      {t:'Documento identità proprietario',done:false,owner:'TA'},
+      {t:'Visura catastale',done:false,owner:'TA'},
+    ]},
+    {name:'In preparazione',done:false,delivs:[]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[],visite:[]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:[],
+   note:''},
+
+  {id:7,title:'Piazza Pontida 3',addr:'Zona Fiera',prop:'Cattaneo Sara',stato:'Proposta accettata',pct:75,
+   deadline:{label:'Preliminare entro',date:'2025-07-28',icon:'📝'},
+   team:['MA','GA','TA'],pm:'MA',next:'Redigere preliminare',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Gianni Forte',date:'2025-06-01',time:'10:00',esito:'int',note:'Proposta accettata'},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[
+      {t:'Documenti acquirente completi',done:false,owner:'GA',date:'2025-07-20'},
+      {t:'Preliminare redatto',done:false,owner:'MA',date:'2025-07-28'},
+      {t:'Fattura agenzia emessa',done:false,owner:'MA'},
+    ]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Proposta.pdf','ID_acquirente.pdf'],
+   note:'Acquirente attende conferma mutuo'},
+
+  {id:8,title:'Via Moroni 55',addr:'Malpensata',prop:'Vitali Giorgio',stato:'In attesa mutuo',pct:70,
+   deadline:{label:'Risposta banca entro',date:'2025-08-05',icon:'🏦'},
+   team:['MA','GA'],pm:'MA',next:'Risposta istituto di credito',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Claudia Merlo',date:'2025-05-15',time:'14:00',esito:'int',note:'Acquirente finale, mutuo in corso'},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[
+      {t:'Pratica mutuo inviata alla banca',done:true,owner:'GA'},
+      {t:'Approvazione mutuo',done:false,owner:'GA',date:'2025-08-05'},
+    ]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Proposta.pdf','Preliminare_bozza.pdf'],
+   note:'Banca BCC — pratica inoltrata 20 giugno'},
+
+  {id:9,title:'Vicolo Sant\'Agata 2',addr:'Città Alta',prop:'Pellegrini Marco',stato:'In vendita',pct:40,
+   deadline:{label:'Rogito previsto',date:'2025-10-10',icon:'🏛'},
+   team:['MA','EL','GA'],pm:'MA',next:'Seconda visita acquirente',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[
+      {t:'Follow-up acquirente Bertoni',done:false,owner:'GA',date:'2025-07-30'},
+    ],
+    visite:[
+      {name:'Simone Bertoni',date:'2025-06-28',time:'11:00',esito:'neu',note:'Deve decidere con il coniuge'},
+      {name:'Laura Fusi',date:'2025-07-02',time:'16:00',esito:'non',note:'Preferisce zona diversa'},
+    ]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Annuncio_scheda.pdf','Planimetria.png','APE.pdf'],
+   note:'Appartamento storico, finestre arco'},
+
+  {id:10,title:'Corso Porta Nuova 17',addr:'Porta Nuova',prop:'Gramigna Daria',stato:'In preparazione',pct:15,
+   deadline:{label:'Annuncio online entro',date:'2025-07-25',icon:'📣'},
+   team:['MA','TA','EL'],pm:'MA',next:'Scheda tecnica e APE',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[
+      {t:'Contratto incarico firmato',done:true,owner:'MA'},
+      {t:'Doc identità proprietaria',done:true,owner:'TA'},
+    ]},
+    {name:'In preparazione',done:false,delivs:[
+      {t:'Sopralluogo fotografico',done:true,owner:'MA'},
+      {t:'APE aggiornato',done:false,owner:'TA',date:'2025-07-20'},
+      {t:'Scheda tecnica immobile',done:false,owner:'TA',date:'2025-07-22'},
+      {t:'Pubblicazione annunci portali',done:false,owner:'EL',date:'2025-07-25'},
+    ]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[],visite:[]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Incarico.pdf','Foto_sopralluogo.zip'],
+   note:'Bilocale ristrutturato, ascensore'},
+
+  {id:11,title:'Via Tiraboschi 4',addr:'Monterosso',prop:'Zanchi Roberto',stato:'In trattativa',pct:60,
+   deadline:{label:'Controproposta entro',date:'2025-07-16',icon:'🤝'},
+   team:['MA','GA'],pm:'MA',next:'Presentare controproposta',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Davide Rota',date:'2025-06-05',time:'10:30',esito:'int',note:'Vuole trattare sul prezzo'},
+      {name:'Anna Meroni',date:'2025-06-12',time:'14:00',esito:'int',note:'Backup se Rota non chiude'},
+    ]},
+    {name:'In trattativa',done:false,delivs:[
+      {t:'Prima proposta acquirente ricevuta',done:true,owner:'GA'},
+      {t:'Proposta presentata al proprietario',done:true,owner:'MA'},
+      {t:'Controproposta proprietario',done:false,owner:'MA',date:'2025-07-16'},
+      {t:'Risposta definitiva acquirente',done:false,owner:'GA'},
+    ]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Proposta_Rota.pdf','Planimetria.png'],
+   note:'Proprietario vorrebbe chiudere entro agosto'},
+
+  {id:12,title:'Piazza Matteotti 8',addr:'Seriate',prop:'Locatelli Cinzia',stato:'Presa incarico',pct:8,
+   deadline:{label:'Valutazione da completare',date:'2025-07-28',icon:'📋'},
+   team:['MA'],pm:'MA',next:'Completare documentazione iniziale',
+   phases:[
+    {name:'Presa incarico',done:false,delivs:[
+      {t:'Contratto incarico firmato',done:true,owner:'MA'},
+      {t:'Documento identità proprietaria',done:false,owner:'TA'},
+      {t:'Visura catastale',done:false,owner:'TA'},
+      {t:'Planimetria catastale',done:false,owner:'TA'},
+      {t:'Attestato APE',done:false,owner:'TA'},
+    ]},
+    {name:'In preparazione',done:false,delivs:[]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[],visite:[]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Incarico_firmato.pdf'],
+   note:'Quadrilocale con terrazzo, nuova acquisizione'},
+
+  {id:13,title:'Via Borgo Palazzo 33',addr:'Borgo Palazzo',prop:'Facchinetti Luca',stato:'Proposta accettata',pct:78,
+   deadline:{label:'Preliminare da firmare entro',date:'2025-07-24',icon:'✍️'},
+   team:['MA','GA','TA'],pm:'MA',next:'Redigere e firmare il preliminare',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Michela Colombo',date:'2025-05-28',time:'10:00',esito:'int',note:'Proposta accettata, acquirente confermata'},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[
+      {t:'Doc. acquirente Colombo completi',done:true,owner:'GA'},
+      {t:'Stato mutuo verificato',done:true,owner:'GA'},
+      {t:'Bozza preliminare redatta',done:false,owner:'MA',date:'2025-07-20'},
+      {t:'Firma preliminare',done:false,owner:'MA',date:'2025-07-24'},
+      {t:'Fattura agenzia emessa',done:false,owner:'MA'},
+    ]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Proposta_accettata.pdf','Doc_Colombo.pdf','Bozza_preliminare.pdf'],
+   note:'Acquirente paga cash, nessun mutuo'},
+
+  {id:14,title:'Via Quarenghi 20',addr:'Carnovali',prop:'Acerbis Franca',stato:'Incarico ritirato',pct:25,
+   deadline:{label:'Pratica archiviata',date:'2025-06-15',icon:'📁',past:true},
+   team:['MA'],pm:'MA',next:'Archiviata',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:false,delivs:[
+      {t:'Foto immobile',done:true,owner:'MA'},
+      {t:'Annuncio portali',done:false,owner:'EL'},
+    ]},
+    {name:'In vendita — visite',done:false,isVisite:true,delivs:[],visite:[]},
+    {name:'In trattativa',done:false,delivs:[]},
+    {name:'Preliminare',done:false,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[]},
+   ],
+   files:['Incarico.pdf'],
+   note:'Proprietaria ha deciso di non vendere più'},
+
+  {id:15,title:'Largo Rezzara 1',addr:'Colognola',prop:'Bettoni Alfredo',stato:'In attesa di atto',pct:90,
+   deadline:{label:'Rogito — Notaio Colombo',date:'2025-07-22',icon:'🏛'},
+   team:['MA','GA','TA'],pm:'MA',next:'Verifica documenti finali',
+   phases:[
+    {name:'Presa incarico',done:true,delivs:[]},
+    {name:'In preparazione',done:true,delivs:[]},
+    {name:'In vendita — visite',done:true,isVisite:true,delivs:[],
+    visite:[
+      {name:'Stefano Invernici',date:'2025-04-22',time:'11:00',esito:'int',note:'Acquirente definitivo'},
+    ]},
+    {name:'In trattativa',done:true,delivs:[]},
+    {name:'Preliminare',done:true,delivs:[]},
+    {name:'Rogito notarile',done:false,delivs:[
+      {t:'Tutti i documenti proprietario OK',done:true,owner:'TA'},
+      {t:'Tutti i documenti acquirente OK',done:true,owner:'TA'},
+      {t:'IBAN acquirente comunicato al notaio',done:true,owner:'GA'},
+      {t:'Cartella Drive completa',done:false,owner:'TA',date:'2025-07-19'},
+      {t:'Conferma finale con notaio',done:false,owner:'MA',date:'2025-07-21'},
+    ]},
+   ],
+   files:['Prelim.pdf','Visura.pdf','APE.pdf','IBAN_comunicato.pdf'],
+   note:'Rogito 22 luglio ore 09:30 — Notaio Colombo'},
+];
+
+// ══════════════════════════════════════════
+// RENDER CARDS
+// ══════════════════════════════════════════
+function dlClass(dateStr, past) {
+  if (past) return 'dl-past';
+  if (!dateStr) return 'dl-ok';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(dateStr); d.setHours(0,0,0,0);
+  const diff = (d - today) / 86400000;
+  if (diff < 0) return 'dl-past';
+  if (diff <= 7) return 'dl-urgent';
+  if (diff <= 14) return 'dl-warn';
+  return 'dl-ok';
+}
+
+function fmtDate(str) {
+  if (!str) return '';
+  const d = new Date(str + 'T00:00');
+  return d.toLocaleDateString('it-IT',{day:'numeric',month:'short'});
+}
+
+function renderCards(data) {
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  data.forEach(im => {
+    const stato = STATI.find(s=>s.l===im.stato)||STATI[0];
+    const statoIdx = STATI.findIndex(s=>s.l===im.stato);
+    const dlCls = dlClass(im.deadline.date, im.deadline.past);
+
+    // Phases HTML
+    let phasesHtml = im.phases.map((ph,pi) => {
+      let delivsHtml = '';
+      if (ph.delivs && ph.delivs.length) {
+        delivsHtml = ph.delivs.map(dv => {
+          const dvDlCls = dv.date ? (dlClass(dv.date) === 'dl-urgent' ? 'u' : dlClass(dv.date) === 'dl-warn' ? 'w' : '') : '';
+          const ownerColor = PEOPLE[dv.owner]?.color || '#999';
+          return `<div class="dv-item">
+            <div class="dv-check${dv.done?' done':''}" onclick="toggleDeliv(event,this)"></div>
+            <span class="dv-label${dv.done?' done':''}">${dv.t}</span>
+            ${dv.date ? `<input type="date" class="dv-date${dvDlCls?' '+dvDlCls:''}" value="${dv.date}" title="Scadenza" onchange="styleDvDate(this)">` : ''}
+            <div class="dv-owner"><div class="av" style="background:${ownerColor};width:16px;height:16px;font-size:7.5px" title="${PEOPLE[dv.owner]?.name||dv.owner}">${dv.owner}</div></div>
+          </div>`;
+        }).join('');
+      }
+
+      // Visite section
+      let visiteHtml = '';
+      if (ph.isVisite) {
+        const vlist = (ph.visite||[]).map(v => {
+          const ecls = v.esito==='int'?'esito-int':v.esito==='non'?'esito-non':'esito-neu';
+          const elbl = v.esito==='int'?'Interessato':v.esito==='non'?'Non interessato':'Neutro';
+          return `<div class="visit-item">
+            <div class="visit-dot" style="background:${v.esito==='int'?'#0d7a6e':v.esito==='non'?'#b91c1c':'#64748b'}"></div>
+            <span class="visit-name">${v.name}</span>
+            <span class="visit-date">${fmtDate(v.date)} ${v.time||''}</span>
+            <span class="visit-esito ${ecls}">${elbl}</span>
+          </div>`;
+        }).join('');
+        visiteHtml = `<div class="visits-section">
+          ${vlist}
+          <button class="btn-add-visit" onclick="openVisitaModal(event,${im.id})">+ Aggiungi visita</button>
+        </div>`;
+      }
+
+      const hasContent = (ph.delivs && ph.delivs.length) || ph.isVisite;
+      return `<div class="ph-row" onclick="togglePhase(this)">
+        <div class="ph-check${ph.done?' done':''}" onclick="toggleCheck(event,this)"></div>
+        <span class="ph-name${ph.done?' done':''}${!ph.done&&pi>0&&!im.phases[pi-1].done?' dim':''}">${ph.name}</span>
+        <span class="ph-pct">${ph.done?'100%':'—'}</span>
+        ${hasContent?`<span class="ph-arrow">▶</span>`:''}
+      </div>
+      <div class="delivs">
+        ${delivsHtml}
+        ${visiteHtml}
+      </div>`;
+    }).join('');
+
+    // Stato track
+    const trackHtml = STATI.slice(0,8).map((s,i) =>
+      `<div class="stato-step ${i<=statoIdx?'active':'inactive'}"
+        style="background:${s.c}" title="${s.l}"
+        onclick="quickStato(event,${im.id},${i})"></div>`
+    ).join('');
+
+    // Files
+    const filesHtml = im.files.map(f => {
+      const icon = f.endsWith('.pdf')?'📄':f.match(/\.(png|jpg)/)?'🖼':'📎';
+      return `<div class="file-chip"><span>${icon}</span>${f}</div>`;
+    }).join('');
+
+    // Avatars
+    const avsHtml = im.team.map(t =>
+      `<div class="av" style="background:${PEOPLE[t].color}" title="${PEOPLE[t].name}">${t}</div>`
+    ).join('');
+
+    const html = `<div class="card" id="card-${im.id}" data-stato="${im.stato}" data-id="${im.id}">
+      <div class="card-hd">
+        <div class="card-title">${im.title}</div>
+        <div class="card-addr">${im.addr} · Proprietario: ${im.prop}</div>
+        <div class="stato-row">
+          <div class="stato-badge" style="background:${stato.bg};color:${stato.c}" onclick="openStatoModal(this,${im.id})" title="Clicca per cambiare stato">
+            <span>●</span> ${im.stato}
+          </div>
+        </div>
+        <div class="stato-track">${trackHtml}</div>
+        <div class="deadline-pill ${dlCls}" onclick="this.querySelector('input[type=date]') && this.querySelector('input[type=date]').showPicker()" title="Scadenza — clicca per modificare">
+          <span>${im.deadline.icon}</span>
+          <span>${im.deadline.label}</span>
+          ${im.deadline.past
+            ? `<span>${fmtDate(im.deadline.date)}</span>`
+            : `<input type="date" value="${im.deadline.date}" onchange="updateDl(this,${im.id})">`
+          }
+        </div>
+        <div class="prog-bar"><div class="prog-fill" id="pf-${im.id}" style="width:${im.pct}%"></div></div>
+        <div class="card-meta">
+          <span class="meta-pct" id="pct-${im.id}">${im.pct}% completato</span>
+          <div class="avs">${avsHtml}</div>
+        </div>
+      </div>
+      <div class="phases">${phasesHtml}</div>
+      <div class="card-files">
+        <div class="files-hd">
+          <span class="files-lbl">Documenti</span>
+          <label class="files-add"><input type="file" style="display:none" onchange="addFile(event,this)"> + Carica</label>
+        </div>
+        <div class="files-list">${filesHtml}</div>
+      </div>
+      <div class="card-note">
+        <textarea class="note-in" rows="1" placeholder="Note o blocchi...">${im.note}</textarea>
+      </div>
+      <div class="card-ft">
+        <span><span class="next-lbl">Next</span><span class="next-txt">${im.next}</span></span>
+        <span class="pm-txt">PM ${PEOPLE[im.pm]?.name||im.pm}</span>
+      </div>
+    </div>`;
+
+    const wrap = document.createElement('div');
+    wrap.style.flexShrink = '0';
+    wrap.innerHTML = html;
+    board.appendChild(wrap);
+  });
+}
+
+renderCards(IMMOBILI);
+
+// ══════════════════════════════════════════
+// PHASE / DELIV INTERACTION
+// ══════════════════════════════════════════
+function togglePhase(row) {
+  const d = row.nextElementSibling;
+  if (!d || !d.classList.contains('delivs')) return;
+  const arrow = row.querySelector('.ph-arrow');
+  const open = d.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open', open);
+}
+
+function toggleCheck(e, el) {
+  e.stopPropagation();
+  el.classList.toggle('done');
+  const nm = el.nextElementSibling;
+  if (nm) nm.classList.toggle('done', el.classList.contains('done'));
+  recalcPct(el);
+  showToast(el.classList.contains('done') ? '✓ Fase completata' : 'Fase riaperta');
+}
+
+function toggleDeliv(e, el) {
+  e.stopPropagation();
+  el.classList.toggle('done');
+  const lbl = el.nextElementSibling;
+  if (lbl) lbl.classList.toggle('done', el.classList.contains('done'));
+  recalcPct(el);
+  showToast(el.classList.contains('done') ? '✓ Completato' : 'Riaperto');
+}
+
+function recalcPct(el) {
+  const card = el.closest('.card');
+  if (!card) return;
+  const all = card.querySelectorAll('.ph-check,.dv-check');
+  const done = card.querySelectorAll('.ph-check.done,.dv-check.done');
+  const pct = all.length ? Math.round(done.length / all.length * 100) : 0;
+  const id = card.dataset.id;
+  const pf = document.getElementById('pf-'+id);
+  const pt = document.getElementById('pct-'+id);
+  if (pf) pf.style.width = pct + '%';
+  if (pt) pt.textContent = pct + '% completato';
+}
+
+function styleDvDate(inp) {
+  inp.className = 'dv-date';
+  const d = new Date(inp.value); const today = new Date(); today.setHours(0,0,0,0);
+  const diff = (d - today) / 86400000;
+  if (diff <= 7) inp.classList.add('u');
+  else if (diff <= 14) inp.classList.add('w');
+  showToast('📅 Scadenza aggiornata');
+}
+
+// ══════════════════════════════════════════
+// STATO MODAL + QUICK TRACK
+// ══════════════════════════════════════════
+let currentStatoBadge = null, currentStatoId = null;
+
+function openStatoModal(badge, id) {
+  currentStatoBadge = badge; currentStatoId = id;
+  const current = badge.textContent.trim().replace(/^●\s*/,'');
+  const cont = document.getElementById('statoOptions');
+  cont.innerHTML = '';
+  STATI.forEach(s => {
+    const d = document.createElement('div');
+    d.className = 'stato-opt' + (s.l===current?' sel':'');
+    d.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${s.c};display:inline-block"></span>${s.l}`;
+    d.onclick = () => applyStato(s);
+    cont.appendChild(d);
+  });
+  document.getElementById('statoModal').classList.add('open');
+}
+
+function applyStato(s) {
+  if (!currentStatoBadge) return;
+  currentStatoBadge.style.background = s.bg;
+  currentStatoBadge.style.color = s.c;
+  currentStatoBadge.innerHTML = `<span>●</span> ${s.l}`;
+  const card = currentStatoBadge.closest('[data-id]');
+  if (card) {
+    card.dataset.stato = s.l;
+    // update track
+    const idx = STATI.findIndex(x=>x.l===s.l);
+    card.querySelectorAll('.stato-step').forEach((st,i) => {
+      st.classList.toggle('active', i <= idx);
+      st.classList.toggle('inactive', i > idx);
+    });
+  }
+  closeModal(null,'statoModal');
+  showToast('Stato → ' + s.l);
+}
+
+function quickStato(e, id, idx) {
+  e.stopPropagation();
+  const s = STATI[idx];
+  const card = document.getElementById('card-'+id);
+  if (!card) return;
+  const badge = card.querySelector('.stato-badge');
+  if (badge) { badge.style.background=s.bg; badge.style.color=s.c; badge.innerHTML=`<span>●</span> ${s.l}`; }
+  card.dataset.stato = s.l;
+  card.querySelectorAll('.stato-step').forEach((st,i) => {
+    st.classList.toggle('active', i<=idx);
+    st.classList.toggle('inactive', i>idx);
+  });
+  showToast('Stato → ' + s.l);
+}
+
+function updateDl(inp, id) { showToast('📅 Scadenza aggiornata'); }
+
+// ══════════════════════════════════════════
+// VISITA MODAL
+// ══════════════════════════════════════════
+let currentVisitaImId = null, currentEsito = null;
+
+function openVisitaModal(e, id) {
+  e.stopPropagation();
+  currentVisitaImId = id; currentEsito = null;
+  document.getElementById('v-name').value = '';
+  document.getElementById('v-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('v-time').value = '10:00';
+  document.getElementById('v-note').value = '';
+  document.querySelectorAll('.esito-btn').forEach(b => b.className='esito-btn');
+  document.getElementById('visitaModal').classList.add('open');
+}
+
+function selectEsito(btn, esito) {
+  currentEsito = esito;
+  document.querySelectorAll('.esito-btn').forEach(b => b.className='esito-btn');
+  btn.className = `esito-btn sel-${esito}`;
+}
+
+function confirmVisita() {
+  const name = document.getElementById('v-name').value.trim();
+  const date = document.getElementById('v-date').value;
+  const time = document.getElementById('v-time').value;
+  const note = document.getElementById('v-note').value.trim();
+  if (!name) { showToast('⚠ Inserisci il nome dell\'acquirente'); return; }
+
+  const esito = currentEsito || 'neu';
+  const ecls = esito==='int'?'esito-int':esito==='non'?'esito-non':'esito-neu';
+  const elbl = esito==='int'?'Interessato':esito==='non'?'Non interessato':'Neutro';
+  const dotCol = esito==='int'?'#0d7a6e':esito==='non'?'#b91c1c':'#64748b';
+
+  // find visite section in card
+  const card = document.getElementById('card-'+currentVisitaImId);
+  if (card) {
+    const visiteSections = card.querySelectorAll('.visits-section');
+    visiteSections.forEach(vs => {
+      const addBtn = vs.querySelector('.btn-add-visit');
+      const newItem = document.createElement('div');
+      newItem.className = 'visit-item';
+      newItem.innerHTML = `
+        <div class="visit-dot" style="background:${dotCol}"></div>
+        <span class="visit-name">${name}</span>
+        <span class="visit-date">${fmtDate(date)} ${time}</span>
+        <span class="visit-esito ${ecls}">${elbl}</span>`;
+      vs.insertBefore(newItem, addBtn);
+    });
+  }
+
+  closeModal(null,'visitaModal');
+  showToast('✓ Visita aggiunta — ' + name);
+  renderAgenda(); renderCalendar();
+}
+
+// ══════════════════════════════════════════
+// FILE UPLOAD
+// ══════════════════════════════════════════
+function addFile(event, input) {
+  const file = event.target.files[0]; if (!file) return;
+  const list = input.closest('.card-files').querySelector('.files-list');
+  const ext = file.name.split('.').pop().toLowerCase();
+  const icon = ext==='pdf'?'📄':['png','jpg','jpeg'].includes(ext)?'🖼':'📎';
+  const chip = document.createElement('div');
+  chip.className = 'file-chip';
+  chip.innerHTML = `<span>${icon}</span>${file.name}`;
+  list.appendChild(chip);
+  input.value = '';
+  showToast('📎 ' + file.name);
+}
+
+// ══════════════════════════════════════════
+// FILTER
+// ══════════════════════════════════════════
+function filterCards(stato, chip) {
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  chip.classList.add('active');
+  document.querySelectorAll('#board > div').forEach(wrap => {
+    const card = wrap.querySelector('.card');
+    const cs = card ? card.dataset.stato : '';
+    wrap.style.display = (stato==='tutti'||cs===stato) ? '' : 'none';
+  });
+}
+
+// ══════════════════════════════════════════
+// PIPELINE VIEW
+// ══════════════════════════════════════════
+function renderPipeline() {
+  const bd = document.getElementById('pipeline-board');
+  bd.innerHTML = '';
+  STATI.forEach((s,si) => {
+    const items = IMMOBILI.filter(im=>im.stato===s.l);
+    const col = document.createElement('div');
+    col.className = 'pipeline-col';
+    col.innerHTML = `<div class="pipeline-col-hd" style="background:${s.bg};color:${s.c}">
+      <span>${s.l}</span><span class="cnt">${items.length}</span>
+    </div>
+    <div class="drop-zone" data-stato="${s.l}" ondragover="ev.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropCard(event,'${s.l}')">
+    ${items.map(im=>`
+      <div class="pipeline-mini" draggable="true" data-id="${im.id}" ondragstart="dragStart(event,${im.id})" ondragend="dragEnd(event)">
+        <div class="pm-title">${im.title}</div>
+        <div class="pm-addr">${im.addr}</div>
+        <div class="pm-row">
+          <span class="pm-pct">${im.pct}%</span>
+          <div style="display:flex;gap:2px">${im.team.map(t=>`<div class="av" style="background:${PEOPLE[t].color};width:16px;height:16px;font-size:7px">${t}</div>`).join('')}</div>
+        </div>
+      </div>`).join('')}
+    </div>`;
+    bd.appendChild(col);
+  });
+}
+
+let draggedId = null;
+function dragStart(e, id) { draggedId = id; e.target.classList.add('dragging'); }
+function dragEnd(e) { e.target.classList.remove('dragging'); document.querySelectorAll('.drop-zone').forEach(z=>z.classList.remove('over')); }
+function dropCard(e, stato) {
+  e.preventDefault(); e.target.closest('.drop-zone').classList.remove('over');
+  if (!draggedId) return;
+  const im = IMMOBILI.find(x=>x.id===draggedId);
+  if (im) { im.stato = stato; renderPipeline(); showToast('Spostato → '+stato); }
+  draggedId = null;
+}
+
+// ══════════════════════════════════════════
+// TEAM VIEW
+// ══════════════════════════════════════════
+function renderTeam() {
+  const bd = document.getElementById('team-board');
+  bd.innerHTML = '';
+  Object.entries(PEOPLE).forEach(([key,person]) => {
+    const tasks = [];
+    IMMOBILI.forEach(im => {
+      im.phases.forEach(ph => {
+        (ph.delivs||[]).forEach(dv => {
+          if (dv.owner===key && !dv.done) {
+            tasks.push({title:dv.t, imTitle:im.title, stato:im.stato, date:dv.date||null});
+          }
+        });
+        if (ph.isVisite && key==='EL') {
+          (ph.visite||[]).filter(v=>!v.done).forEach(v => {
+            tasks.push({title:'Visita: '+v.name, imTitle:im.title, stato:im.stato, date:v.date||null});
+          });
+        }
+      });
+    });
+
+    const tasksHtml = tasks.length ? tasks.map(t => {
+      const cls = t.date ? (dlClass(t.date)==='dl-urgent'?'td-u':dlClass(t.date)==='dl-warn'?'td-w':'td-ok') : '';
+      return `<div class="team-task">
+        <div class="team-task-title">${t.title}</div>
+        <div class="team-task-sub">${t.imTitle}</div>
+        <div class="team-task-row">
+          ${t.date ? `<span class="team-task-date ${cls}">${fmtDate(t.date)}</span>` : '<span></span>'}
+          <span class="team-task-stato">${t.stato}</span>
+        </div>
+      </div>`;
+    }).join('') : '<div style="font-size:11.5px;color:var(--ink4);padding:.4rem .2rem">Nessun task aperto</div>';
+
+    const col = document.createElement('div');
+    col.className = 'team-col';
+    col.innerHTML = `<div class="team-col-hd" style="background:${person.color}18;border-bottom:2px solid ${person.color}">
+      <div class="av" style="background:${person.color};width:28px;height:28px;font-size:10px">${key}</div>
+      <div class="team-col-hd-info">
+        <h4>${person.name}</h4>
+        <p>${person.role} · ${tasks.length} task aperti</p>
+      </div>
+    </div>${tasksHtml}`;
+    bd.appendChild(col);
+  });
+}
+
+// ══════════════════════════════════════════
+// CALENDAR
+// ══════════════════════════════════════════
+let calYear = new Date().getFullYear(), calMonth = new Date().getMonth();
+
+function renderCalendar() {
+  const label = document.getElementById('cal-month-label');
+  label.textContent = new Date(calYear,calMonth,1).toLocaleDateString('it-IT',{month:'long',year:'numeric'}).replace(/^\w/,c=>c.toUpperCase());
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+
+  const dows = ['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
+  dows.forEach(d => { const el=document.createElement('div'); el.className='cal-dow'; el.textContent=d; grid.appendChild(el); });
+
+  const first = new Date(calYear,calMonth,1);
+  const startDow = (first.getDay()+6)%7; // Monday=0
+  const daysInMonth = new Date(calYear,calMonth+1,0).getDate();
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // Collect all events for this month
+  const events = {};
+  const addEv = (dateStr, ev) => {
+    if (!dateStr) return;
+    const d = new Date(dateStr+'T00:00');
+    if (d.getFullYear()===calYear && d.getMonth()===calMonth) {
+      const k = d.getDate();
+      if (!events[k]) events[k] = [];
+      events[k].push(ev);
+    }
+  };
+
+  IMMOBILI.forEach(im => {
+    if (im.deadline?.date && !im.deadline.past)
+      addEv(im.deadline.date, {label:im.deadline.icon+' '+im.title, cls: dlClass(im.deadline.date)==='dl-urgent'?'urgent':dlClass(im.deadline.date)==='dl-warn'?'scad':'rogito'});
+    im.phases.forEach(ph => {
+      (ph.delivs||[]).forEach(dv => {
+        if (dv.date && !dv.done) addEv(dv.date, {label:'📋 '+dv.t+' ('+im.title+')', cls:'scad'});
+      });
+      if (ph.isVisite) (ph.visite||[]).forEach(v => {
+        if (v.date) addEv(v.date, {label:'🏠 Visita '+v.name+' — '+im.title, cls:'visita'});
+      });
+    });
+  });
+
+  for (let i=0; i<startDow; i++) {
+    const el=document.createElement('div'); el.className='cal-day other-month'; grid.appendChild(el);
+  }
+
+  for (let day=1; day<=daysInMonth; day++) {
+    const el = document.createElement('div');
+    el.className = 'cal-day';
+    const thisDate = new Date(calYear,calMonth,day);
+    if (thisDate.getTime()===today.getTime()) el.classList.add('today');
+
+    const numDiv = document.createElement('div'); numDiv.className='cal-day-num'; numDiv.textContent=day;
+    el.appendChild(numDiv);
+
+    const evs = events[day]||[];
+    evs.slice(0,3).forEach(ev => {
+      const e=document.createElement('div'); e.className=`cal-event ${ev.cls}`; e.textContent=ev.label;
+      e.title=ev.label; el.appendChild(e);
+    });
+    if (evs.length>3) { const m=document.createElement('div'); m.className='cal-more'; m.textContent=`+${evs.length-3} altri`; el.appendChild(m); }
+    grid.appendChild(el);
+  }
+}
+
+function calPrev() { calMonth--; if (calMonth<0){calMonth=11;calYear--;} renderCalendar(); }
+function calNext() { calMonth++; if (calMonth>11){calMonth=0;calYear++;} renderCalendar(); }
+
+// ══════════════════════════════════════════
+// AGENDA PANEL
+// ══════════════════════════════════════════
+function renderAgenda() {
+  const all = [];
+  IMMOBILI.forEach(im => {
+    if (im.deadline?.date && !im.deadline.past) all.push({title:im.deadline.label,sub:im.title,date:im.deadline.date,cls:dlClass(im.deadline.date)});
+    im.phases.forEach(ph => {
+      (ph.delivs||[]).forEach(dv => {
+        if (dv.date&&!dv.done) all.push({title:dv.t,sub:im.title+' · '+(PEOPLE[dv.owner]?.name||dv.owner),date:dv.date,cls:dlClass(dv.date)});
+      });
+    });
+  });
+  all.sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const urgent = all.filter(x=>x.cls==='dl-urgent');
+  const warn = all.filter(x=>x.cls==='dl-warn');
+  const ok = all.filter(x=>x.cls==='dl-ok');
+  document.getElementById('agBtn').querySelector('.badge').textContent = urgent.length||'';
+
+  const grp = (label, color, items) => {
+    if (!items.length) return '';
+    return `<div class="ag-grp"><div class="ag-grp-lbl" style="color:${color}">${label}</div>${items.map(x=>`
+      <div class="ag-item">
+        <div class="ag-dot" style="background:${color}"></div>
+        <div class="ag-txt"><div class="ag-title">${x.title}</div><div class="ag-sub">${x.sub}</div></div>
+        <div class="ag-date" style="color:${color}">${fmtDate(x.date)}</div>
+      </div>`).join('')}</div>`;
+  };
+
+  document.getElementById('ag-content').innerHTML =
+    grp('🔴 In scadenza (7gg)','#b91c1c',urgent) +
+    grp('🟡 Prossime 2 settimane','#92610a',warn) +
+    grp('⚪ Più avanti','#9b9b9b',ok) || '<div style="padding:1rem;font-size:12px;color:var(--ink4)">Nessuna scadenza imminente</div>';
+}
+renderAgenda();
+
+function toggleAgenda() { document.getElementById('agendaPanel').classList.toggle('open'); }
+
+// ══════════════════════════════════════════
+// VIEW SWITCHING
+// ══════════════════════════════════════════
+function switchView(v, btn) {
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  btn.classList.add('active');
+  document.getElementById('filterbar').style.display = v==='cards'?'':'none';
+  if (v==='pipeline') renderPipeline();
+  if (v==='team') renderTeam();
+  if (v==='calendar') renderCalendar();
+}
+
+// ══════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════
+function closeModal(e, id) {
+  if (e && e.target !== document.getElementById(id)) return;
+  document.getElementById(id).classList.remove('open');
+  if (id==='statoModal') { currentStatoBadge=null; currentStatoId=null; }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(()=>t.classList.remove('show'), 2000);
+}
+</script>
+</body>
+</html>
