@@ -11,7 +11,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const FASI_VALIDE = ["Acquisizione", "In Vendita", "Venduto", "Archivio"];
+const FASI_VALIDE = ["In Vendita", "Venduto", "Archivio"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {

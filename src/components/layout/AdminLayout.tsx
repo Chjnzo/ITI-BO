@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing } from 'lucide-react';
+import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing, KeyRound, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAlerts } from '@/hooks/useAlerts';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -33,6 +34,7 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
 
   const isExpanded = isPinned || isHovered;
   const { totalCount: alertCount } = useAlerts();
+  const { data: currentProfile } = useCurrentProfile();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -42,11 +44,15 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
   const navItems: { icon: typeof Home; label: string; path: string; badge?: number }[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
     { icon: Home, label: 'Immobili', path: '/immobili' },
+    { icon: KeyRound, label: 'Proprietari', path: '/proprietari' },
     { icon: Calculator, label: 'Valutazioni', path: '/valutazioni' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
     { icon: Users, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
     { icon: BellRing, label: 'Alert', path: '/alert', badge: alertCount },
+    ...(currentProfile?.ruolo === 'Admin'
+      ? [{ icon: Settings, label: 'Impostazioni', path: '/impostazioni' }]
+      : []),
   ];
 
   const SidebarContent = ({ expanded = false, pinned = false, onTogglePin }: { expanded?: boolean; pinned?: boolean; onTogglePin?: () => void }) => (

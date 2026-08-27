@@ -7,14 +7,17 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { Session } from "@supabase/supabase-js";
 import { supabase, setupSessionManagement } from "@/lib/supabase";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { useCurrentProfile } from "@/hooks/useCurrentProfile";
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Properties = lazy(() => import('./pages/Properties'));
-const Leads = lazy(() => import('./pages/Leads'));
+const Contatti = lazy(() => import('./pages/Contatti'));
+const Proprietari = lazy(() => import('./pages/Proprietari'));
 const Agenda = lazy(() => import('./pages/Agenda'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Valutazioni = lazy(() => import('./pages/Valutazioni'));
 const Alerts = lazy(() => import('./pages/Alerts'));
+const Impostazioni = lazy(() => import('./pages/Impostazioni'));
 const ValuazioneReport = lazy(() => import('./pages/ValuazioneReport'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -32,10 +35,13 @@ const LoadingFallback = () => (
   </div>
 );
 
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+const ProtectedRoute = ({ children, adminOnly = false }: { children: React.ReactNode; adminOnly?: boolean }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  // Abilitata solo quando serve (adminOnly): risparmia una query profili_agenti
+  // su ogni route protetta, dato che il ruolo conta solo per le poche route admin.
+  const { data: currentProfile, isLoading: profileLoading } = useCurrentProfile({ enabled: adminOnly && !!session });
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -53,6 +59,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   if (loading) return <LoadingFallback />;
   if (!session) return <Navigate to="/login" />;
+  if (adminOnly) {
+    if (profileLoading) return <LoadingFallback />;
+    if (currentProfile?.ruolo !== 'Admin') return <Navigate to="/" />;
+  }
 
   return <>{children}</>;
 };
@@ -72,10 +82,12 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/immobili" element={<ProtectedRoute><Properties /></ProtectedRoute>} />
               <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
-              <Route path="/leads" element={<ProtectedRoute><Leads /></ProtectedRoute>} />
+              <Route path="/leads" element={<ProtectedRoute><Contatti /></ProtectedRoute>} />
+              <Route path="/proprietari" element={<ProtectedRoute><Proprietari /></ProtectedRoute>} />
               <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
               <Route path="/valutazioni" element={<ProtectedRoute><Valutazioni /></ProtectedRoute>} />
               <Route path="/alert" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+              <Route path="/impostazioni" element={<ProtectedRoute adminOnly><Impostazioni /></ProtectedRoute>} />
               <Route path="/report/:slug" element={<ValuazioneReport />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

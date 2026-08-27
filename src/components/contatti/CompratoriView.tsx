@@ -1,8 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { z } from 'zod';
@@ -28,34 +26,29 @@ import {
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Phone, Home as HomeIcon,
   User, Search, Save, X,
   Calendar, CalendarPlus, Plus, ExternalLink,
-  TrendingUp, Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
-  CheckSquare, Clock, Calculator, Copy, SlidersHorizontal, X as XIcon,
-  MessageSquare, FileText, AlertTriangle,
+  Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
+  CheckSquare, AlertTriangle, SlidersHorizontal, X as XIcon,
+  MessageSquare, FileText,
 } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar as CalendarPicker } from '@/components/ui/calendar';
 
-const COLUMNS = [
-  { id: 'Nuovo', label: 'Nuovi Lead', color: 'bg-blue-50/50 border-blue-100 text-blue-700' },
-  { id: 'In Trattativa', label: 'In Trattativa', color: 'bg-amber-50/50 border-amber-100 text-amber-700' },
-  { id: 'Visita Fissata', label: 'Visita Fissata', color: 'bg-purple-50/50 border-purple-100 text-purple-700' },
-  { id: 'Chiuso', label: 'Chiusi', color: 'bg-emerald-50/50 border-emerald-100 text-emerald-700' }
-];
-
-
-const SELLER_STATES: Record<string, string> = {
-  'Nuovo':             'bg-blue-50 border border-blue-100 text-blue-700',
-  'Valutazione fatta': 'bg-amber-50 border border-amber-100 text-amber-700',
-  'Chiuso':            'bg-emerald-50 border border-emerald-100 text-emerald-700',
+// compratori.stato pipeline — new mapping, no equivalent existed pre-pivot
+// (SELLER_STATES in the old Leads.tsx covered only the 3 seller-side states).
+const STATO_COLORS: Record<string, string> = {
+  'Nuovo':       'bg-blue-50 border border-blue-100 text-blue-700',
+  'Contattato':  'bg-sky-50 border border-sky-100 text-sky-700',
+  'Trattativa':  'bg-amber-50 border border-amber-100 text-amber-700',
+  'Chiuso':      'bg-emerald-50 border border-emerald-100 text-emerald-700',
+  'Perso':       'bg-red-50 border border-red-100 text-red-700',
 };
-
+const STATO_PIPELINE = ['Nuovo', 'Contattato', 'Trattativa', 'Chiuso', 'Perso'] as const;
 
 interface PropertyRef {
   id: string;
@@ -66,7 +59,7 @@ interface PropertyRef {
   zone?: { nome: string } | null;
 }
 
-interface LeadImmobileLink {
+interface CompratoreImmobileLink {
   id: string;
   stato_interesse?: string | null;
   note?: string | null;
@@ -74,41 +67,26 @@ interface LeadImmobileLink {
   immobili: PropertyRef;
 }
 
-interface LeadRecord {
+interface CompratoreRecord {
   id?: string;
   nome: string;
   cognome: string;
   email?: string | null;
   telefono?: string | null;
-  telefono_fisso?: string | null;
-  telefono_clean?: string | null;
-  messaggio?: string | null;
-  immobile_interesse?: string | null;
-  stato?: string | null;
-  immobile_id?: string | null;
   budget?: number | string | null;
-  budget_text?: string | null;
   tipologia_ricerca?: string[] | null;
+  zone_ricercate?: string[] | null;
   note_interne?: string | null;
-  tipo_cliente?: string | null;
-  valutazione_stimata?: number | string | null;
-  scadenza_esclusiva?: string | null;
-  motivazione_vendita?: string | null;
-  zona_venditore?: string | null;
-  stato_venditore?: string | null;
+  stato?: string | null;
   is_deleted?: boolean;
   deleted_at?: string | null;
   _version?: number;
-  zone_ricercate?: string[] | null;
-  via_immobile?: string | null;
-  assegnato_a?: string | null;
-  fonte?: string;
   created_at?: string;
-  lead_immobili?: LeadImmobileLink[];
-  immobile_primo_contatto?: PropertyRef | null;
+  agente_id?: string | null;
+  compratori_immobili?: CompratoreImmobileLink[];
 }
 
-interface LeadTaskItem {
+interface CompratoreTaskItem {
   id: string;
   titolo?: string | null;
   nota?: string | null;
@@ -120,7 +98,7 @@ interface LeadTaskItem {
   urgente?: boolean;
 }
 
-interface LeadEventItem {
+interface CompratoreEventItem {
   id: string;
   tipologia: string;
   data: string;
@@ -128,9 +106,10 @@ interface LeadEventItem {
   ora_fine?: string | null;
   note?: string | null;
   agente_id?: string | null;
+  contatto_id?: string | null;
 }
 
-interface LeadNote {
+interface CompratoreNote {
   id: string;
   testo: string;
   autore: string;
@@ -141,16 +120,6 @@ interface EventPropertyOption {
   id: string;
   titolo: string;
 }
-
-// Pure helper — defined at module level so it's never re-created
-const getClientTypeBadge = (type?: string | null) => {
-  switch (type) {
-    case 'Proprietario': return "bg-red-100 text-red-700 border-red-200";
-    case 'Acquirente':   return "bg-blue-100 text-blue-700 border-blue-200";
-    case 'Ibrido':       return "bg-purple-100 text-purple-700 border-purple-200";
-    default:             return "bg-gray-100 text-gray-600 border-gray-200";
-  }
-};
 
 const formatPrice = (price: number | null | undefined) => {
   if (!price) return 'N/D';
@@ -164,21 +133,24 @@ const safeFormat = (date: string | number | Date | null | undefined, fmt: string
   return format(d, fmt, options);
 };
 
-const Leads = () => {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const pendingOpenLeadIdRef = useRef<string | null>(location.state?.openLeadId ?? null);
-  const [leads, setLeads] = useState<LeadRecord[]>([]);
+interface CompratoriViewProps {
+  /** Old leads.id passed via router state from Tasks.tsx — translated to the new
+   * compratori.id through contatti.lead_id_origine before opening the dialog. */
+  deepLinkLeadId?: string | null;
+}
+
+const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
+  const pendingDeepLinkRef = useRef<string | null>(deepLinkLeadId ?? null);
+  const [compratori, setCompratori] = useState<CompratoreRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedLead, setSelectedLead] = useState<LeadRecord | null>(null);
+  const [selectedCompratore, setSelectedCompratore] = useState<CompratoreRecord | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
-  // Filter State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [tipoClienteFilter, setTipoClienteFilter] = useState<'Tutti' | 'Acquirenti' | 'Proprietari'>('Tutti');
 
-  // Property Picker State
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Property picker state
   const [isPropertyPickerOpen, setIsPropertyPickerOpen] = useState(false);
   const [allProperties, setAllProperties] = useState<PropertyRef[]>([]);
   const [propertySearch, setPropertySearch] = useState('');
@@ -188,41 +160,38 @@ const Leads = () => {
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<LeadRecord | null>(null);
+  const pendingSaveRef = useRef<CompratoreRecord | null>(null);
   const hasInteractedRef = useRef(false);
 
-  const [totalLeadsCount, setTotalLeadsCount] = useState(0);
-  const [leadsPage, setLeadsPage] = useState(1);
-  const LEADS_PAGE_SIZE = 50;
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
-  const [leadToDelete, setLeadToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
-  const [leadValutazione, setLeadValutazione] = useState<{ slug: string; stima_min: number | null; stima_max: number | null } | null>(null);
+  const [compratoreToDelete, setCompratoreToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
 
-  // Tasks State
-  const [leadTasks, setLeadTasks] = useState<LeadTaskItem[]>([]);
-  const [isLeadTaskModalOpen, setIsLeadTaskModalOpen] = useState(false);
-  const [taskDetail, setTaskDetail] = useState<LeadTaskItem | null>(null);
+  // Tasks state
+  const [compratoreTasks, setCompratoreTasks] = useState<CompratoreTaskItem[]>([]);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [taskDetail, setTaskDetail] = useState<CompratoreTaskItem | null>(null);
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
-  // Events State (appuntamenti linked to current lead)
-  const [leadEvents, setLeadEvents] = useState<LeadEventItem[]>([]);
-
-  // Event Form Modal (for quick "Nuovo evento" from list)
+  // Events state (appuntamenti linked via contatto_id)
+  const [compratoreEvents, setCompratoreEvents] = useState<CompratoreEventItem[]>([]);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [eventModalDefaultLeadId, setEventModalDefaultLeadId] = useState<string | undefined>(undefined);
-  const [eventModalDefaultLeadName, setEventModalDefaultLeadName] = useState<string | undefined>(undefined);
+  const [eventModalDefaultId, setEventModalDefaultId] = useState<string | undefined>(undefined);
+  const [eventModalDefaultName, setEventModalDefaultName] = useState<string | undefined>(undefined);
   const [agentsForEventModal, setAgentsForEventModal] = useState<AgentProfile[]>([]);
   const [propertiesForEventModal, setPropertiesForEventModal] = useState<EventPropertyOption[]>([]);
-  const [editingLeadEvent, setEditingLeadEvent] = useState<Appointment | null>(null);
+  const [editingEvent, setEditingEvent] = useState<Appointment | null>(null);
 
   // Quick task from list row
-  const [quickTaskLeadId, setQuickTaskLeadId] = useState<string | undefined>(undefined);
-  const [quickTaskLeadName, setQuickTaskLeadName] = useState<string | undefined>(undefined);
+  const [quickTaskId, setQuickTaskId] = useState<string | undefined>(undefined);
+  const [quickTaskName, setQuickTaskName] = useState<string | undefined>(undefined);
   const [isQuickTaskModalOpen, setIsQuickTaskModalOpen] = useState(false);
 
-  // Autocomplete suggestions for zone_ricercate (distinct values from all leads)
+  // Autocomplete suggestions for zone_ricercate
   const [zoneSuggestions, setZoneSuggestions] = useState<string[]>([]);
   const [zoneInput, setZoneInput] = useState('');
 
@@ -233,48 +202,33 @@ const Leads = () => {
   const [filterZona, setFilterZona] = useState('');
   const [filterTipologia, setFilterTipologia] = useState('');
   const [filterStato, setFilterStato] = useState('');
-  const [filterDalSito, setFilterDalSito] = useState(false);
 
   // Notes tab
-  const [leadNotes, setLeadNotes] = useState<LeadNote[]>([]);
+  const [compratoreNotes, setCompratoreNotes] = useState<CompratoreNote[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '' || filterDalSito;
+  const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '';
 
-  // Slim query — only fields needed to render the board/list cards
-  const fetchLeads = useCallback(async (signal?: AbortSignal) => {
+  // Slim query — only fields needed to render the list rows
+  const fetchCompratori = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
 
-    const applyTipoFilter = <T extends { or: (filters: string) => T }>(q: T): T => {
-      if (tipoClienteFilter === 'Acquirenti')
-        return q.or('tipo_cliente.eq.Acquirente,tipo_cliente.eq.Ibrido');
-      if (tipoClienteFilter === 'Proprietari')
-        return q.or('tipo_cliente.eq.Proprietario,tipo_cliente.eq.Ibrido');
-      return q;
-    };
-
     if (searchQuery.trim() || hasActiveFilters) {
-      // Search mode: load all leads with full search fields, no pagination
+      // Search mode: load all matches with full search fields, no pagination
       let query = supabase
-        .from('leads')
+        .from('compratori')
         .select(`
-          id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-          telefono, email, budget, tipologia_ricerca, zone_ricercate,
-          zona_venditore, note_interne, via_immobile, fonte,
-          lead_immobili(immobili(titolo))
+          id, nome, cognome, stato, budget, tipologia_ricerca, zone_ricercate,
+          note_interne, telefono, email,
+          contatti(created_at, agente_id),
+          compratori_immobili(immobili(titolo))
         `)
         .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false, foreignTable: 'contatti' });
 
-      // When a text search is active, filter server-side so the result set stays
-      // small regardless of total lead count (avoids cutting off contacts when
-      // "Tutti" is selected and total leads exceed any fixed client-side limit).
       if (searchQuery.trim()) {
         const sq = searchQuery.trim();
-        // Split into tokens so "Andrea P" → token "andrea" AND token "p".
-        // Each .or() call becomes an AND condition in Supabase, so every token
-        // must appear in at least one field — enabling cross-field name matching.
         const tokens = sq.toLowerCase().split(/\s+/).filter(Boolean);
         for (const token of tokens) {
           const tokenPhone = token.replace(/[\s-]/g, '');
@@ -282,11 +236,8 @@ const Leads = () => {
             `nome.ilike.%${token}%`,
             `cognome.ilike.%${token}%`,
             `email.ilike.%${token}%`,
-            `telefono.ilike.%${token}%`,
-            `telefono_clean.ilike.%${tokenPhone}%`,
+            `telefono.ilike.%${tokenPhone}%`,
             `note_interne.ilike.%${token}%`,
-            `via_immobile.ilike.%${token}%`,
-            `zona_venditore.ilike.%${token}%`,
           ];
           query = query.or(clauses.join(','));
         }
@@ -298,178 +249,129 @@ const Leads = () => {
         query = query.limit(2000);
       }
 
-      query = applyTipoFilter(query);
-      if (filterDalSito) query = query.eq('fonte', 'sito');
-
       const { data, error } = await query;
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        const sanitized = (data || []).map((l) => ({
-          ...l,
-          stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
-        })) as unknown as LeadRecord[];
-        setLeads(sanitized);
-        setTotalLeadsCount(sanitized.length);
+        const sanitized = (data || []) as unknown as CompratoreRecord[];
+        setCompratori(sanitized);
+        setTotalCount(sanitized.length);
       }
     } else {
       // Normal paginated mode
-      const from = (leadsPage - 1) * LEADS_PAGE_SIZE;
-      const to = from + LEADS_PAGE_SIZE - 1;
+      const from = (page - 1) * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
 
-      let query = supabase
-        .from('leads')
+      const { data, count, error } = await supabase
+        .from('compratori')
         .select(`
-          id, nome, cognome, stato, tipo_cliente, stato_venditore, created_at,
-          telefono, email, fonte,
-          lead_immobili(immobili(titolo))
+          id, nome, cognome, stato, telefono, email,
+          contatti(created_at, agente_id),
+          compratori_immobili(immobili(titolo))
         `, { count: 'exact' })
         .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
-      query = applyTipoFilter(query);
-      if (filterDalSito) query = query.eq('fonte', 'sito');
-      if (filterBudgetMin !== null) query = query.gte('budget', filterBudgetMin);
-      if (filterBudgetMax !== null) query = query.lte('budget', filterBudgetMax);
-      query = query.range(from, to);
+        .order('created_at', { ascending: false, foreignTable: 'contatti' })
+        .range(from, to);
 
-      const { data, count, error } = await query;
       if (signal?.aborted) return;
       if (error) {
-        showError("Errore nel caricamento CRM");
+        showError("Errore nel caricamento contatti");
       } else {
-        const sanitized = (data || []).map((l) => ({
-          ...l,
-          stato: l.stato === 'nuovo' ? 'Nuovo' : (l.stato || 'Nuovo'),
-        })) as unknown as LeadRecord[];
-        setLeads(sanitized);
-        setTotalLeadsCount(count ?? 0);
+        setCompratori((data || []) as unknown as CompratoreRecord[]);
+        setTotalCount(count ?? 0);
       }
     }
 
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leadsPage, searchQuery, tipoClienteFilter, hasActiveFilters, filterDalSito,
-      filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
+  }, [page, searchQuery, hasActiveFilters, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  // Full query — fired only when a lead dialog is opened
-  const fetchLeadDetail = useCallback(async (leadId: string) => {
+  // Full query — fired only when a compratore dialog is opened
+  const fetchCompratoreDetail = useCallback(async (id: string) => {
     setIsLoadingDetail(true);
     const { data, error } = await supabase
-      .from('leads')
+      .from('compratori')
       .select(`
         *,
         _version,
-        immobile_primo_contatto:immobili!immobile_id(id, titolo, prezzo, copertina_url),
-        lead_immobili(
+        contatti(created_at, agente_id),
+        compratori_immobili(
           id, stato_interesse, note, created_at,
           immobili(id, titolo, prezzo, copertina_url)
         )
       `)
-      .eq('id', leadId)
+      .eq('id', id)
       .single();
 
     if (!error && data) {
-      const full = { ...data, stato: data.stato === 'nuovo' ? 'Nuovo' : (data.stato || 'Nuovo') };
-      setSelectedLead((prev) => prev?.id === leadId ? full : prev);
+      const row = data as unknown as CompratoreRecord & { contatti?: { created_at?: string; agente_id?: string | null } };
+      const full: CompratoreRecord = {
+        ...row,
+        created_at: row.contatti?.created_at,
+        agente_id: row.contatti?.agente_id,
+      };
+      setSelectedCompratore((prev) => prev?.id === id ? full : prev);
     } else if (error) {
-      showError('Errore nel caricamento del dettaglio lead');
+      showError('Errore nel caricamento del dettaglio contatto');
     }
-
-    // Fetch associated valutazione
-    const { data: val } = await supabase
-      .from('valutazioni')
-      .select('slug, stima_min, stima_max')
-      .eq('lead_id', leadId)
-      .eq('stato', 'Completata')
-      .not('slug', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    setLeadValutazione(val ? { slug: val.slug, stima_min: val.stima_min, stima_max: val.stima_max } : null);
 
     setIsLoadingDetail(false);
   }, []);
 
-  // Opens the dialog immediately with card data, then hydrates with full detail
-  const openLeadDetail = useCallback((lead: LeadRecord) => {
-    setLeadValutazione(null);
-    setSelectedLead(lead);
-    if (lead.id) fetchLeadDetail(lead.id);
-  }, [fetchLeadDetail]);
+  // Opens the dialog immediately with row data, then hydrates with full detail
+  const openCompratoreDetail = useCallback((compratore: CompratoreRecord) => {
+    setSelectedCompratore(compratore);
+    if (compratore.id) fetchCompratoreDetail(compratore.id);
+  }, [fetchCompratoreDetail]);
 
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
-    setSelectedLead({ nome: '', cognome: '', email: '', telefono: '', tipo_cliente: 'Acquirente', stato: 'Nuovo', created_at: new Date().toISOString() });
+    setSelectedCompratore({ nome: '', cognome: '', email: '', telefono: '', stato: 'Nuovo', created_at: new Date().toISOString() });
     setZoneInput('');
   }, []);
 
-  // ── Seller state helpers ────────────────────────────────────────────────────
-
-  /** Optimistically update stato_venditore in the list and persist to Supabase. */
-  const updateSellerState = useCallback(async (leadId: string, newState: string) => {
-    // Optimistic update
-    setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stato_venditore: newState } : l));
+  const handleDeleteCompratore = async () => {
+    if (!compratoreToDelete) return;
+    const targetId = compratoreToDelete.id;
+    setCompratoreToDelete(null);
     const { error } = await supabase
-      .from('leads')
-      .update({ stato_venditore: newState })
-      .eq('id', leadId);
-    if (error) {
-      showError('Errore aggiornamento stato: ' + error.message);
-      // Rollback — re-fetch to restore truth
-      fetchLeads();
-    }
-  }, [fetchLeads]);
-
-  const handleDeleteLead = async () => {
-    if (!leadToDelete) return;
-    const targetId = leadToDelete.id;
-    setLeadToDelete(null);
-    const { error } = await supabase
-      .from('leads')
+      .from('compratori')
       .update({ is_deleted: true, deleted_at: new Date().toISOString() })
       .eq('id', targetId);
     if (error) {
       showError("Errore nell'eliminazione.");
     } else {
-      showSuccess('Lead eliminato.');
-      fetchLeads();
+      showSuccess('Contatto eliminato.');
+      fetchCompratori();
     }
   };
 
-  /**
-   * Automation hook — call when an AI evaluation report is completed for a lead.
-   * Updates stato_venditore → "Valutazione fatta" and appends a history note.
-   */
-  const handleAiEvaluationComplete = useCallback(async (leadId: string) => {
-    await updateSellerState(leadId, 'Valutazione fatta');
-    await supabase.from('lead_notes').insert({
-      lead_id: leadId,
-      testo: 'Stato aggiornato: Valutazione AI completata',
-      autore: 'Sistema',
-    });
-  }, [updateSellerState]);
-
-  /**
-   * Automation hook — call when a property is listed/linked to a specific lead.
-   * Updates stato_venditore → "Chiuso".
-   */
-  const handlePropertyLinked = useCallback(async (leadId: string) => {
-    await updateSellerState(leadId, 'Chiuso');
-  }, [updateSellerState]);
+  /** Optimistically update stato in the list and persist to Supabase. */
+  const updateStato = useCallback(async (id: string, newStato: string) => {
+    setCompratori(prev => prev.map(c => c.id === id ? { ...c, stato: newStato } : c));
+    const { error } = await supabase
+      .from('compratori')
+      .update({ stato: newStato })
+      .eq('id', id);
+    if (error) {
+      showError('Errore aggiornamento stato: ' + error.message);
+      fetchCompratori();
+    }
+  }, [fetchCompratori]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchLeads(controller.signal);
+    fetchCompratori(controller.signal);
     return () => controller.abort();
-  }, [fetchLeads]);
+  }, [fetchCompratori]);
 
-  useEffect(() => { setLeadsPage(1); }, [searchQuery, tipoClienteFilter, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
+  useEffect(() => { setPage(1); }, [searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  // Load distinct zone names used across all leads for autocomplete
+  // Load distinct zone names used across all compratori for autocomplete
   useEffect(() => {
     supabase
-      .from('leads')
+      .from('compratori')
       .select('zone_ricercate')
       .not('zone_ricercate', 'is', null)
       .then(({ data }) => {
@@ -482,11 +384,8 @@ const Leads = () => {
   }, []);
 
   // Join all zone strings into one text blob for token-based matching.
-  // This handles the legacy case where zones were stored as a single
-  // space-separated string (e.g. "Ranica Torre Boldone Gorle") instead
-  // of individual array items.
-  const zoneTextOf = (lead: LeadRecord) =>
-    (lead.zone_ricercate ?? []).join(' ').toLowerCase();
+  const zoneTextOf = (c: CompratoreRecord) =>
+    (c.zone_ricercate ?? []).join(' ').toLowerCase();
 
   // Returns true if ALL whitespace-separated tokens in `query` appear
   // somewhere inside `text` (order-independent, partial match per token).
@@ -497,63 +396,51 @@ const Leads = () => {
 
   const isSearchOrFilterMode = searchQuery.trim() !== '' || hasActiveFilters;
 
-  const filteredLeads = useMemo(() => {
+  const filteredCompratori = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const tokens = q.split(/\s+/).filter(Boolean);
 
-    return leads.filter(lead => {
-      const zoneText = zoneTextOf(lead);
+    return compratori.filter(c => {
+      const zoneText = zoneTextOf(c);
 
-      // Every token must match at least one field (AND across tokens, OR across fields)
       if (tokens.length > 0) {
-        const phoneNorm = (lead.telefono ?? '').replace(/[\s-]/g, '');
-        const fullName = `${lead.nome ?? ''} ${lead.cognome ?? ''}`.toLowerCase();
-        const budgetStr = lead.budget != null ? String(Math.floor(Number(lead.budget))) : '';
+        const phoneNorm = (c.telefono ?? '').replace(/[\s-]/g, '');
+        const fullName = `${c.nome ?? ''} ${c.cognome ?? ''}`.toLowerCase();
+        const budgetStr = c.budget != null ? String(Math.floor(Number(c.budget))) : '';
         const matchesAllTokens = tokens.every(token => {
           const tokenPhone = token.replace(/[\s-]/g, '');
           return (
             fullName.includes(token) ||
-            lead.email?.toLowerCase().includes(token) ||
+            c.email?.toLowerCase().includes(token) ||
             (tokenPhone && phoneNorm.includes(tokenPhone)) ||
             budgetStr.includes(token) ||
-            (lead.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(token)) ||
-            zoneText.toLowerCase().includes(token) ||
-            lead.zona_venditore?.toLowerCase().includes(token) ||
-            lead.note_interne?.toLowerCase().includes(token) ||
-            lead.via_immobile?.toLowerCase().includes(token)
+            (c.tipologia_ricerca ?? []).some((t: string) => t.toLowerCase().includes(token)) ||
+            zoneText.includes(token) ||
+            c.note_interne?.toLowerCase().includes(token)
           );
         });
         if (!matchesAllTokens) return false;
       }
-      // Budget range filter
-      if (filterBudgetMin !== null && (lead.budget == null || Number(lead.budget) < filterBudgetMin)) return false;
-      if (filterBudgetMax !== null && (lead.budget == null || Number(lead.budget) > filterBudgetMax)) return false;
-      // Zona filter — token-based: each word must appear in the zone text
+      if (filterBudgetMin !== null && (c.budget == null || Number(c.budget) < filterBudgetMin)) return false;
+      if (filterBudgetMax !== null && (c.budget == null || Number(c.budget) > filterBudgetMax)) return false;
       if (filterZona.trim()) {
         if (!allTokensMatch(zoneText, filterZona)) return false;
       }
-      // Tipologia filter
       if (filterTipologia) {
-        if (!(lead.tipologia_ricerca ?? []).includes(filterTipologia)) return false;
+        if (!(c.tipologia_ricerca ?? []).includes(filterTipologia)) return false;
       }
-      // Agente filter
-      // Stato filter
-      if (filterStato && lead.stato !== filterStato) return false;
-      // Fonte filter (client-side guard; DB already filters in paginated mode)
-      if (filterDalSito && lead.fonte !== 'sito') return false;
+      if (filterStato && c.stato !== filterStato) return false;
 
       return true;
     });
-  }, [leads, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDalSito]);
+  }, [compratori, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  const displayCount = isSearchOrFilterMode ? filteredLeads.length : totalLeadsCount;
-  const pagedLeads = isSearchOrFilterMode
-    ? filteredLeads.slice((leadsPage - 1) * LEADS_PAGE_SIZE, leadsPage * LEADS_PAGE_SIZE)
-    : filteredLeads;
+  const displayCount = isSearchOrFilterMode ? filteredCompratori.length : totalCount;
+  const pagedCompratori = isSearchOrFilterMode
+    ? filteredCompratori.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : filteredCompratori;
 
-
-
-  const LeadValidationSchema = z.object({
+  const CompratoreValidationSchema = z.object({
     nome: z.string().max(100).optional().or(z.literal('')),
     cognome: z.string().max(100).optional().or(z.literal('')),
     email: z.string().email('Email non valida').optional().or(z.literal('')),
@@ -563,15 +450,26 @@ const Leads = () => {
     { message: 'Inserisci almeno il nome o il cognome' },
   );
 
+  const buildPayload = (c: CompratoreRecord) => ({
+    nome: c.nome.trim(),
+    cognome: c.cognome.trim(),
+    telefono: c.telefono || null,
+    email: c.email || null,
+    budget: parseFloat(String(c.budget)) || null,
+    tipologia_ricerca: c.tipologia_ricerca?.length ? c.tipologia_ricerca : null,
+    zone_ricercate: c.zone_ricercate?.length ? c.zone_ricercate : null,
+    note_interne: c.note_interne || null,
+  });
+
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLead) return;
+    if (!selectedCompratore) return;
 
-    const validation = LeadValidationSchema.safeParse({
-      nome: selectedLead.nome?.trim() ?? '',
-      cognome: selectedLead.cognome?.trim() ?? '',
-      email: selectedLead.email ?? '',
-      telefono: selectedLead.telefono ?? '',
+    const validation = CompratoreValidationSchema.safeParse({
+      nome: selectedCompratore.nome?.trim() ?? '',
+      cognome: selectedCompratore.cognome?.trim() ?? '',
+      email: selectedCompratore.email ?? '',
+      telefono: selectedCompratore.telefono ?? '',
     });
 
     if (!validation.success) {
@@ -579,62 +477,61 @@ const Leads = () => {
       return;
     }
 
-    const isCreateMode = !selectedLead.id;
-    const payload = {
-      nome: selectedLead.nome.trim(),
-      cognome: selectedLead.cognome.trim(),
-      telefono: selectedLead.telefono || null,
-      telefono_fisso: selectedLead.telefono_fisso || null,
-      email: selectedLead.email || null,
-      tipo_cliente: selectedLead.tipo_cliente || 'Acquirente',
-      budget: parseFloat(String(selectedLead.budget)) || null,
-      tipologia_ricerca: selectedLead.tipologia_ricerca?.length ? selectedLead.tipologia_ricerca : null,
-      zone_ricercate: selectedLead.zone_ricercate?.length ? selectedLead.zone_ricercate : null,
-      valutazione_stimata: parseFloat(String(selectedLead.valutazione_stimata)) || null,
-      scadenza_esclusiva: selectedLead.scadenza_esclusiva || null,
-      motivazione_vendita: selectedLead.motivazione_vendita || null,
-      note_interne: selectedLead.note_interne || null,
-      zona_venditore: selectedLead.zona_venditore || null,
-      stato_venditore: selectedLead.stato_venditore || 'Nuovo',
-      via_immobile: selectedLead.via_immobile || null,
-    };
+    const isCreateMode = !selectedCompratore.id;
+    const payload = buildPayload(selectedCompratore);
 
     setIsSaving(true);
 
     if (isCreateMode) {
-      const { error } = await supabase.from('leads').insert({ ...payload, stato: 'Nuovo' });
+      // Two-step insert: contatti first (base row), then compratori with the same id.
+      // No automatic rollback if the second insert fails — surfaced via showError.
+      const { data: contatto, error: contattoError } = await supabase
+        .from('contatti')
+        .insert({})
+        .select()
+        .single();
+
+      if (contattoError || !contatto) {
+        showError('Errore nella creazione del contatto: ' + (contattoError?.message ?? ''));
+        setIsSaving(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('compratori')
+        .insert({ id: contatto.id, ...payload, stato: 'Nuovo' });
+
       if (error) {
         showError("Errore nella creazione: " + error.message);
       } else {
         showSuccess("Contatto creato correttamente");
         setZoneInput('');
-        fetchLeads();
-        setSelectedLead(null);
+        fetchCompratori();
+        setSelectedCompratore(null);
       }
     } else {
-      const version = selectedLead._version ?? 1;
+      const version = selectedCompratore._version ?? 1;
       const { data: updated, error } = await supabase
-        .from('leads')
+        .from('compratori')
         .update({ ...payload, _version: version + 1 })
-        .eq('id', selectedLead.id)
+        .eq('id', selectedCompratore.id)
         .eq('_version', version)
         .select('_version');
 
       if (error) {
         showError("Errore nel salvataggio");
       } else if (!updated || updated.length === 0) {
-        showError('Conflitto: il lead è stato modificato da un altro utente. Ricaricamento...');
-        fetchLeadDetail(selectedLead.id!);
+        showError('Conflitto: il contatto è stato modificato da un altro utente. Ricaricamento...');
+        fetchCompratoreDetail(selectedCompratore.id!);
       } else {
         showSuccess("Scheda cliente aggiornata");
-        setLeads(prev => prev.map(l => l.id === selectedLead.id ? {
-          ...l,
-          nome: selectedLead.nome.trim(),
-          cognome: selectedLead.cognome.trim(),
-          tipo_cliente: selectedLead.tipo_cliente,
-        } : l));
+        setCompratori(prev => prev.map(c => c.id === selectedCompratore.id ? {
+          ...c,
+          nome: selectedCompratore.nome.trim(),
+          cognome: selectedCompratore.cognome.trim(),
+        } : c));
         setZoneInput('');
-        setSelectedLead(null);
+        setSelectedCompratore(null);
       }
     }
 
@@ -642,70 +539,70 @@ const Leads = () => {
   };
 
   // Autosave — only fires in edit mode after the user has interacted
-  const performAutoSave = useCallback(async (lead: LeadRecord) => {
-    if (!lead?.id || !lead.nome?.trim()) return;
+  const performAutoSave = useCallback(async (c: CompratoreRecord) => {
+    if (!c?.id || !c.nome?.trim()) return;
     setAutoSaveStatus('saving');
-    const version = lead._version ?? 1;
-    const payload = {
-      nome: lead.nome.trim(),
-      cognome: lead.cognome.trim(),
-      telefono: lead.telefono || null,
-      telefono_fisso: lead.telefono_fisso || null,
-      email: lead.email || null,
-      tipo_cliente: lead.tipo_cliente || 'Acquirente',
-      budget: parseFloat(String(lead.budget)) || null,
-      tipologia_ricerca: lead.tipologia_ricerca?.length ? lead.tipologia_ricerca : null,
-      zone_ricercate: lead.zone_ricercate?.length ? lead.zone_ricercate : null,
-      valutazione_stimata: parseFloat(String(lead.valutazione_stimata)) || null,
-      scadenza_esclusiva: lead.scadenza_esclusiva || null,
-      motivazione_vendita: lead.motivazione_vendita || null,
-      note_interne: lead.note_interne || null,
-      stato_venditore: lead.stato_venditore || 'Nuovo',
-      via_immobile: lead.via_immobile || null,
-      _version: version + 1,
-    };
+    const version = c._version ?? 1;
+    const payload = { ...buildPayload(c), _version: version + 1 };
     const { data: updated, error } = await supabase
-      .from('leads')
+      .from('compratori')
       .update(payload)
-      .eq('id', lead.id)
+      .eq('id', c.id)
       .eq('_version', version)
       .select('_version');
 
     if (error) {
       setAutoSaveStatus('error');
     } else if (!updated || updated.length === 0) {
-      showError('Il lead è stato modificato da un altro utente. Ricaricamento...');
+      showError('Il contatto è stato modificato da un altro utente. Ricaricamento...');
       setAutoSaveStatus('error');
-      if (lead.id) fetchLeadDetail(lead.id);
+      if (c.id) fetchCompratoreDetail(c.id);
     } else {
-      setSelectedLead((prev) => prev?.id === lead.id ? ({ ...prev, _version: updated[0]._version } as LeadRecord) : prev);
-      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, nome: lead.nome.trim(), cognome: lead.cognome.trim(), tipo_cliente: lead.tipo_cliente } : l));
+      setSelectedCompratore((prev) => prev?.id === c.id ? ({ ...prev, _version: updated[0]._version } as CompratoreRecord) : prev);
+      setCompratori(prev => prev.map(x => x.id === c.id ? { ...x, nome: c.nome.trim(), cognome: c.cognome.trim() } : x));
       setAutoSaveStatus('saved');
       if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current);
       autoSaveStatusTimerRef.current = setTimeout(() => setAutoSaveStatus('idle'), 2000);
     }
-  }, [fetchLeadDetail]);
+  }, [fetchCompratoreDetail]);
 
   useEffect(() => {
-    if (!selectedLead?.id || !hasInteractedRef.current) return;
-    if (!selectedLead.nome?.trim()) return;
-    pendingSaveRef.current = selectedLead;
+    if (!selectedCompratore?.id || !hasInteractedRef.current) return;
+    if (!selectedCompratore.nome?.trim()) return;
+    pendingSaveRef.current = selectedCompratore;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       if (!pendingSaveRef.current) return;
       performAutoSave(pendingSaveRef.current);
     }, 1500);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedLead, performAutoSave]);
+  }, [selectedCompratore, performAutoSave]);
+
+  // Reset interaction tracking on new compratore
+  useEffect(() => {
+    if (!selectedCompratore?.id) {
+      hasInteractedRef.current = false;
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      setAutoSaveStatus('idle');
+      return;
+    }
+  }, [selectedCompratore?.id]);
+
+  // Mark as "interacted" after detail finishes loading (so autosave ignores initial hydration)
+  useEffect(() => {
+    if (!selectedCompratore?.id || isLoadingDetail) return;
+    const t = setTimeout(() => { hasInteractedRef.current = true; }, 300);
+    return () => clearTimeout(t);
+  }, [selectedCompratore?.id, isLoadingDetail]);
 
   const handleUnlinkProperty = async (linkId: string) => {
-    const { error } = await supabase.from('lead_immobili').delete().eq('id', linkId);
+    const { error } = await supabase.from('compratori_immobili').delete().eq('id', linkId);
     if (error) {
       showError("Errore nella rimozione");
     } else {
-      setSelectedLead((prev) => prev ? {
+      setSelectedCompratore((prev) => prev ? {
         ...prev,
-        lead_immobili: (prev.lead_immobili ?? []).filter((li) => li.id !== linkId),
+        compratori_immobili: (prev.compratori_immobili ?? []).filter((li) => li.id !== linkId),
       } : prev);
       setUnlinkConfirmId(null);
     }
@@ -728,10 +625,10 @@ const Leads = () => {
   };
 
   const handleAssociateProperty = async (immobile: PropertyRef) => {
-    if (!selectedLead) return;
+    if (!selectedCompratore) return;
     const { error } = await supabase
-      .from('lead_immobili')
-      .insert({ lead_id: selectedLead.id, immobile_id: immobile.id, stato_interesse: 'Interessato' });
+      .from('compratori_immobili')
+      .insert({ compratore_id: selectedCompratore.id, immobile_id: immobile.id, stato_interesse: 'Interessato' });
 
     if (error) {
       showError("Errore nell'associazione: " + error.message);
@@ -742,102 +639,93 @@ const Leads = () => {
     setIsPropertyPickerOpen(false);
     setPropertySearch('');
 
-    // Re-fetch full detail so the Immobili tab refreshes without closing the dialog
-    fetchLeadDetail(selectedLead.id!);
+    fetchCompratoreDetail(selectedCompratore.id!);
   };
 
-  // Reset interaction tracking on new lead
+  // Fetch tasks whenever a different compratore is opened
   useEffect(() => {
-    if (!selectedLead?.id) {
-      hasInteractedRef.current = false;
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      setAutoSaveStatus('idle');
-      return;
-    }
-  }, [selectedLead?.id]);
-
-  // Mark as "interacted" after detail finishes loading (so autosave ignores initial hydration)
-  useEffect(() => {
-    if (!selectedLead?.id || isLoadingDetail) return;
-    const t = setTimeout(() => { hasInteractedRef.current = true; }, 300);
-    return () => clearTimeout(t);
-  }, [selectedLead?.id, isLoadingDetail]);
-
-  // Fetch tasks whenever a different lead is opened
-  useEffect(() => {
-    if (!selectedLead?.id) { setLeadTasks([]); return; }
+    if (!selectedCompratore?.id) { setCompratoreTasks([]); return; }
     (async () => {
       const { data } = await supabase
         .from('tasks')
         .select('id, titolo, nota, data, ora, stato, agente_id, telefono, urgente')
-        .eq('lead_id', selectedLead.id)
+        .eq('contatto_id', selectedCompratore.id)
         .order('urgente', { ascending: false })
         .order('data', { ascending: true });
-      setLeadTasks(data || []);
+      setCompratoreTasks(data || []);
     })();
-  }, [selectedLead?.id]);
+  }, [selectedCompratore?.id]);
 
-  // Fetch events (appuntamenti) whenever a different lead is opened
+  // Fetch events (appuntamenti) whenever a different compratore is opened
   useEffect(() => {
-    if (!selectedLead?.id) { setLeadEvents([]); return; }
+    if (!selectedCompratore?.id) { setCompratoreEvents([]); return; }
     (async () => {
       const { data } = await supabase
         .from('appuntamenti')
-        .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id')
-        .eq('lead_id', selectedLead.id)
+        .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id, contatto_id')
+        .eq('contatto_id', selectedCompratore.id)
         .order('data', { ascending: true })
         .order('ora_inizio', { ascending: true });
-      setLeadEvents(data || []);
+      setCompratoreEvents(data || []);
     })();
-  }, [selectedLead?.id]);
+  }, [selectedCompratore?.id]);
 
-  // Fetch notes whenever a different lead is opened
+  // Fetch notes whenever a different compratore is opened
   useEffect(() => {
-    if (!selectedLead?.id) { setLeadNotes([]); setNewNoteText(''); return; }
+    if (!selectedCompratore?.id) { setCompratoreNotes([]); setNewNoteText(''); return; }
     (async () => {
       const { data } = await supabase
         .from('lead_notes')
         .select('id, testo, autore, created_at')
-        .eq('lead_id', selectedLead.id)
+        .eq('contatto_id', selectedCompratore.id)
         .order('created_at', { ascending: true });
-      setLeadNotes(data || []);
+      setCompratoreNotes(data || []);
     })();
-  }, [selectedLead?.id]);
+  }, [selectedCompratore?.id]);
 
   const handleSaveNote = async () => {
-    if (!newNoteText.trim() || !selectedLead?.id) return;
+    if (!newNoteText.trim() || !selectedCompratore?.id) return;
     setIsSavingNote(true);
     const { data, error } = await supabase
       .from('lead_notes')
-      .insert({ lead_id: selectedLead.id, testo: newNoteText.trim(), autore: 'Agente' })
+      .insert({ contatto_id: selectedCompratore.id, testo: newNoteText.trim(), autore: 'Agente' })
       .select('id, testo, autore, created_at')
       .single();
     setIsSavingNote(false);
     if (error) {
       showError('Errore nel salvataggio della nota');
     } else {
-      setLeadNotes(prev => [...prev, data]);
+      setCompratoreNotes(prev => [...prev, data]);
       setNewNoteText('');
     }
   };
 
-  // Open lead from navigation state (e.g. coming from Tasks page)
+  // Open compratore from navigation state (e.g. coming from Tasks page).
+  // contatti.id is freshly generated during the pivot backfill and does NOT equal
+  // the old leads.id, so the old id is translated via contatti.lead_id_origine first.
   useEffect(() => {
-    if (!loading && pendingOpenLeadIdRef.current && leads.length > 0) {
-      const id = pendingOpenLeadIdRef.current;
-      pendingOpenLeadIdRef.current = null;
-      const lead = leads.find((l) => l.id === id);
-      if (lead) {
-        openLeadDetail(lead);
+    if (loading || !pendingDeepLinkRef.current) return;
+    const oldLeadId = pendingDeepLinkRef.current;
+    pendingDeepLinkRef.current = null;
+    (async () => {
+      const { data: contatto } = await supabase
+        .from('contatti')
+        .select('id')
+        .eq('lead_id_origine', oldLeadId)
+        .maybeSingle();
+      if (!contatto?.id) return;
+      const existing = compratori.find((c) => c.id === contatto.id);
+      if (existing) {
+        openCompratoreDetail(existing);
       } else {
-        setSelectedLead({ id, nome: '', cognome: '' });
-        fetchLeadDetail(id);
+        setSelectedCompratore({ id: contatto.id, nome: '', cognome: '' });
+        fetchCompratoreDetail(contatto.id);
       }
-    }
-  }, [loading, leads, openLeadDetail, fetchLeadDetail]);
+    })();
+  }, [loading, compratori, openCompratoreDetail, fetchCompratoreDetail]);
 
-  // Open EventFormModal pre-filled with a lead
-  const openEventForLead = useCallback(async (lead: LeadRecord) => {
+  // Open EventFormModal pre-filled with a compratore
+  const openEventForCompratore = useCallback(async (c: CompratoreRecord) => {
     if (agentsForEventModal.length === 0) {
       const [{ data: agents }, { data: props }] = await Promise.all([
         supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
@@ -846,31 +734,31 @@ const Leads = () => {
       setAgentsForEventModal(agents || []);
       setPropertiesForEventModal(props || []);
     }
-    setEventModalDefaultLeadId(lead.id);
-    setEventModalDefaultLeadName(`${lead.nome} ${lead.cognome}`);
+    setEventModalDefaultId(c.id);
+    setEventModalDefaultName(`${c.nome} ${c.cognome}`);
     setIsEventModalOpen(true);
   }, [agentsForEventModal.length]);
 
-  const cycleLeadTaskStato = async (taskId: string, currentStato: string) => {
+  const cycleTaskStato = async (taskId: string, currentStato: string) => {
     const STATI = ['Da fare', 'In corso', 'Completata'];
     const nextStato = STATI[(STATI.indexOf(currentStato) + 1) % STATI.length];
-    setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
+    setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
     if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, stato: nextStato } : prev);
     const { error } = await supabase.from('tasks').update({ stato: nextStato }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento stato');
-      setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
+      setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
     }
   };
 
-  const toggleLeadTaskUrgente = async (taskId: string, currentUrgente: boolean | undefined) => {
+  const toggleTaskUrgente = async (taskId: string, currentUrgente: boolean | undefined) => {
     const newUrgente = !currentUrgente;
-    setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: newUrgente } : t));
+    setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: newUrgente } : t));
     if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: newUrgente } : prev);
     const { error } = await supabase.from('tasks').update({ urgente: newUrgente }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento urgenza');
-      setLeadTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: currentUrgente } : t));
+      setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: currentUrgente } : t));
       if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: currentUrgente } : prev);
     }
   };
@@ -882,7 +770,7 @@ const Leads = () => {
     if (error) {
       showError('Errore nel salvataggio della nota');
     } else {
-      setLeadTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, nota: taskDetailNota } : t));
+      setCompratoreTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, nota: taskDetailNota } : t));
       showSuccess('Nota aggiornata');
       setTaskDetail(null);
     }
@@ -892,34 +780,17 @@ const Leads = () => {
   const filteredPickerProperties = useMemo(() => {
     const q = propertySearch.toLowerCase();
     if (!q) return allProperties;
-    return allProperties.filter(p =>
-      p.titolo?.toLowerCase().includes(q)
-    );
+    return allProperties.filter(p => p.titolo?.toLowerCase().includes(q));
   }, [allProperties, propertySearch]);
 
-
   return (
-    <AdminLayout fullHeight>
-      <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
+    <div className="flex flex-col flex-1 overflow-hidden min-h-0">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0 pt-2">
         <div>
-          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">CRM Leads</h1>
-          <p className="text-gray-500 mt-1 font-medium">
-            {displayCount} contatti{tipoClienteFilter !== 'Tutti' && ` · ${tipoClienteFilter}`}
-          </p>
+          <p className="text-gray-500 font-medium">{displayCount} compratori</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          {/* Client type toggle */}
-          <Tabs value={tipoClienteFilter} onValueChange={(v) => setTipoClienteFilter(v as typeof tipoClienteFilter)}>
-            <TabsList className="grid w-[280px] grid-cols-3 rounded-full p-1 bg-muted/50 border border-gray-100">
-              <TabsTrigger value="Tutti" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Tutti</TabsTrigger>
-              <TabsTrigger value="Acquirenti" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Acquirenti</TabsTrigger>
-              <TabsTrigger value="Proprietari" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Proprietari</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {/* Search */}
           <div className="relative">
             {searchQuery ? (
               <button
@@ -936,11 +807,12 @@ const Leads = () => {
               placeholder="Cerca per nome, telefono, email, zona..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              autoComplete="off"
+              name="search-compratori"
               className="h-11 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
             />
           </div>
 
-          {/* Filters toggle */}
           <Button
             type="button"
             variant="outline"
@@ -963,16 +835,14 @@ const Leads = () => {
             onClick={openCreateModal}
             className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
           >
-            <Plus className="mr-2" size={16} /> Nuovo Contatto
+            <Plus className="mr-2" size={16} /> Nuovo Compratore
           </Button>
         </div>
       </div>
 
-      {/* Filter panel */}
       {showFilters && (
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 mb-4 shrink-0">
           <div className="flex flex-wrap gap-4 items-end">
-            {/* Budget range */}
             <div className="space-y-1">
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Budget (€)</Label>
               <div className="flex items-center gap-1.5">
@@ -1016,20 +886,16 @@ const Leads = () => {
               </div>
             </div>
 
-            {/* Zona */}
             <div className="space-y-1 min-w-[160px]">
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Zona ricercata</Label>
-              <div className="relative">
-                <Input
-                  value={filterZona}
-                  onChange={(e) => setFilterZona(e.target.value)}
-                  placeholder="Es: Centro, Bergamo..."
-                  className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm"
-                />
-              </div>
+              <Input
+                value={filterZona}
+                onChange={(e) => setFilterZona(e.target.value)}
+                placeholder="Es: Centro, Bergamo..."
+                className="h-9 rounded-xl border-gray-200 bg-slate-50/50 text-sm"
+              />
             </div>
 
-            {/* Tipologia */}
             <div className="space-y-1 min-w-[160px]">
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Tipologia</Label>
               <Select value={filterTipologia || '_all'} onValueChange={(v) => setFilterTipologia(v === '_all' ? '' : v)}>
@@ -1045,7 +911,6 @@ const Leads = () => {
               </Select>
             </div>
 
-            {/* Stato */}
             <div className="space-y-1 min-w-[140px]">
               <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Stato</Label>
               <Select value={filterStato || '_all'} onValueChange={(v) => setFilterStato(v === '_all' ? '' : v)}>
@@ -1054,36 +919,17 @@ const Leads = () => {
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="_all">Tutti</SelectItem>
-                  <SelectItem value="Nuovo">Nuovo</SelectItem>
-                  <SelectItem value="In Trattativa">In Trattativa</SelectItem>
-                  <SelectItem value="Visita Fissata">Visita Fissata</SelectItem>
-                  <SelectItem value="Chiuso">Chiuso</SelectItem>
+                  {STATO_PIPELINE.map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Dal sito */}
-            <div className="space-y-1">
-              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Origine</Label>
-              <button
-                type="button"
-                onClick={() => setFilterDalSito(v => !v)}
-                className={cn(
-                  'h-9 flex items-center gap-2 px-4 rounded-xl border text-sm font-semibold transition-all',
-                  filterDalSito
-                    ? 'bg-[#94b0ab] border-[#94b0ab] text-white shadow-sm'
-                    : 'bg-slate-50/50 border-gray-200 text-gray-500 hover:border-[#94b0ab] hover:text-[#94b0ab]',
-                )}
-              >
-                🌐 Dal sito
-              </button>
-            </div>
-
-            {/* Reset */}
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => { setFilterBudgetMin(null); setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterAgente(''); setFilterStato(''); setFilterDalSito(false); }}
+                onClick={() => { setFilterBudgetMin(null); setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterStato(''); }}
                 className="h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border border-red-100"
               >
                 <XIcon size={13} /> Reset filtri
@@ -1093,7 +939,6 @@ const Leads = () => {
         </div>
       )}
 
-      {/* Lead list */}
       <div className="flex-1 overflow-hidden min-h-0">
         <div className="h-full bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-y-auto">
           <div className="overflow-x-auto w-full">
@@ -1108,10 +953,8 @@ const Leads = () => {
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Tipo</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">
-                    {tipoClienteFilter === 'Proprietari' ? 'Stato Venditore' : 'Immobile'}
-                  </th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile collegato</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Creato il</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
                 </tr>
@@ -1130,70 +973,56 @@ const Leads = () => {
                       <td className="px-8 py-5"><div className="h-8 bg-gray-50 rounded-xl animate-pulse w-16 ml-auto" /></td>
                     </tr>
                   ))
-                ) : filteredLeads.length === 0 ? (
-                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun lead trovato</td></tr>
-                ) : pagedLeads.map((lead) => (
+                ) : filteredCompratori.length === 0 ? (
+                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun compratore trovato</td></tr>
+                ) : pagedCompratori.map((c) => (
                   <tr
-                    key={lead.id}
+                    key={c.id}
                     className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
-                    onClick={() => openLeadDetail(lead)}
+                    onClick={() => openCompratoreDetail(c)}
                   >
                     <td className="px-8 py-5 min-w-0">
-                      <div className="font-bold text-gray-900 truncate">{lead.nome} {lead.cognome}</div>
+                      <div className="font-bold text-gray-900 truncate">{c.nome} {c.cognome}</div>
                       <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5 min-w-0">
                         <Phone size={10} className="text-gray-300 shrink-0" />
-                        <span className="truncate">{lead.telefono || 'N/D'}</span>
+                        <span className="truncate">{c.telefono || 'N/D'}</span>
                       </div>
                     </td>
                     <td className="px-8 py-5">
-                      <Badge className={cn(
-                        "text-[9px] font-black uppercase tracking-widest border",
-                        getClientTypeBadge(lead.tipo_cliente)
-                      )}>
-                        {lead.tipo_cliente || 'Acquirente'}
-                      </Badge>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Badge className={cn(
+                            "text-[9px] font-black uppercase tracking-widest cursor-pointer hover:opacity-75 transition-opacity gap-1",
+                            STATO_COLORS[c.stato ?? 'Nuovo'] ?? STATO_COLORS['Nuovo']
+                          )}>
+                            {c.stato || 'Nuovo'}
+                            <ChevronDown size={9} className="shrink-0" />
+                          </Badge>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="rounded-xl min-w-[160px]">
+                          {STATO_PIPELINE.map(stato => (
+                            <DropdownMenuItem
+                              key={stato}
+                              onClick={(e) => { e.stopPropagation(); updateStato(c.id!, stato); }}
+                              className={cn(
+                                "rounded-lg text-xs font-semibold cursor-pointer",
+                                c.stato === stato && "bg-gray-100",
+                              )}
+                            >
+                              {stato}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </td>
                     <td className="px-8 py-5 min-w-0">
-                      {tipoClienteFilter === 'Proprietari' ? (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Badge className={cn(
-                              "text-[9px] font-black uppercase tracking-widest cursor-pointer hover:opacity-75 transition-opacity gap-1",
-                              SELLER_STATES[lead.stato_venditore ?? 'Nuovo'] ?? SELLER_STATES['Nuovo']
-                            )}>
-                              {lead.stato_venditore || 'Nuovo'}
-                              <ChevronDown size={9} className="shrink-0" />
-                            </Badge>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" className="rounded-xl min-w-[160px]">
-                            {(['Nuovo', 'Valutazione fatta', 'Chiuso'] as const).map(state => (
-                              <DropdownMenuItem
-                                key={state}
-                                onClick={(e) => { e.stopPropagation(); updateSellerState(lead.id!, state); }}
-                                className={cn(
-                                  "rounded-lg text-xs font-semibold cursor-pointer",
-                                  lead.stato_venditore === state && "bg-gray-100",
-                                )}
-                              >
-                                <span className={cn(
-                                  "w-2 h-2 rounded-full shrink-0 mr-2",
-                                  state === 'Nuovo' ? 'bg-blue-400' :
-                                  state === 'Valutazione fatta' ? 'bg-amber-400' : 'bg-emerald-400'
-                                )} />
-                                {state}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      ) : (
-                        lead.lead_immobili?.[0]?.immobili?.titolo
-                          ? <span className="text-xs text-gray-500 truncate block">{lead.lead_immobili[0].immobili.titolo}</span>
-                          : <span className="text-xs text-gray-200">—</span>
-                      )}
+                      {c.compratori_immobili?.[0]?.immobili?.titolo
+                        ? <span className="text-xs text-gray-500 truncate block">{c.compratori_immobili[0].immobili.titolo}</span>
+                        : <span className="text-xs text-gray-200">—</span>}
                     </td>
                     <td className="px-8 py-5">
                       <span className="text-xs text-gray-400">
-                        {safeFormat(lead.created_at, 'd MMM yyyy', { locale: it })}
+                        {safeFormat(c.created_at, 'd MMM yyyy', { locale: it })}
                       </span>
                     </td>
                     <td className="px-8 py-5">
@@ -1205,7 +1034,7 @@ const Leads = () => {
                           variant="ghost"
                           size="sm"
                           title="Nuovo evento"
-                          onClick={() => openEventForLead(lead)}
+                          onClick={() => openEventForCompratore(c)}
                           className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
                         >
                           <CalendarPlus size={15} />
@@ -1215,8 +1044,8 @@ const Leads = () => {
                           size="sm"
                           title="Nuova task"
                           onClick={() => {
-                            setQuickTaskLeadId(lead.id);
-                            setQuickTaskLeadName(`${lead.nome} ${lead.cognome}`);
+                            setQuickTaskId(c.id);
+                            setQuickTaskName(`${c.nome} ${c.cognome}`);
                             setIsQuickTaskModalOpen(true);
                           }}
                           className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
@@ -1226,8 +1055,8 @@ const Leads = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Elimina lead"
-                          onClick={() => setLeadToDelete({ id: lead.id!, nome: lead.nome, cognome: lead.cognome })}
+                          title="Elimina compratore"
+                          onClick={() => setCompratoreToDelete({ id: c.id!, nome: c.nome, cognome: c.cognome })}
                           className="h-8 w-8 p-0 rounded-xl text-gray-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <Trash2 size={15} />
@@ -1242,18 +1071,17 @@ const Leads = () => {
         </div>
       </div>
 
-      {/* Pagination */}
-      {displayCount > LEADS_PAGE_SIZE && (
+      {displayCount > PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 shrink-0">
           <p className="text-xs text-gray-400 font-medium">
-            {(leadsPage - 1) * LEADS_PAGE_SIZE + 1}–{Math.min(leadsPage * LEADS_PAGE_SIZE, displayCount)} di {displayCount}
+            {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, displayCount)} di {displayCount}
           </p>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              disabled={leadsPage === 1}
-              onClick={() => setLeadsPage(p => p - 1)}
+              disabled={page === 1}
+              onClick={() => setPage(p => p - 1)}
               className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
             >
               ← Precedente
@@ -1261,8 +1089,8 @@ const Leads = () => {
             <Button
               variant="outline"
               size="sm"
-              disabled={leadsPage * LEADS_PAGE_SIZE >= displayCount}
-              onClick={() => setLeadsPage(p => p + 1)}
+              disabled={page * PAGE_SIZE >= displayCount}
+              onClick={() => setPage(p => p + 1)}
               className="rounded-xl border-gray-200 h-9 px-4 text-xs font-bold"
             >
               Successiva →
@@ -1270,17 +1098,14 @@ const Leads = () => {
           </div>
         </div>
       )}
-      </div>
 
-      {/* Unified Lead Dialog (create + edit) */}
-      <Dialog open={!!selectedLead} onOpenChange={(open) => { if (!open) { setSelectedLead(null); setZoneInput(''); } }}>
+      <Dialog open={!!selectedCompratore} onOpenChange={(open) => { if (!open) { setSelectedCompratore(null); setZoneInput(''); } }}>
         <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
-          {selectedLead && (
+          {selectedCompratore && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
 
-              {/* Header — adapts to create vs edit mode */}
               {(() => {
-                const isCreate = !selectedLead.id;
+                const isCreate = !selectedCompratore.id;
                 return (
                   <DialogHeader className="px-7 pt-5 pb-4 border-b bg-white shrink-0">
                     <div className="flex items-center gap-4">
@@ -1293,51 +1118,45 @@ const Leads = () => {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <DialogTitle className="text-xl font-bold text-gray-900 leading-none">
-                            {isCreate ? 'Nuovo Contatto' : `${selectedLead.nome} ${selectedLead.cognome}`}
+                            {isCreate ? 'Nuovo Compratore' : `${selectedCompratore.nome} ${selectedCompratore.cognome}`}
                           </DialogTitle>
                           {!isCreate && (
-                            <>
-                              <Badge className={cn("px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border", getClientTypeBadge(selectedLead.tipo_cliente))}>
-                                {selectedLead.tipo_cliente || 'Acquirente'}
-                              </Badge>
-                              {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button type="button" className={cn(
-                                      "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border cursor-pointer hover:opacity-80 transition-opacity",
-                                      selectedLead.stato_venditore === 'Valutazione fatta' ? "bg-amber-100 text-amber-700 border-amber-200" :
-                                      selectedLead.stato_venditore === 'Chiuso' ? "bg-green-100 text-green-700 border-green-200" :
-                                      "bg-blue-100 text-blue-700 border-blue-200"
-                                    )}>
-                                      {selectedLead.stato_venditore || 'Nuovo'}
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button type="button" className={cn(
+                                  "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border cursor-pointer hover:opacity-80 transition-opacity",
+                                  STATO_COLORS[selectedCompratore.stato ?? 'Nuovo'] ?? STATO_COLORS['Nuovo']
+                                )}>
+                                  {selectedCompratore.stato || 'Nuovo'}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-2 rounded-xl shadow-xl border-none" align="start">
+                                <div className="flex flex-col gap-1">
+                                  {STATO_PIPELINE.map(stato => (
+                                    <button
+                                      key={stato}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedCompratore({ ...selectedCompratore, stato });
+                                        if (selectedCompratore.id) updateStato(selectedCompratore.id, stato);
+                                      }}
+                                      className={cn(
+                                        "px-3 py-1.5 rounded-lg text-xs font-bold text-left transition-colors",
+                                        selectedCompratore.stato === stato ? "bg-gray-100" : "hover:bg-gray-50"
+                                      )}
+                                    >
+                                      {stato}
                                     </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-2 rounded-xl shadow-xl border-none" align="start">
-                                    <div className="flex flex-col gap-1">
-                                      {['Nuovo', 'Valutazione fatta', 'Chiuso'].map(stato => (
-                                        <button
-                                          key={stato}
-                                          type="button"
-                                          onClick={() => setSelectedLead({...selectedLead, stato_venditore: stato})}
-                                          className={cn(
-                                            "px-3 py-1.5 rounded-lg text-xs font-bold text-left transition-colors",
-                                            selectedLead.stato_venditore === stato ? "bg-gray-100" : "hover:bg-gray-50"
-                                          )}
-                                        >
-                                          {stato}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              )}
-                            </>
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
                           )}
                         </div>
                         <DialogDescription className="text-xs text-gray-400 font-medium mt-1 flex items-center gap-2">
                           {isCreate
                             ? 'Compila il profilo e salva per creare il contatto.'
-                            : <>Lead acquisito il {safeFormat(selectedLead.created_at, 'PPP', { locale: it })}</>
+                            : <>Contatto acquisito il {safeFormat(selectedCompratore.created_at, 'PPP', { locale: it })}</>
                           }
                           {isLoadingDetail && <span className="inline-block w-3 h-3 rounded-full border-2 border-[#94b0ab]/40 border-t-[#94b0ab] animate-spin" />}
                         </DialogDescription>
@@ -1347,47 +1166,40 @@ const Leads = () => {
                 );
               })()}
 
-              {/* Tabs */}
               {(() => {
-                const isCreate = !selectedLead.id;
+                const isCreate = !selectedCompratore.id;
                 return (
                   <Tabs defaultValue="profilo" className="flex flex-col flex-1 min-h-0">
-                    {/* Tab bar */}
                     <div className="px-7 border-b bg-white shrink-0">
                       <TabsList className="bg-transparent p-0 h-12 gap-8 w-full justify-start">
                         <TabsTrigger value="profilo" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2">
                           <User size={15} /> Profilo
                         </TabsTrigger>
-                        {selectedLead.tipo_cliente !== 'Proprietario' && (
-                          <TabsTrigger value="immobili" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
-                            <Heart size={15} /> Immobili
-                          </TabsTrigger>
-                        )}
+                        <TabsTrigger value="immobili" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <Heart size={15} /> Immobili
+                        </TabsTrigger>
                         <TabsTrigger value="eventi" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <Calendar size={15} /> Eventi
-                          {leadEvents.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadEvents.length}</span>
+                          {compratoreEvents.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreEvents.length}</span>
                           )}
                         </TabsTrigger>
                         <TabsTrigger value="task" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <CheckSquare size={15} /> Task
-                          {leadTasks.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadTasks.length}</span>
+                          {compratoreTasks.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreTasks.length}</span>
                           )}
                         </TabsTrigger>
                         <TabsTrigger value="note" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <FileText size={15} /> Note
-                          {leadNotes.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{leadNotes.length}</span>
+                          {compratoreNotes.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreNotes.length}</span>
                           )}
                         </TabsTrigger>
                       </TabsList>
                     </div>
 
-                {/* Scrollable content area */}
                 <div className="flex-1 overflow-y-auto bg-slate-50">
-
-                  {/* ── PROFILO TAB ── */}
                   <TabsContent value="profilo" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
 
                     {/* Card: Anagrafica e Contatti */}
@@ -1401,18 +1213,16 @@ const Leads = () => {
                           <Label className="text-xs font-bold text-gray-500">Nome <span className="text-red-400">*</span></Label>
                           <Input
                             required
-                            value={selectedLead.nome || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, nome: e.target.value})}
-                            placeholder="Mario"
+                            value={selectedCompratore.nome || ''}
+                            onChange={(e) => setSelectedCompratore({...selectedCompratore, nome: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Cognome</Label>
                           <Input
-                            value={selectedLead.cognome || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, cognome: e.target.value})}
-                            placeholder="Rossi"
+                            value={selectedCompratore.cognome || ''}
+                            onChange={(e) => setSelectedCompratore({...selectedCompratore, cognome: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1420,366 +1230,199 @@ const Leads = () => {
                           <Label className="text-xs font-bold text-gray-500">Email</Label>
                           <Input
                             type="email"
-                            value={selectedLead.email || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, email: e.target.value})}
+                            value={selectedCompratore.email || ''}
+                            onChange={(e) => setSelectedCompratore({...selectedCompratore, email: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
                           <Input
-                            value={selectedLead.telefono || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, telefono: e.target.value})}
+                            value={selectedCompratore.telefono || ''}
+                            onChange={(e) => setSelectedCompratore({...selectedCompratore, telefono: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Telefono Fisso</Label>
-                          <Input
-                            value={selectedLead.telefono_fisso || ''}
-                            onChange={(e) => setSelectedLead({...selectedLead, telefono_fisso: e.target.value})}
-                            className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Tipo Cliente</Label>
-                          <Select
-                            value={selectedLead.tipo_cliente || "Acquirente"}
-                            onValueChange={(v) => setSelectedLead({...selectedLead, tipo_cliente: v})}
-                          >
-                            <SelectTrigger className="h-11 rounded-xl border-gray-200 bg-slate-50/50">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl">
-                              <SelectItem value="Acquirente">Acquirente</SelectItem>
-                              <SelectItem value="Proprietario">Proprietario</SelectItem>
-                              <SelectItem value="Ibrido">Ibrido (Entrambi)</SelectItem>
-                            </SelectContent>
-                          </Select>
                         </div>
                       </div>
                     </div>
 
-                    {/* Card: Esigenze di Acquisto (conditional) */}
-                    <div className={cn(!(selectedLead.tipo_cliente === 'Acquirente' || selectedLead.tipo_cliente === 'Ibrido') && 'hidden')}>
-                      <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5 space-y-5">
-                        <div className="flex items-center gap-2">
-                          <Briefcase size={15} className="text-blue-500" />
-                          <h3 className="text-sm font-semibold text-blue-600 tracking-wide uppercase">Esigenze di Acquisto</h3>
-                        </div>
-                        <div className="flex flex-col gap-4">
-                          {/* Budget Massimo — full width */}
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
-                            <div className="flex flex-wrap gap-1.5">
-                              {[100000, 150000, 200000, 250000, 300000, 500000, 750000, 1000000].map((preset) => {
-                                const isActive = Number(selectedLead.budget) === preset;
-                                return (
-                                  <button
-                                    key={preset}
-                                    type="button"
-                                    onClick={() => setSelectedLead({...selectedLead, budget: isActive ? '' : String(preset)})}
-                                    className={cn(
-                                      "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
-                                      isActive
-                                        ? "bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60"
-                                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
-                                    )}
-                                  >
-                                    {preset >= 1000000 ? '€1.000.000+' : `€${preset.toLocaleString('it-IT')}`}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            {/* Formatted currency input */}
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none select-none">€</span>
-                              <Input
-                                type="text"
-                                inputMode="numeric"
-                                value={selectedLead.budget
-                                  ? Number(String(selectedLead.budget).replace(/\./g, '')).toLocaleString('it-IT')
-                                  : ''}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/\./g, '').replace(/[^0-9]/g, '');
-                                  setSelectedLead({...selectedLead, budget: raw});
-                                }}
-                                placeholder="Importo personalizzato..."
-                                className="h-10 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Tipologie Ricercate — multi-select pills */}
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Tipologie Ricercate</Label>
-                            <div className="flex flex-wrap gap-1.5">
-                              {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => {
-                                const active = (selectedLead.tipologia_ricerca ?? []).includes(t);
-                                return (
-                                  <button
-                                    key={t}
-                                    type="button"
-                                    onClick={() => {
-                                      const cur: string[] = selectedLead.tipologia_ricerca ?? [];
-                                      setSelectedLead({
-                                        ...selectedLead,
-                                        tipologia_ricerca: active ? cur.filter((v: string) => v !== t) : [...cur, t],
-                                      });
-                                    }}
-                                    className={cn(
-                                      "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
-                                      active
-                                        ? "bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60"
-                                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
-                                    )}
-                                  >
-                                    {t}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Zone di Ricerca — tag input with autocomplete */}
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
-                              <MapPin size={11} className="text-blue-400" /> Zone di Ricerca
-                            </Label>
-                            {/* Selected zone tags */}
-                            {(selectedLead.zone_ricercate ?? []).length > 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {(selectedLead.zone_ricercate as string[]).map(z => (
-                                  <span
-                                    key={z}
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-500 text-white border border-blue-500"
-                                  >
-                                    {z}
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedLead({
-                                        ...selectedLead,
-                                        zone_ricercate: (selectedLead.zone_ricercate as string[]).filter((v: string) => v !== z),
-                                      })}
-                                      className="ml-0.5 hover:opacity-70"
-                                    >
-                                      ×
-                                    </button>
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {/* Input + suggestions */}
-                            <div className="relative">
-                              <div className="flex gap-2">
-                                <Input
-                                  value={zoneInput}
-                                  onChange={(e) => setZoneInput(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
-                                      if (vals.length === 0) return;
-                                      const cur: string[] = selectedLead.zone_ricercate ?? [];
-                                      const newZones = vals.filter(v => !cur.includes(v));
-                                      if (newZones.length === 0) { setZoneInput(''); return; }
-                                      setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, ...newZones] });
-                                      newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
-                                      setZoneInput('');
-                                    }
-                                  }}
-                                  placeholder="Es: Centro, Bolognina (separa con virgola + Invio)"
-                                  className="h-10 rounded-xl border-gray-200 bg-slate-50/50 flex-1 text-sm"
-                                />
+                    {/* Card: Esigenze di Acquisto — unconditional (this view is buyers-only) */}
+                    <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5 space-y-5">
+                      <div className="flex items-center gap-2">
+                        <Briefcase size={15} className="text-blue-500" />
+                        <h3 className="text-sm font-semibold text-blue-600 tracking-wide uppercase">Esigenze di Acquisto</h3>
+                      </div>
+                      <div className="flex flex-col gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[100000, 150000, 200000, 250000, 300000, 500000, 750000, 1000000].map((preset) => {
+                              const isActive = Number(selectedCompratore.budget) === preset;
+                              return (
                                 <button
+                                  key={preset}
                                   type="button"
-                                  onClick={() => {
-                                    const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
-                                    if (vals.length === 0) return;
-                                    const cur: string[] = selectedLead.zone_ricercate ?? [];
-                                    const newZones = vals.filter(v => !cur.includes(v));
-                                    if (newZones.length === 0) { setZoneInput(''); return; }
-                                    setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, ...newZones] });
-                                    newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
-                                    setZoneInput('');
-                                  }}
-                                  className="h-10 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shrink-0 transition-colors"
-                                >
-                                  <Plus size={16} />
-                                </button>
-                              </div>
-                              {/* Autocomplete suggestions */}
-                              {zoneInput.trim() && zoneSuggestions.filter(s =>
-                                s.toLowerCase().includes(zoneInput.toLowerCase()) &&
-                                !(selectedLead.zone_ricercate ?? []).includes(s)
-                              ).length > 0 && (
-                                <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                                  {zoneSuggestions
-                                    .filter(s =>
-                                      s.toLowerCase().includes(zoneInput.toLowerCase()) &&
-                                      !(selectedLead.zone_ricercate ?? []).includes(s)
-                                    )
-                                    .slice(0, 6)
-                                    .map(s => (
-                                      <button
-                                        key={s}
-                                        type="button"
-                                        onMouseDown={(e) => {
-                                          e.preventDefault();
-                                          const cur: string[] = selectedLead.zone_ricercate ?? [];
-                                          setSelectedLead({ ...selectedLead, zone_ricercate: [...cur, s] });
-                                          setZoneInput('');
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                                      >
-                                        {s}
-                                      </button>
-                                    ))
-                                  }
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card: Dati di Vendita (conditional) */}
-                    <div className={cn(!(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && 'hidden')}>
-                      <div className="bg-white border border-red-100 rounded-xl shadow-sm p-5 space-y-5">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp size={15} className="text-red-500" />
-                          <h3 className="text-sm font-semibold text-red-600 tracking-wide uppercase">Dati di Vendita</h3>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
-                            <Input
-                              value={selectedLead.via_immobile || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, via_immobile: e.target.value})}
-                              placeholder="es. Via Roma 12"
-                              className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Valutazione AI</Label>
-                            {leadValutazione ? (
-                              <div className="flex items-center justify-between h-11 rounded-xl border border-gray-200 bg-slate-50/50 px-3">
-                                <span className="font-bold text-gray-800 text-sm">
-                                  €{((leadValutazione.stima_min ?? 0) / 1000).toFixed(0)}k – €{((leadValutazione.stima_max ?? 0) / 1000).toFixed(0)}k
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      navigator.clipboard.writeText(`${window.location.origin}/report/${leadValutazione.slug}`);
-                                      showSuccess('Link copiato!');
-                                    }}
-                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
-                                    title="Copia link report"
-                                  >
-                                    <Copy size={12} />
-                                    Copia link
-                                  </button>
-                                  <a
-                                    href={`/report/${leadValutazione.slug}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600 transition-colors"
-                                    title="Apri report"
-                                  >
-                                    <ExternalLink size={12} />
-                                  </a>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex items-center justify-between h-11 rounded-xl border border-dashed border-gray-200 bg-slate-50/20 px-3">
-                                <span className="text-xs text-gray-400 italic">Nessuna valutazione completata</span>
-                                {(selectedLead.tipo_cliente === 'Proprietario' || selectedLead.tipo_cliente === 'Ibrido') && (
-                                  <button
-                                    type="button"
-                                    onClick={() => navigate('/valutazioni', { state: { openWizard: true, leadId: selectedLead.id } })}
-                                    className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] hover:text-teal-700 transition-colors"
-                                  >
-                                    <Calculator size={12} />
-                                    Crea
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="space-y-2">
-                            <Label className="text-xs font-bold text-gray-500">Scadenza Esclusiva</Label>
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button
-                                  variant="outline"
+                                  onClick={() => setSelectedCompratore({...selectedCompratore, budget: isActive ? '' : String(preset)})}
                                   className={cn(
-                                    "w-full justify-start text-left font-normal rounded-xl border-gray-200 bg-slate-50/50 hover:bg-gray-100 h-11 gap-2",
-                                    !selectedLead.scadenza_esclusiva && "text-muted-foreground"
+                                    "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
+                                    isActive
+                                      ? "bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60"
+                                      : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
                                   )}
                                 >
-                                  <Calendar size={14} className="text-[#94b0ab] shrink-0" />
-                                  {selectedLead.scadenza_esclusiva
-                                    ? format(parseISO(selectedLead.scadenza_esclusiva), 'd MMM yyyy', { locale: it })
-                                    : "Seleziona una data"}
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-auto p-0 border-none rounded-2xl shadow-xl" align="start">
-                                <CalendarPicker
-                                  mode="single"
-                                  selected={selectedLead.scadenza_esclusiva ? parseISO(selectedLead.scadenza_esclusiva) : undefined}
-                                  onSelect={(date) => setSelectedLead({...selectedLead, scadenza_esclusiva: date ? format(date, 'yyyy-MM-dd') : null})}
-                                  initialFocus
-                                  locale={it}
-                                />
-                              </PopoverContent>
-                            </Popover>
+                                  {preset >= 1000000 ? '€1.000.000+' : `€${preset.toLocaleString('it-IT')}`}
+                                </button>
+                              );
+                            })}
                           </div>
-                          <div className="space-y-2 col-span-full">
-                            <Label className="text-xs font-bold text-gray-500">Motivazione Vendita</Label>
-                            <Textarea
-                              value={selectedLead.motivazione_vendita || ''}
-                              onChange={(e) => setSelectedLead({...selectedLead, motivazione_vendita: e.target.value})}
-                              placeholder="Descrivi la motivazione del cliente..."
-                              className="rounded-xl border-gray-200 bg-slate-50/50 min-h-[80px] resize-none"
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none select-none">€</span>
+                            <Input
+                              type="text"
+                              inputMode="numeric"
+                              value={selectedCompratore.budget
+                                ? Number(String(selectedCompratore.budget).replace(/\./g, '')).toLocaleString('it-IT')
+                                : ''}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\./g, '').replace(/[^0-9]/g, '');
+                                setSelectedCompratore({...selectedCompratore, budget: raw});
+                              }}
+                              placeholder="Importo personalizzato..."
+                              className="h-10 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
                             />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Tipologie Ricercate</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => {
+                              const active = (selectedCompratore.tipologia_ricerca ?? []).includes(t);
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => {
+                                    const cur: string[] = selectedCompratore.tipologia_ricerca ?? [];
+                                    setSelectedCompratore({
+                                      ...selectedCompratore,
+                                      tipologia_ricerca: active ? cur.filter((v: string) => v !== t) : [...cur, t],
+                                    });
+                                  }}
+                                  className={cn(
+                                    "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
+                                    active
+                                      ? "bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60"
+                                      : "bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50"
+                                  )}
+                                >
+                                  {t}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
+                            <MapPin size={11} className="text-blue-400" /> Zone di Ricerca
+                          </Label>
+                          {(selectedCompratore.zone_ricercate ?? []).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {(selectedCompratore.zone_ricercate as string[]).map(z => (
+                                <span
+                                  key={z}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-500 text-white border border-blue-500"
+                                >
+                                  {z}
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedCompratore({
+                                      ...selectedCompratore,
+                                      zone_ricercate: (selectedCompratore.zone_ricercate as string[]).filter((v: string) => v !== z),
+                                    })}
+                                    className="ml-0.5 hover:opacity-70"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="relative">
+                            <div className="flex gap-2">
+                              <Input
+                                value={zoneInput}
+                                onChange={(e) => setZoneInput(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
+                                    if (vals.length === 0) return;
+                                    const cur: string[] = selectedCompratore.zone_ricercate ?? [];
+                                    const newZones = vals.filter(v => !cur.includes(v));
+                                    if (newZones.length === 0) { setZoneInput(''); return; }
+                                    setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, ...newZones] });
+                                    newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
+                                    setZoneInput('');
+                                  }
+                                }}
+                                placeholder="Es: Centro, Bolognina (separa con virgola + Invio)"
+                                className="h-10 rounded-xl border-gray-200 bg-slate-50/50 flex-1 text-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
+                                  if (vals.length === 0) return;
+                                  const cur: string[] = selectedCompratore.zone_ricercate ?? [];
+                                  const newZones = vals.filter(v => !cur.includes(v));
+                                  if (newZones.length === 0) { setZoneInput(''); return; }
+                                  setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, ...newZones] });
+                                  newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
+                                  setZoneInput('');
+                                }}
+                                className="h-10 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold shrink-0 transition-colors"
+                              >
+                                <Plus size={16} />
+                              </button>
+                            </div>
+                            {zoneInput.trim() && zoneSuggestions.filter(s =>
+                              s.toLowerCase().includes(zoneInput.toLowerCase()) &&
+                              !(selectedCompratore.zone_ricercate ?? []).includes(s)
+                            ).length > 0 && (
+                              <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                                {zoneSuggestions
+                                  .filter(s =>
+                                    s.toLowerCase().includes(zoneInput.toLowerCase()) &&
+                                    !(selectedCompratore.zone_ricercate ?? []).includes(s)
+                                  )
+                                  .slice(0, 6)
+                                  .map(s => (
+                                    <button
+                                      key={s}
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const cur: string[] = selectedCompratore.zone_ricercate ?? [];
+                                        setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, s] });
+                                        setZoneInput('');
+                                      }}
+                                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                                    >
+                                      {s}
+                                    </button>
+                                  ))
+                                }
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
                     </div>
                   </TabsContent>
 
-                  {/* ── IMMOBILI TAB ── */}
                   <TabsContent value="immobili" className="mt-0 p-6 space-y-6">
-
-                    {/* ── Primo Contatto ── */}
-                    {selectedLead.immobile_primo_contatto ? (
-                      <div className="space-y-2">
-                        <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Primo Contatto</h3>
-                        <div className="bg-white rounded-xl border border-[#94b0ab]/25 shadow-sm overflow-hidden flex items-stretch">
-                          <div className="w-24 shrink-0 bg-slate-100 overflow-hidden">
-                            {selectedLead.immobile_primo_contatto.copertina_url ? (
-                              <img src={selectedLead.immobile_primo_contatto.copertina_url} alt={selectedLead.immobile_primo_contatto.titolo} className="w-full h-full object-cover min-h-[72px]" />
-                            ) : (
-                              <div className="w-full min-h-[72px] flex items-center justify-center text-slate-300"><HomeIcon size={22} /></div>
-                            )}
-                          </div>
-                          <div className="flex-1 px-4 py-3 min-w-0 flex items-center justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <Badge className="bg-[#94b0ab] text-white text-[9px] font-black uppercase tracking-widest border-none">Primo Contatto</Badge>
-                              </div>
-                              <p className="font-bold text-gray-900 truncate text-sm">{selectedLead.immobile_primo_contatto.titolo}</p>
-                            </div>
-                            <span className="text-base font-extrabold text-[#94b0ab] shrink-0">{formatPrice(selectedLead.immobile_primo_contatto.prezzo)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-
-                    {/* ── Immobili Collegati Manualmente ── */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Collegati</h3>
@@ -1794,14 +1437,14 @@ const Leads = () => {
                         </Button>
                       </div>
 
-                      {!selectedLead.lead_immobili || selectedLead.lead_immobili.length === 0 ? (
+                      {!selectedCompratore.compratori_immobili || selectedCompratore.compratori_immobili.length === 0 ? (
                         <div className="py-6 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <Heart className="mx-auto text-gray-200 mb-2" size={24} />
                           <p className="text-xs text-gray-400 italic">Nessun immobile collegato manualmente.</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {selectedLead.lead_immobili.map((item) => (
+                          {selectedCompratore.compratori_immobili.map((item) => (
                             <div key={item.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
                               <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
                                 {item.immobili.copertina_url ? (
@@ -1848,40 +1491,38 @@ const Leads = () => {
                         </div>
                       )}
                     </div>
-
                   </TabsContent>
 
-                  {/* ── EVENTI TAB ── */}
                   <TabsContent value="eventi" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
-                        Appuntamenti ({leadEvents.length})
+                        Appuntamenti ({compratoreEvents.length})
                       </p>
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => { setEditingLeadEvent(null); openEventForLead(selectedLead); }}
+                        onClick={() => { setEditingEvent(null); openEventForCompratore(selectedCompratore); }}
                         className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-3 text-xs font-bold gap-1.5"
                       >
                         <Plus size={13} /> Nuovo Evento
                       </Button>
                     </div>
 
-                    {leadEvents.length === 0 ? (
+                    {compratoreEvents.length === 0 ? (
                       <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                         <Calendar className="mx-auto text-gray-200 mb-2" size={26} />
-                        <p className="text-xs text-gray-400 italic">Nessun appuntamento per questo lead.</p>
+                        <p className="text-xs text-gray-400 italic">Nessun appuntamento per questo contatto.</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {leadEvents.map((evt) => {
+                        {compratoreEvents.map((evt) => {
                           const colors = TIPOLOGIA_COLORS[evt.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
                           const isPast = evt.data < new Date().toISOString().slice(0, 10);
                           return (
                             <button
                               key={evt.id}
                               type="button"
-                              onClick={() => { setEditingLeadEvent(evt as unknown as Appointment); setIsEventModalOpen(true); }}
+                              onClick={() => { setEditingEvent(evt as unknown as Appointment); setIsEventModalOpen(true); }}
                               className="w-full text-left bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-start gap-3 hover:border-[#94b0ab]/30 transition-all"
                             >
                               <div
@@ -1911,30 +1552,29 @@ const Leads = () => {
                     )}
                   </TabsContent>
 
-                  {/* ── TASK TAB ── */}
                   <TabsContent value="task" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-semibold text-muted-foreground tracking-wide uppercase">
-                        Task ({leadTasks.length})
+                        Task ({compratoreTasks.length})
                       </p>
                       <Button
                         type="button"
                         size="sm"
-                        onClick={(e) => { e.preventDefault(); setIsLeadTaskModalOpen(true); }}
+                        onClick={(e) => { e.preventDefault(); setIsTaskModalOpen(true); }}
                         className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-7 px-3 text-[11px] font-bold gap-1"
                       >
                         <Plus size={12} /> Nuova Task
                       </Button>
                     </div>
 
-                    {leadTasks.length === 0 ? (
+                    {compratoreTasks.length === 0 ? (
                       <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                         <CheckSquare className="mx-auto text-gray-200 mb-2" size={24} />
-                        <p className="text-[11px] text-gray-400 italic">Nessuna task per questo lead.</p>
+                        <p className="text-[11px] text-gray-400 italic">Nessuna task per questo contatto.</p>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        {leadTasks.map((task) => {
+                        {compratoreTasks.map((task) => {
                           const STATO_BADGE: Record<string, string> = {
                             'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
                             'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
@@ -1970,7 +1610,7 @@ const Leads = () => {
                               </div>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); toggleLeadTaskUrgente(task.id, task.urgente); }}
+                                onClick={(e) => { e.stopPropagation(); toggleTaskUrgente(task.id, task.urgente); }}
                                 title={task.urgente ? 'Rimuovi urgenza' : 'Segna come urgente'}
                                 className={cn(
                                   'shrink-0 p-1 rounded-full transition-opacity',
@@ -1981,7 +1621,7 @@ const Leads = () => {
                               </button>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); cycleLeadTaskStato(task.id, task.stato); }}
+                                onClick={(e) => { e.stopPropagation(); cycleTaskStato(task.id, task.stato); }}
                                 className={cn(
                                   'text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 hover:opacity-75 transition-opacity',
                                   STATO_BADGE[task.stato] ?? 'bg-gray-100 text-gray-500'
@@ -1994,19 +1634,16 @@ const Leads = () => {
                         })}
                       </div>
                     )}
-
                   </TabsContent>
 
-                  {/* ── NOTE TAB ── */}
                   <TabsContent value="note" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
 
-                    {/* Messaggio dal sito (note_interne o prima nota da Sistema) */}
                     {(() => {
-                      const siteMsg = selectedLead.note_interne?.trim()
-                        ? selectedLead.note_interne
-                        : leadNotes.find((n) => n.autore !== 'Agente')?.testo;
+                      const siteMsg = selectedCompratore.note_interne?.trim()
+                        ? selectedCompratore.note_interne
+                        : compratoreNotes.find((n) => n.autore !== 'Agente')?.testo;
                       if (!siteMsg) return null;
-                      const siteDate = leadNotes.find((n) => n.autore !== 'Agente')?.created_at;
+                      const siteDate = compratoreNotes.find((n) => n.autore !== 'Agente')?.created_at;
                       return (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
                           <div className="flex items-center gap-2">
@@ -2023,15 +1660,14 @@ const Leads = () => {
                       );
                     })()}
 
-                    {/* List of notes */}
                     <div className="space-y-2">
-                      {leadNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedLead.note_interne && leadNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
+                      {compratoreNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedCompratore.note_interne && compratoreNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
                         <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <FileText className="mx-auto text-gray-200 mb-2" size={26} />
-                          <p className="text-xs text-gray-400 italic">Nessuna nota per questo lead.</p>
+                          <p className="text-xs text-gray-400 italic">Nessuna nota per questo contatto.</p>
                         </div>
                       ) : (
-                        leadNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
+                        compratoreNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
                           <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
@@ -2045,13 +1681,12 @@ const Leads = () => {
                       )}
                     </div>
 
-                    {/* New note input */}
                     <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 space-y-3">
                       <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Aggiungi nota</Label>
                       <Textarea
                         value={newNoteText}
                         onChange={(e) => setNewNoteText(e.target.value)}
-                        placeholder="Scrivi una nota su questo lead..."
+                        placeholder="Scrivi una nota su questo contatto..."
                         className="rounded-xl border-gray-200 bg-slate-50/50 min-h-[80px] resize-none text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -2082,12 +1717,10 @@ const Leads = () => {
                 );
               })()}
 
-              {/* Fixed Footer */}
               {(() => {
-                const isCreate = !selectedLead.id;
+                const isCreate = !selectedCompratore.id;
                 return (
                   <div className="px-7 py-4 bg-white border-t shrink-0 flex items-center justify-between gap-4">
-                    {/* Autosave status (edit mode only) */}
                     {!isCreate ? (
                       <div className="flex items-center gap-1.5 min-w-0">
                         {autoSaveStatus === 'saving' && (
@@ -2106,7 +1739,6 @@ const Leads = () => {
                         )}
                       </div>
                     ) : <div />}
-                    {/* Save button */}
                     <Button
                       type="submit"
                       disabled={isSaving}
@@ -2132,25 +1764,24 @@ const Leads = () => {
           )}
         </DialogContent>
       </Dialog>
-      {/* Task Modal */}
+
       <TaskModal
-        open={isLeadTaskModalOpen}
-        onClose={() => setIsLeadTaskModalOpen(false)}
-        defaultLeadId={selectedLead?.id}
-        defaultLeadName={selectedLead ? `${selectedLead.nome} ${selectedLead.cognome}` : undefined}
+        open={isTaskModalOpen}
+        onClose={() => setIsTaskModalOpen(false)}
+        defaultContattoId={selectedCompratore?.id}
+        defaultContattoName={selectedCompratore ? `${selectedCompratore.nome} ${selectedCompratore.cognome}` : undefined}
         onSaved={async () => {
-          setIsLeadTaskModalOpen(false);
-          if (!selectedLead?.id) return;
+          setIsTaskModalOpen(false);
+          if (!selectedCompratore?.id) return;
           const { data } = await supabase
             .from('tasks')
-            .select('id, nota, data, ora, stato, agente_id')
-            .eq('lead_id', selectedLead.id)
+            .select('id, titolo, nota, data, ora, stato, agente_id, telefono, urgente')
+            .eq('contatto_id', selectedCompratore.id)
             .order('data', { ascending: true });
-          if (data) setLeadTasks(data);
+          if (data) setCompratoreTasks(data);
         }}
       />
 
-      {/* Task Detail Mini Modal */}
       <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
         <DialogContent className="sm:max-w-sm border-none shadow-2xl p-0 overflow-hidden gap-0">
           {taskDetail && (() => {
@@ -2178,7 +1809,7 @@ const Leads = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => toggleLeadTaskUrgente(taskDetail.id, taskDetail.urgente)}
+                    onClick={() => toggleTaskUrgente(taskDetail.id, taskDetail.urgente)}
                     title={taskDetail.urgente ? 'Rimuovi urgenza' : 'Segna come urgente'}
                     className={cn(
                       'shrink-0 p-1.5 rounded-full transition-colors',
@@ -2189,7 +1820,7 @@ const Leads = () => {
                   </button>
                   <button
                     type="button"
-                    onClick={() => cycleLeadTaskStato(taskDetail.id, taskDetail.stato)}
+                    onClick={() => cycleTaskStato(taskDetail.id, taskDetail.stato)}
                     className={cn(
                       'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border shrink-0 hover:opacity-75 transition-opacity',
                       STATO_BADGE[taskDetail.stato] ?? 'bg-gray-100 text-gray-500'
@@ -2221,7 +1852,6 @@ const Leads = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Property Picker Dialog */}
       <Dialog open={isPropertyPickerOpen} onOpenChange={(open) => { setIsPropertyPickerOpen(open); if (!open) setPropertySearch(''); }}>
         <DialogContent className="max-w-2xl max-h-[80vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
           <DialogHeader className="px-7 pt-6 pb-4 border-b bg-white shrink-0">
@@ -2248,7 +1878,6 @@ const Leads = () => {
               <div className="py-16 text-center text-gray-400 text-sm">Nessun immobile trovato.</div>
             ) : filteredPickerProperties.map((prop) => (
               <div key={prop.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
-                {/* Thumbnail */}
                 <div className="w-20 shrink-0 bg-slate-100 relative overflow-hidden">
                   {prop.copertina_url ? (
                     <img src={prop.copertina_url} alt={prop.titolo} className="w-full h-full object-cover" />
@@ -2258,7 +1887,6 @@ const Leads = () => {
                     </div>
                   )}
                 </div>
-                {/* Info */}
                 <div className="flex-1 px-4 py-3 min-w-0">
                   <p className="font-bold text-gray-900 truncate text-sm leading-tight">{prop.titolo}</p>
                   {prop.zone?.nome && (
@@ -2268,7 +1896,6 @@ const Leads = () => {
                   )}
                   <p className="text-sm font-bold text-[#94b0ab] mt-1.5">{formatPrice(prop.prezzo)}</p>
                 </div>
-                {/* CTA */}
                 <div className="flex items-center pr-4 shrink-0">
                   <Button
                     type="button"
@@ -2285,56 +1912,54 @@ const Leads = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Quick Task Modal (from list row) */}
       <TaskModal
         open={isQuickTaskModalOpen}
         onClose={() => setIsQuickTaskModalOpen(false)}
-        defaultLeadId={quickTaskLeadId}
-        defaultLeadName={quickTaskLeadName}
-        onSaved={() => { setIsQuickTaskModalOpen(false); fetchLeads(); }}
+        defaultContattoId={quickTaskId}
+        defaultContattoName={quickTaskName}
+        onSaved={() => { setIsQuickTaskModalOpen(false); fetchCompratori(); }}
       />
 
-      {/* Event Form Modal */}
       <EventFormModal
         open={isEventModalOpen}
-        onClose={() => { setIsEventModalOpen(false); setEditingLeadEvent(null); }}
+        onClose={() => { setIsEventModalOpen(false); setEditingEvent(null); }}
         onSaved={async () => {
           setIsEventModalOpen(false);
-          setEditingLeadEvent(null);
-          if (selectedLead?.id) {
+          setEditingEvent(null);
+          if (selectedCompratore?.id) {
             const { data } = await supabase
               .from('appuntamenti')
-              .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id')
-              .eq('lead_id', selectedLead.id)
+              .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id, contatto_id')
+              .eq('contatto_id', selectedCompratore.id)
               .order('data', { ascending: true })
               .order('ora_inizio', { ascending: true });
-            setLeadEvents(data || []);
+            setCompratoreEvents(data || []);
           }
         }}
-        event={editingLeadEvent ?? undefined}
-        defaultLeadId={editingLeadEvent ? undefined : eventModalDefaultLeadId}
-        defaultLeadName={editingLeadEvent ? undefined : eventModalDefaultLeadName}
+        event={editingEvent ?? undefined}
+        defaultContattoId={editingEvent ? undefined : eventModalDefaultId}
+        defaultContattoName={editingEvent ? undefined : eventModalDefaultName}
         agents={agentsForEventModal}
         properties={propertiesForEventModal}
       />
 
-      <AlertDialog open={!!leadToDelete} onOpenChange={(open) => !open && setLeadToDelete(null)}>
+      <AlertDialog open={!!compratoreToDelete} onOpenChange={(open) => !open && setCompratoreToDelete(null)}>
         <AlertDialogContent className="border-none shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-500 font-medium">
-              Stai per eliminare <span className="font-bold text-gray-800">{leadToDelete?.nome} {leadToDelete?.cognome}</span>. L'operazione è irreversibile.
+              Stai per eliminare <span className="font-bold text-gray-800">{compratoreToDelete?.nome} {compratoreToDelete?.cognome}</span>. L'operazione è irreversibile.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteLead} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteCompratore} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-    </AdminLayout>
+    </div>
   );
 };
 
-export default Leads;
+export default CompratoriView;

@@ -183,7 +183,7 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
 
   // La query ordina i documenti per fase alfabeticamente ("Archivio" prima di
   // "In Vendita"): qui si riordinano i gruppi secondo l'ordine reale della
-  // pipeline (Acquisizione → In Vendita → Venduto → Archivio).
+  // pipeline (In Vendita → Venduto → Archivio).
   const fasiOrdinate = Object.keys(documentiPerFase).sort(
     (a, b) => FASI_PIPELINE.indexOf(a as (typeof FASI_PIPELINE)[number]) - FASI_PIPELINE.indexOf(b as (typeof FASI_PIPELINE)[number]),
   );

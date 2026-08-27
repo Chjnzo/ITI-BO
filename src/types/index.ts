@@ -75,7 +75,40 @@ export interface Property {
   tipologia?: string;
 }
 
-export type FasePipeline = 'Acquisizione' | 'In Vendita' | 'Venduto' | 'Archivio';
+export type FasePipeline = 'In Vendita' | 'Venduto' | 'Archivio';
+
+export type FaseProprietario = 'Contatto' | 'Incontro/Sopralluogo' | 'Rivalutazione' | 'Presa in carico';
+
+export interface Proprietario {
+  id: string;
+  agente_id?: string | null;
+  nome: string;
+  cognome?: string | null;
+  email?: string | null;
+  telefono?: string | null;
+  professione?: string | null;
+  note_interne?: string | null;
+  is_deleted: boolean;
+  deleted_at?: string | null;
+  _version: number;
+  created_at: string;
+}
+
+export interface ProprietarioPratica {
+  id: string;
+  proprietario_id: string;
+  via: string;
+  tipologia?: string | null;
+  citta?: string | null;
+  fase: FaseProprietario;
+  zona_venditore?: string | null;
+  motivazione_vendita?: string | null;
+  scadenza_esclusiva?: string | null;
+  valutazione_stimata?: number | null;
+  immobile_id?: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface ImmobilePipelineStato {
   id: string;
@@ -105,6 +138,16 @@ export interface ImmobileDocumento {
   drive_file_id?: string | null;
 }
 
+export interface ProprietarioPraticaDocumento {
+  id: string;
+  pratica_id: string;
+  fase: FaseProprietario;
+  documento: string;
+  stato: 'Da fare' | 'Fatto';
+  completato_at?: string | null;
+  created_at: string;
+}
+
 export interface ImmobileAlert {
   id: string;
   immobile_id: string;
@@ -113,6 +156,20 @@ export interface ImmobileAlert {
   risolto: boolean;
   created_at: string;
   risolto_at?: string | null;
+}
+
+export type AlertEntitaTipo = 'immobile' | 'proprietario';
+export type AlertDestinatario = 'agente_responsabile' | 'tutti';
+
+export interface AlertRegola {
+  id: string;
+  entita_tipo: AlertEntitaTipo;
+  fase: FasePipeline | FaseProprietario;
+  giorni_soglia: number;
+  destinatario: AlertDestinatario;
+  attiva: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface LeadRicerca {

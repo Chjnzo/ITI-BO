@@ -4,7 +4,7 @@ import { showError } from '@/utils/toast';
 import { generaChecklistPerFase, upsertFasePipeline, SOTTOFASI_PIPELINE } from '@/lib/pipelineChecklist';
 import type { FasePipeline } from '@/types';
 
-export const FASI_PIPELINE: FasePipeline[] = ['Acquisizione', 'In Vendita', 'Venduto', 'Archivio'];
+export const FASI_PIPELINE: FasePipeline[] = ['In Vendita', 'Venduto', 'Archivio'];
 export { SOTTOFASI_PIPELINE };
 
 export interface PipelineCard {
@@ -57,8 +57,11 @@ export const useImmobiliPipeline = () => {
       return ((data ?? []) as unknown as RawImmobileRow[]).map((row) => {
         // Immobili creati prima dell'introduzione della pipeline (o dal Wizard,
         // che non crea ancora la riga) non hanno immobile_pipeline_stato:
-        // li trattiamo come 'Acquisizione' finché non vengono spostati.
-        const fase = row.pipeline?.fase ?? 'Acquisizione';
+        // li trattiamo come 'In Vendita' (prima fase rimasta dopo la rimozione
+        // di 'Acquisizione', vedi migration
+        // 20260827150000_remove_acquisizione_fase_immobili.sql) finché non
+        // vengono spostati.
+        const fase = row.pipeline?.fase ?? 'In Vendita';
         // La checklist mostrata/contata deve riflettere solo la fase corrente:
         // un immobile che ha già attraversato più fasi accumula righe in
         // immobile_documenti per ciascuna di esse, ma il progresso in Kanban

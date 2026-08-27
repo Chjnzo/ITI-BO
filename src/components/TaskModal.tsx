@@ -27,6 +27,9 @@ interface TaskModalProps {
   onSaved?: () => void;
   defaultLeadId?: string;
   defaultLeadName?: string;
+  /** Generic contatto (compratore/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
+  defaultContattoId?: string;
+  defaultContattoName?: string;
 }
 
 const TASK_COLORS = [
@@ -37,7 +40,7 @@ const TASK_COLORS = [
   { id: 'violet', hex: '#8b5cf6', label: 'Viola' },
 ];
 
-const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: TaskModalProps) => {
+const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
   const [telefono, setTelefono] = useState('');
   const [leadId, setLeadId] = useState('');
@@ -82,6 +85,8 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     }
   }, [open, defaultLeadId, defaultLeadName]);
 
+  const isContattoLinked = !!defaultContattoId;
+
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
   const searchLeads = async (q: string) => {
@@ -122,7 +127,8 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     const { error } = await supabase.from('tasks').insert({
       titolo: titolo.trim(),
       telefono: telefono.trim() || null,
-      lead_id: leadId || null,
+      lead_id: isContattoLinked ? null : (leadId || null),
+      contatto_id: defaultContattoId || null,
       agente_id: agenteId || currentUserId,
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
@@ -226,10 +232,14 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             </Select>
           </div>
 
-          {/* Lead collegato (opzionale) */}
+          {/* Lead/contatto collegato (opzionale) */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Lead collegato</Label>
-            {defaultLeadId ? (
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Contatto collegato</Label>
+            {isContattoLinked ? (
+              <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
+                {defaultContattoName || 'Contatto selezionato'}
+              </div>
+            ) : defaultLeadId ? (
               <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
                 {defaultLeadName || 'Lead selezionato'}
               </div>

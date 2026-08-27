@@ -25,9 +25,20 @@ INSERT INTO auth.identities (
     (gen_random_uuid(), '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000002',
      '{"sub":"00000000-0000-0000-0000-000000000002","email":"agente@locale.test"}', 'email', now(), now(), now());
 
-INSERT INTO public.profili_agenti (id, nome_completo, colore_calendario, is_admin) VALUES
-    ('00000000-0000-0000-0000-000000000001', 'Anna Admin', '#94b0ab', true),
-    ('00000000-0000-0000-0000-000000000002', 'Marco Agente', '#3b82f6', false);
+-- ON CONFLICT DO UPDATE: dalla Fase 6 del pivot Proprietari/Compratori/
+-- Collaboratori, un trigger AFTER INSERT su auth.users auto-crea già una riga
+-- profili_agenti (ruolo 'Agente' di default) per ciascuno dei due utenti
+-- inseriti sopra — un INSERT semplice qui fallirebbe per violazione della PK.
+-- `ruolo` sostituisce `is_admin` come colonna scritta esplicitamente: is_admin
+-- resta in tabella ma è ora derivato da ruolo via trigger (vedi la migration
+-- di Fase 6), quindi impostarlo qui verrebbe comunque sovrascritto.
+INSERT INTO public.profili_agenti (id, nome_completo, colore_calendario, ruolo) VALUES
+    ('00000000-0000-0000-0000-000000000001', 'Anna Admin', '#94b0ab', 'Admin'),
+    ('00000000-0000-0000-0000-000000000002', 'Marco Agente', '#3b82f6', 'Agente')
+ON CONFLICT (id) DO UPDATE SET
+    nome_completo = EXCLUDED.nome_completo,
+    colore_calendario = EXCLUDED.colore_calendario,
+    ruolo = EXCLUDED.ruolo;
 
 -- -----------------------------------------------------------------------------
 -- Zone OMI (Bergamo area)

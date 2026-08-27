@@ -17,6 +17,14 @@ const Alerts = () => {
     navigate('/immobili', { state: { openImmobileId: immobileId } });
   };
 
+  const apriAutomatico = (alert: AlertAutomatico) => {
+    if (alert.entita === 'immobile') {
+      navigate('/immobili', { state: { openImmobileId: alert.entitaId } });
+    } else {
+      navigate('/proprietari', { state: { openPraticaId: alert.entitaId } });
+    }
+  };
+
   const totale = manuali.length + automatici.length;
 
   return (
@@ -24,7 +32,7 @@ const Alerts = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-extrabold text-[#1a1a1a]">Alert</h1>
         <p className="text-gray-500 mt-1">
-          Promemoria manuali e segnalazioni automatiche (fasi ferme, documenti non generati) su tutti gli immobili.
+          Promemoria manuali su immobili e segnalazioni automatiche (fasi ferme, documenti non generati) su immobili e pratiche proprietari.
         </p>
       </div>
 
@@ -63,7 +71,7 @@ const Alerts = () => {
               </h2>
               <div className="space-y-2">
                 {automatici.map((alert) => (
-                  <AutomaticoCard key={alert.id} alert={alert} onOpen={() => apriImmobile(alert.immobileId)} />
+                  <AutomaticoCard key={alert.id} alert={alert} onOpen={() => apriAutomatico(alert)} />
                 ))}
               </div>
             </section>
@@ -104,7 +112,7 @@ const AutomaticoCard = ({ alert, onOpen }: { alert: AlertAutomatico; onOpen: () 
       <Icon size={18} className={cn('shrink-0', alert.tipo === 'stagnazione' ? 'text-orange-500' : 'text-sky-500')} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-gray-800 truncate">
-          {alert.immobileTitolo} — {alert.immobileIndirizzo}, {alert.immobileCitta}
+          {alert.titolo} — {alert.indirizzo}, {alert.citta}
         </p>
         <p className="text-sm text-gray-600">{alert.messaggio}</p>
       </div>

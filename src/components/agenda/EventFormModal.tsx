@@ -31,6 +31,7 @@ export interface Appointment {
   agente_id: string;
   tipologia: string;
   lead_id: string | null;
+  contatto_id?: string | null;
   immobile_id: string | null;
   data: string;
   ora_inizio: string | null;
@@ -146,6 +147,9 @@ interface EventFormModalProps {
   defaultTimeStart?: string;
   defaultLeadId?: string;
   defaultLeadName?: string;
+  /** Generic contatto (compratore/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
+  defaultContattoId?: string;
+  defaultContattoName?: string;
   agents: AgentProfile[];
   properties: Property[];
   coloriMap?: TipologieMap;
@@ -156,9 +160,11 @@ const EventFormModal = ({
   open, onClose, onSaved, event,
   defaultAgentId, defaultDate, defaultTimeStart,
   defaultLeadId, defaultLeadName,
+  defaultContattoId, defaultContattoName,
   agents, properties, coloriMap, tipologieList,
 }: EventFormModalProps) => {
   const isEdit = !!event;
+  const isContattoLinked = !!(event ? event.contatto_id : defaultContattoId);
 
   const [agenteId, setAgenteId] = useState('');
   const [tipologia, setTipologia] = useState('');
@@ -227,7 +233,8 @@ const EventFormModal = ({
       const payload = {
         agente_id: agenteId,
         tipologia: tipologia || 'Altro',
-        lead_id: leadId || null,
+        lead_id: isContattoLinked ? null : (leadId || null),
+        contatto_id: defaultContattoId || null,
         immobile_id: immobileId !== 'none' ? immobileId : null,
         data: format(selectedDate, 'yyyy-MM-dd'),
         ora_inizio: oraInizio || null,
@@ -336,7 +343,8 @@ const EventFormModal = ({
     const payload = {
       agente_id: agenteId,
       tipologia: tipologia || 'Altro',
-      lead_id: leadId || null,
+      lead_id: isContattoLinked ? null : (leadId || null),
+      contatto_id: isContattoLinked ? (event?.contatto_id ?? defaultContattoId ?? null) : null,
       immobile_id: immobileId !== 'none' ? immobileId : null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora_inizio: oraInizio || null,
@@ -556,20 +564,26 @@ const EventFormModal = ({
             </Select>
           </div>
 
-          {/* Lead */}
+          {/* Lead / contatto collegato */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead collegato</Label>
-            <Combobox
-              items={leadItems}
-              value={leadId}
-              onSelect={handleLeadSelect}
-              onSearch={searchLeads}
-              placeholder="Cerca lead per nome o telefono..."
-              searchPlaceholder="Nome, cognome o telefono..."
-              emptyMessage="Nessun lead trovato."
-            />
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Contatto collegato</Label>
+            {isContattoLinked ? (
+              <div className="h-12 flex items-center px-4 rounded-xl border border-gray-100 bg-gray-100 text-sm text-gray-700 font-medium">
+                {defaultContattoName || 'Contatto selezionato'}
+              </div>
+            ) : (
+              <Combobox
+                items={leadItems}
+                value={leadId}
+                onSelect={handleLeadSelect}
+                onSearch={searchLeads}
+                placeholder="Cerca lead per nome o telefono..."
+                searchPlaceholder="Nome, cognome o telefono..."
+                emptyMessage="Nessun lead trovato."
+              />
+            )}
             {/* Phone + WhatsApp + Scheda lead */}
-            {leadPhone && (
+            {!isContattoLinked && leadPhone && (
               <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-4 py-3 mt-2">
                 <Phone size={15} className="text-green-600 shrink-0" />
                 <span className="font-bold text-green-800 text-sm flex-1 tracking-wide">{leadPhone}</span>
@@ -594,7 +608,7 @@ const EventFormModal = ({
               </div>
             )}
             {/* Scheda lead anche senza telefono */}
-            {leadId && !leadPhone && (
+            {!isContattoLinked && leadId && !leadPhone && (
               <button
                 type="button"
                 onClick={openLeadSheet}
