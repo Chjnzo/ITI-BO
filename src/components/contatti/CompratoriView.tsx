@@ -944,10 +944,9 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
           <div className="overflow-x-auto w-full">
             <table className="w-full text-left table-fixed">
               <colgroup>
+                <col style={{ width: '40%' }} />
+                <col style={{ width: '15%' }} />
                 <col style={{ width: '35%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '25%' }} />
-                <col style={{ width: '15%' }} />
                 <col style={{ width: '10%' }} />
               </colgroup>
               <thead>
@@ -955,7 +954,6 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Contatto</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Stato</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Immobile collegato</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Creato il</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
                 </tr>
               </thead>
@@ -969,12 +967,11 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       </td>
                       <td className="px-8 py-5"><div className="h-5 bg-gray-100 rounded-full animate-pulse w-20" /></td>
                       <td className="px-8 py-5"><div className="h-3 bg-gray-50 rounded-lg animate-pulse w-32" /></td>
-                      <td className="px-8 py-5"><div className="h-3 bg-gray-50 rounded-lg animate-pulse w-20" /></td>
                       <td className="px-8 py-5"><div className="h-8 bg-gray-50 rounded-xl animate-pulse w-16 ml-auto" /></td>
                     </tr>
                   ))
                 ) : filteredCompratori.length === 0 ? (
-                  <tr><td colSpan={5} className="px-8 py-16 text-center text-gray-300 italic">Nessun compratore trovato</td></tr>
+                  <tr><td colSpan={4} className="px-8 py-16 text-center text-gray-300 italic">Nessun compratore trovato</td></tr>
                 ) : pagedCompratori.map((c) => (
                   <tr
                     key={c.id}
@@ -1019,11 +1016,6 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       {c.compratori_immobili?.[0]?.immobili?.titolo
                         ? <span className="text-xs text-gray-500 truncate block">{c.compratori_immobili[0].immobili.titolo}</span>
                         : <span className="text-xs text-gray-200">—</span>}
-                    </td>
-                    <td className="px-8 py-5">
-                      <span className="text-xs text-gray-400">
-                        {safeFormat(c.created_at, 'd MMM yyyy', { locale: it })}
-                      </span>
                     </td>
                     <td className="px-8 py-5">
                       <div
