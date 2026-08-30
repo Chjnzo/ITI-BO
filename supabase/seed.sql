@@ -137,3 +137,67 @@ INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia,
 -- CRM associato) -- il backfill non deve toccarla né fallire su lead_id NULL.
 INSERT INTO public.valutazioni (lead_id, agente_id, indirizzo, citta, tipologia, superficie_mq, zona_omi_id, stato, slug, stima_min, stima_max) VALUES
     (NULL, NULL, 'Via Sudorno 3', 'Bergamo', 'Trilocale', 90, NULL, 'Bozza', 'trilocale-sudorno-3', NULL, NULL);
+
+-- -----------------------------------------------------------------------------
+-- Pivot Proprietari/Compratori/Collaboratori: dati nativi su contatti/
+-- proprietari/proprietari_pratiche/compratori/compratori_immobili/
+-- collaboratori. NOTE: separati dai leads sopra -- il backfill
+-- (scripts/backfill-contatti-pivot.sql) resta l'unico modo per convertire i
+-- leads esistenti, qui popoliamo solo contatti creati "nativi" post-pivot.
+-- -----------------------------------------------------------------------------
+
+-- Proprietari con pratica, uno per fase -- Contatto e Incontro/Sopralluogo
+-- verificano il kanban a riposo, Rivalutazione è lasciata apposta come
+-- penultima fase: trascinala su "Presa in carico" dall'UI per collaudare dal
+-- vivo la creazione automatica dell'immobile (useProprietariPipeline.spostaFase).
+INSERT INTO public.contatti (id, agente_id, lead_id_origine) VALUES
+    ('00000000-0000-0000-0000-000000000501', '00000000-0000-0000-0000-000000000002', NULL),
+    ('00000000-0000-0000-0000-000000000502', '00000000-0000-0000-0000-000000000001', NULL),
+    ('00000000-0000-0000-0000-000000000503', '00000000-0000-0000-0000-000000000002', NULL);
+
+INSERT INTO public.proprietari (id, nome, cognome, email, telefono) VALUES
+    ('00000000-0000-0000-0000-000000000501', 'Roberto', 'Marchetti', 'roberto.marchetti@example.test', '3331112233'),
+    ('00000000-0000-0000-0000-000000000502', 'Sara', 'Bellini', 'sara.bellini@example.test', '3332223344'),
+    ('00000000-0000-0000-0000-000000000503', 'Davide', 'Conti', 'davide.conti@example.test', '3333334455');
+
+INSERT INTO public.proprietari_pratiche (id, proprietario_id, via, tipologia, citta, fase) VALUES
+    ('00000000-0000-0000-0000-000000000511', '00000000-0000-0000-0000-000000000501', 'Via Palma il Vecchio 15', 'Bilocale', 'Bergamo', 'Contatto'),
+    ('00000000-0000-0000-0000-000000000512', '00000000-0000-0000-0000-000000000502', 'Via San Bernardino 4', 'Trilocale', 'Bergamo', 'Incontro/Sopralluogo'),
+    ('00000000-0000-0000-0000-000000000513', '00000000-0000-0000-0000-000000000503', 'Via Pignolo 33', 'Attico', 'Bergamo', 'Rivalutazione');
+
+-- Checklist della sola pratica in 'Contatto' -- le altre due fasi non hanno
+-- documenti a catalogo (vedi proprietari_documenti_catalogo), coerente con
+-- generaChecklistPraticaPerFase che in quel caso non inserisce nulla.
+INSERT INTO public.proprietari_pratica_documenti (pratica_id, fase, documento) VALUES
+    ('00000000-0000-0000-0000-000000000511', 'Contatto', 'Doc Valutazione');
+
+-- Edge case: proprietario arrivato dal form pubblico (upsert_lead), nessuna
+-- pratica ancora avviata -- collauda ProprietariList e l'azione "Avvia pratica".
+INSERT INTO public.contatti (id, agente_id, lead_id_origine) VALUES
+    ('00000000-0000-0000-0000-000000000504', '00000000-0000-0000-0000-000000000001', NULL);
+
+INSERT INTO public.proprietari (id, nome, cognome, email, telefono) VALUES
+    ('00000000-0000-0000-0000-000000000504', 'Marco', 'Fumagalli', 'marco.fumagalli.new@example.test', '3334445500');
+
+-- Compratori: uno con interesse su un immobile esistente, uno con criteri di
+-- ricerca vuoti (stesso paio di edge case già coperto lato leads).
+INSERT INTO public.contatti (id, agente_id, lead_id_origine) VALUES
+    ('00000000-0000-0000-0000-000000000521', '00000000-0000-0000-0000-000000000002', NULL),
+    ('00000000-0000-0000-0000-000000000522', '00000000-0000-0000-0000-000000000001', NULL);
+
+INSERT INTO public.compratori (id, nome, cognome, email, telefono, budget, zone_ricercate, tipologia_ricerca, stato) VALUES
+    ('00000000-0000-0000-0000-000000000521', 'Federico', 'Galli', 'federico.galli@example.test', '3335556677', 170000, ARRAY['Malpensata'], ARRAY['Bilocale'], 'Contattato'),
+    ('00000000-0000-0000-0000-000000000522', 'Alice', 'Moretti', 'alice.moretti@example.test', '3336667788', NULL, NULL, NULL, 'Nuovo');
+
+INSERT INTO public.compratori_immobili (compratore_id, immobile_id, stato_interesse) VALUES
+    ('00000000-0000-0000-0000-000000000521', '00000000-0000-0000-0000-000000000102', 'Interessato');
+
+-- Collaboratori: certificatore/notaio e responsabile portale, nessuna
+-- pipeline -- solo CRUD semplice (CollaboratoriView.tsx).
+INSERT INTO public.contatti (id, agente_id, lead_id_origine) VALUES
+    ('00000000-0000-0000-0000-000000000531', '00000000-0000-0000-0000-000000000001', NULL),
+    ('00000000-0000-0000-0000-000000000532', '00000000-0000-0000-0000-000000000002', NULL);
+
+INSERT INTO public.collaboratori (id, nome, cognome, email, telefono, professione) VALUES
+    ('00000000-0000-0000-0000-000000000531', 'Giovanna', 'Riva', 'giovanna.riva@example.test', '3337778800', 'Notaio'),
+    ('00000000-0000-0000-0000-000000000532', 'Simone', 'Pes', 'simone.pes@example.test', '3338889911', 'Responsabile Getrix');
