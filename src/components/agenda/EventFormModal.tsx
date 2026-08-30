@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag } from 'lucide-react';
+import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -137,6 +137,15 @@ interface LeadDetail {
   assegnato_a?: string | null;
 }
 
+interface RelatedAppuntamento {
+  id: string;
+  data: string;
+  ora_inizio: string | null;
+  tipologia: string;
+  agente_id: string;
+  motivo: 'contatto' | 'immobile' | 'indirizzo';
+}
+
 interface EventFormModalProps {
   open: boolean;
   onClose: () => void;
@@ -183,9 +192,11 @@ const EventFormModal = ({
   const [leadSheet, setLeadSheet] = useState(false);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [isLoadingLeadDetail, setIsLoadingLeadDetail] = useState(false);
+  const [relatedAppuntamenti, setRelatedAppuntamenti] = useState<RelatedAppuntamento[]>([]);
 
   const autosavedIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relatedCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -261,6 +272,70 @@ const EventFormModal = ({
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, open, selectedDate, agenteId, tipologia, leadId, immobileId, oraInizio, oraFine, note, indirizzo]);
+
+  // Solo avviso informativo (non blocca il salvataggio): appena si collega un
+  // contatto/lead, un immobile o si scrive un indirizzo, cerca altri
+  // appuntamenti già fissati per la stessa entità e li mostra in un banner.
+  // Priorità immobile_id/contatto_id/lead_id (match esatto) sull'indirizzo
+  // libero (ILIKE, usato solo quando non c'è un immobile collegato — copre il
+  // caso "ho scritto la via/il paese ma non ho selezionato l'immobile dalla
+  // lista").
+  useEffect(() => {
+    if (relatedCheckTimerRef.current) clearTimeout(relatedCheckTimerRef.current);
+
+    if (!open) {
+      setRelatedAppuntamenti([]);
+      return;
+    }
+
+    const contattoId = isContattoLinked ? (event?.contatto_id ?? defaultContattoId ?? null) : null;
+    const currentLeadId = !isContattoLinked ? (leadId || null) : null;
+    const currentImmobileId = immobileId !== 'none' ? immobileId : null;
+    const currentIndirizzo = indirizzo.trim();
+
+    if (!contattoId && !currentLeadId && !currentImmobileId && currentIndirizzo.length < 4) {
+      setRelatedAppuntamenti([]);
+      return;
+    }
+
+    relatedCheckTimerRef.current = setTimeout(async () => {
+      const excludeIds = [event?.id, autosavedIdRef.current].filter((v): v is string => !!v);
+      const matches = new Map<string, RelatedAppuntamento>();
+
+      const pushRows = (rows: Omit<RelatedAppuntamento, 'motivo'>[] | null, motivo: RelatedAppuntamento['motivo']) => {
+        for (const r of rows ?? []) {
+          if (excludeIds.includes(r.id) || matches.has(r.id)) continue;
+          matches.set(r.id, { ...r, motivo });
+        }
+      };
+
+      const cols = 'id, data, ora_inizio, tipologia, agente_id';
+
+      if (contattoId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('contatto_id', contattoId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'contatto');
+      } else if (currentLeadId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('lead_id', currentLeadId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'contatto');
+      }
+
+      if (currentImmobileId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('immobile_id', currentImmobileId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'immobile');
+      } else if (currentIndirizzo.length >= 4) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .ilike('indirizzo_appuntamento', `%${currentIndirizzo}%`).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'indirizzo');
+      }
+
+      setRelatedAppuntamenti(Array.from(matches.values()).sort((a, b) => a.data.localeCompare(b.data)));
+    }, 400);
+
+    return () => { if (relatedCheckTimerRef.current) clearTimeout(relatedCheckTimerRef.current); };
+  }, [open, isContattoLinked, defaultContattoId, event?.contatto_id, event?.id, leadId, immobileId, indirizzo]);
 
   const handleClose = () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -389,6 +464,14 @@ const EventFormModal = ({
 
   const formatPrice = (v: number | null) =>
     v != null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v) : null;
+
+  const nomeAgente = (id: string) => agents.find(a => a.id === id)?.nome_completo ?? 'Agente';
+
+  const MOTIVO_LABEL: Record<RelatedAppuntamento['motivo'], string> = {
+    contatto: 'per questo contatto',
+    immobile: 'per questo immobile',
+    indirizzo: 'a questo indirizzo',
+  };
 
   return (
     <>
@@ -662,6 +745,28 @@ const EventFormModal = ({
               emptyMessage="Nessun immobile trovato."
             />
           </div>
+
+          {/* Avviso informativo: altri appuntamenti già fissati per lo stesso contatto/immobile/indirizzo */}
+          {relatedAppuntamenti.length > 0 && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 space-y-2">
+              <div className="flex items-center gap-2 text-sky-700 font-semibold text-xs uppercase tracking-widest">
+                <Info size={14} />
+                Altri appuntamenti trovati ({relatedAppuntamenti.length})
+              </div>
+              <div className="space-y-1.5">
+                {relatedAppuntamenti.map((r) => (
+                  <p key={r.id} className="text-sm text-sky-900">
+                    <span className="font-semibold">
+                      {format(parseISO(r.data), "d MMM yyyy", { locale: it })}
+                      {r.ora_inizio ? ` alle ${r.ora_inizio.slice(0, 5)}` : ''}
+                    </span>
+                    {' — '}{r.tipologia} con {nomeAgente(r.agente_id)}{' '}
+                    <span className="text-sky-600">({MOTIVO_LABEL[r.motivo]})</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Data */}
           <div className="space-y-2">
