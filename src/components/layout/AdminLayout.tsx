@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing, KeyRound, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -18,6 +19,7 @@ const SIDEBAR_EXPANDED_W  = 224; // px — full label width
 const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState<boolean>(() => {
@@ -38,6 +40,10 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // Svuota la cache React Query: senza questo, il prossimo utente che fa login
+    // nella stessa tab (es. Admin -> logout -> Agente) vede dati/ruolo cache-ati
+    // del vecchio utente finché ogni singola query non scade per staleTime.
+    queryClient.clear();
     navigate('/login');
   };
 
