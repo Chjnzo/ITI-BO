@@ -54,7 +54,7 @@ INSERT INTO public.zone_omi (id, codice_zona, comune, provincia, fascia, zona, p
 INSERT INTO public.immobili (id, titolo, prezzo, mq, locali, bagni, indirizzo, stato, slug, citta, in_evidenza, visibile) VALUES
     ('00000000-0000-0000-0000-000000000101', 'Trilocale in Città Alta', 320000, 85, '3', 1, 'Via Colle Aperto 12', 'Disponibile', 'trilocale-citta-alta', 'Bergamo', true, true),
     ('00000000-0000-0000-0000-000000000102', 'Bilocale Malpensata', 155000, 55, '2', 1, 'Via Broseta 40', 'Disponibile', 'bilocale-malpensata', 'Bergamo', false, true),
-    ('00000000-0000-0000-0000-000000000103', 'Villa con giardino a Seriate', 480000, 180, '5', 2, 'Via Roma 8', 'In Trattativa', 'villa-giardino-seriate', 'Seriate', true, true);
+    ('00000000-0000-0000-0000-000000000103', 'Villa con giardino a Seriate', 480000, 180, '5', 2, 'Via Roma 8', 'Disponibile', 'villa-giardino-seriate', 'Seriate', true, true);
 
 -- Edge case: immobile appena creato al primo contatto (fase Acquisizione), come da
 -- decisione "la card nasce già a 'Contatto', non solo a incarico firmato" --

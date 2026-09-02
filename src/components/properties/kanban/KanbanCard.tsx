@@ -60,11 +60,6 @@ const KanbanCard = ({ card, onOpen, dragging }: KanbanCardProps) => {
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.prezzo)}</span>
         <div className="flex items-center gap-1 min-w-0">
-          {card.sottofase && (
-            <Badge variant="secondary" className="font-semibold text-[0.65rem] truncate">
-              {card.sottofase}
-            </Badge>
-          )}
           {card.proprietario_nome && (
             <Badge variant="secondary" className="gap-1 font-semibold text-[0.65rem] max-w-[55%] truncate">
               <User size={11} className="shrink-0" />

@@ -47,7 +47,7 @@ export interface Property {
   descrizione?: string;
   classe_energetica?: string;
   garage?: boolean;
-  stato: 'Disponibile' | 'In Trattativa' | 'Venduto' | 'Bozza';
+  stato: 'Disponibile' | 'Venduto' | 'Bozza';
   copertina_url?: string;
   immagini_urls?: string[];
   slug?: string;
@@ -114,14 +114,12 @@ export interface ImmobilePipelineStato {
   id: string;
   immobile_id: string;
   fase: FasePipeline;
-  sottofase?: string;
   updated_at: string;
 }
 
 export interface DocumentoCatalogo {
   id: string;
   fase: FasePipeline;
-  sottofase?: string;
   documento: string;
   ordine: number;
 }

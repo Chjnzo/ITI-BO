@@ -5,13 +5,12 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Paperclip, Check, Loader2, ChevronDown, AlertTriangle, Plus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError } from '@/utils/toast';
 import { cn } from '@/lib/utils';
-import { FASI_PIPELINE, SOTTOFASI_PIPELINE, useImmobiliPipeline, type PipelineCard } from '@/hooks/useImmobiliPipeline';
+import { FASI_PIPELINE, useImmobiliPipeline, type PipelineCard } from '@/hooks/useImmobiliPipeline';
 import { useAlerts } from '@/hooks/useAlerts';
 import type { ImmobileDocumento } from '@/types';
 
@@ -41,7 +40,6 @@ interface PipelineDetailSheetProps {
 
 const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
   const queryClient = useQueryClient();
-  const { aggiornaSottofase } = useImmobiliPipeline();
   const { manuali, creaAlert, risolviAlert } = useAlerts();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadDoc = useRef<ImmobileDocumento | null>(null);
@@ -56,21 +54,6 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     setFasiEspanse(new Set());
     setNuovoAlert('');
   }, [card?.id]);
-
-  // Un immobile senza riga immobile_pipeline_stato (dati pre-esistenti alla
-  // pipeline, mai passati da un drag&drop) arriva qui con sottofase null: la
-  // pill risulterebbe vuota e, non essendo mai stata scritta una sottofase
-  // reale, generaChecklistPerFase non è mai scattata (la checklist resta
-  // vuota). Si imposta qui la prima sottofase della fase corrente non appena
-  // la sheet si apre, così la pill parte già valorizzata e la checklist si
-  // genera senza richiedere una selezione manuale.
-  useEffect(() => {
-    if (!card || card.sottofase) return;
-    const primaSottofase = SOTTOFASI_PIPELINE[card.fase][0];
-    if (primaSottofase) {
-      aggiornaSottofase({ immobileId: card.id, fase: card.fase, sottofase: primaSottofase });
-    }
-  }, [card?.id, card?.fase, card?.sottofase, aggiornaSottofase]);
 
   const alertImmobile = card ? manuali.filter((a) => a.immobile_id === card.id) : [];
 
@@ -202,21 +185,6 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               <Badge variant="secondary" className="font-semibold">{card.fase}</Badge>
               {card.proprietario_nome && (
                 <Badge variant="outline" className="font-semibold">Proprietario: {card.proprietario_nome}</Badge>
-              )}
-              {SOTTOFASI_PIPELINE[card.fase].length > 0 && (
-                <Select
-                  value={card.sottofase ?? ''}
-                  onValueChange={(value) => aggiornaSottofase({ immobileId: card.id, fase: card.fase, sottofase: value })}
-                >
-                  <SelectTrigger className="h-8 w-auto min-w-[10rem] text-xs font-semibold rounded-full">
-                    <SelectValue placeholder="Sottofase" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SOTTOFASI_PIPELINE[card.fase].map((sottofase) => (
-                      <SelectItem key={sottofase} value={sottofase}>{sottofase}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               )}
             </div>
 

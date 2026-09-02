@@ -15,7 +15,7 @@ export const PropertySchema = z.object({
   anno_costruzione: z.number().int().min(1800).max(new Date().getFullYear()),
   caratteristiche: z.array(z.string()),
   descrizione: z.string().max(5000).optional(),
-  stato: z.enum(['Disponibile', 'Venduto', 'Ritirato']),
+  stato: z.enum(['Disponibile', 'Venduto', 'Bozza']),
   link_immobiliare: z.string().url().optional().or(z.literal('')),
   proprietario: z.string().optional(),
 });

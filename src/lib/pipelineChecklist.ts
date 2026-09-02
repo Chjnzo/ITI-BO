@@ -1,14 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { FasePipeline } from '@/types';
 
-// Definita qui (non in useImmobiliPipeline.ts, che importa da questo file)
-// per evitare un ciclo di import; useImmobiliPipeline la ri-esporta.
-export const SOTTOFASI_PIPELINE: Record<FasePipeline, string[]> = {
-  'In Vendita': ['Burocratiche', 'Marketing', 'Appuntamenti'],
-  Venduto: ['Vincolo', 'Preliminare', 'Rogito'],
-  Archivio: [],
-};
-
 // Shared by useImmobiliPipeline's spostaFase (moving between fasi) and
 // PropertyWizard (creating a new immobile, which always starts in
 // 'In Vendita'). Idempotent: upsert with ignoreDuplicates means re-running
@@ -31,10 +23,6 @@ export const generaChecklistPerFase = async (immobileId: string, fase: FasePipel
 };
 
 export const upsertFasePipeline = async (immobileId: string, fase: FasePipeline) => {
-  // Entrando in una nuova fase la sottofase riparte sempre dalla prima della
-  // lista (o null per Archivio, che non ne ha): l'avanzamento successivo è
-  // manuale, non c'è auto-avanzamento legato alla checklist documenti.
-  const sottofase = SOTTOFASI_PIPELINE[fase][0] ?? null;
   // updated_at va impostato esplicitamente: l'upsert PostgREST con onConflict
   // aggiorna solo le colonne presenti nel payload, quindi senza questo campo
   // resterebbe congelato alla creazione della riga. L'alert di stagnazione
@@ -43,7 +31,7 @@ export const upsertFasePipeline = async (immobileId: string, fase: FasePipeline)
   const { error } = await supabase
     .from('immobile_pipeline_stato')
     .upsert(
-      { immobile_id: immobileId, fase, sottofase, updated_at: new Date().toISOString() },
+      { immobile_id: immobileId, fase, updated_at: new Date().toISOString() },
       { onConflict: 'immobile_id' },
     );
   if (error) throw error;

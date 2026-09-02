@@ -26,9 +26,8 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
   const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   // Si tiene solo l'id, non l'oggetto card: la card selezionata va ricavata
   // ad ogni render dalla lista aggiornata di React Query, altrimenti dopo una
-  // mutation (es. cambio sottofase) la sheet resterebbe agganciata alla copia
-  // "congelata" presa al momento dell'apertura e non rifletterebbe il nuovo
-  // valore (la pill sottofase sembrava "non rispondere" per questo motivo).
+  // mutation la sheet resterebbe agganciata alla copia "congelata" presa al
+  // momento dell'apertura e non rifletterebbe il nuovo valore.
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const selectedCard = selectedCardId ? cards?.find((c) => c.id === selectedCardId) ?? null : null;
