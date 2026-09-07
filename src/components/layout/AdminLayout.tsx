@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing, KeyRound, Settings } from 'lucide-react';
+import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing, Settings, LayoutGrid, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
 import { useAlerts } from '@/hooks/useAlerts';
@@ -47,17 +47,25 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
     navigate('/login');
   };
 
-  const navItems: { icon: typeof Home; label: string; path: string; badge?: number }[] = [
+  const navItems: {
+    icon: typeof Home;
+    label: string;
+    path: string;
+    badge?: number;
+  }[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    { icon: LayoutGrid, label: 'Gestione', path: '/gestione' },
     { icon: Home, label: 'Immobili', path: '/immobili' },
-    { icon: KeyRound, label: 'Proprietari', path: '/proprietari' },
+    { icon: Users, label: 'Contatti', path: '/contatti' },
     { icon: Calculator, label: 'Valutazioni', path: '/valutazioni' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
-    { icon: Users, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
     { icon: BellRing, label: 'Alert', path: '/alert', badge: alertCount },
     ...(currentProfile?.ruolo === 'Admin'
-      ? [{ icon: Settings, label: 'Impostazioni', path: '/impostazioni' }]
+      ? [
+          { icon: BarChart3, label: 'Report KPI', path: '/report-kpi' },
+          { icon: Settings, label: 'Impostazioni', path: '/impostazioni' },
+        ]
       : []),
   ];
 
@@ -82,18 +90,9 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
       <nav className="flex-1 py-4 space-y-1 overflow-y-auto px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              onClick={() => setIsSidebarOpen(false)}
-              className={cn(
-                "flex items-center py-3 px-3 rounded-xl transition-all duration-200 group overflow-hidden",
-                isActive
-                  ? "bg-[#94b0ab]/10 text-[#94b0ab]"
-                  : "text-gray-500 hover:bg-gray-50 hover:text-[#1a1a1a]"
-              )}
-            >
+
+          const linkContent = (
+            <>
               <span className="relative shrink-0">
                 <item.icon size={20} className={cn(
                   "transition-colors",
@@ -116,6 +115,22 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
                   </span>
                 )}
               </span>
+            </>
+          );
+
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              onClick={() => setIsSidebarOpen(false)}
+              className={cn(
+                "flex items-center py-3 px-3 rounded-xl transition-all duration-200 group overflow-hidden",
+                isActive
+                  ? "bg-[#94b0ab]/10 text-[#94b0ab]"
+                  : "text-gray-500 hover:bg-gray-50 hover:text-[#1a1a1a]"
+              )}
+            >
+              {linkContent}
             </Link>
           );
         })}

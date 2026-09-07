@@ -1,15 +1,11 @@
-import { useDraggable } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import { Home, User } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { cn } from '@/lib/utils';
 import type { PipelineCard } from '@/hooks/useImmobiliPipeline';
 
 interface KanbanCardProps {
   card: PipelineCard;
   onOpen: (card: PipelineCard) => void;
-  dragging?: boolean;
 }
 
 const formatPrice = (price?: number) => {
@@ -21,27 +17,11 @@ const formatPrice = (price?: number) => {
   }).format(price);
 };
 
-const KanbanCard = ({ card, onOpen, dragging }: KanbanCardProps) => {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: card.id,
-    data: card,
-  });
-
-  const style = transform
-    ? { transform: CSS.Translate.toString(transform) }
-    : undefined;
-
+const KanbanCard = ({ card, onOpen }: KanbanCardProps) => {
   return (
     <div
-      ref={setNodeRef}
-      style={style}
-      {...listeners}
-      {...attributes}
       onClick={() => onOpen(card)}
-      className={cn(
-        'bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md',
-        (isDragging || dragging) && 'opacity-50',
-      )}
+      className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer select-none transition-shadow hover:shadow-md"
     >
       <div className="flex items-start gap-3">
         <div className="w-11 h-11 rounded-xl overflow-hidden bg-gray-100 border border-gray-100 shrink-0 flex items-center justify-center text-gray-300">

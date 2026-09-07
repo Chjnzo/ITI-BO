@@ -1,21 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { showError, showSuccess } from '@/utils/toast';
+import { showError } from '@/utils/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Phone, Search, X, KeyRound } from 'lucide-react';
+import { Phone, Search, X, KeyRound, Flame } from 'lucide-react';
 import type { FaseProprietario } from '@/types';
+import { cn } from '@/lib/utils';
+import AvviaPraticaDialog from './AvviaPraticaDialog';
+import ProprietarioSchedaSheet from './ProprietarioSchedaSheet';
 
 interface ProprietarioPraticaRow {
   id: string;
@@ -34,6 +33,7 @@ interface ProprietarioRow {
   telefono: string | null;
   professione: string | null;
   is_deleted: boolean;
+  caldo: boolean;
   contatti: { agente_id: string | null; created_at: string } | null;
   proprietari_pratiche: ProprietarioPraticaRow[];
 }
@@ -47,6 +47,9 @@ interface ProprietariListProps {
   // Incrementato dalla pagina quando un nuovo proprietario viene creato
   // altrove (dialog "Nuovo Proprietario"), per forzare un refetch qui.
   refreshSignal?: number;
+  // Slot per pulsanti (es. "Nuovo Proprietario") che devono comparire sulla
+  // stessa riga di filtri/search, per uniformità con Acquirenti/Collaboratori.
+  headerActions?: ReactNode;
 }
 
 const ultimaPratica = (pratiche: ProprietarioPraticaRow[]): ProprietarioPraticaRow | null => {
@@ -54,21 +57,23 @@ const ultimaPratica = (pratiche: ProprietarioPraticaRow[]): ProprietarioPraticaR
   return [...pratiche].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
 };
 
-const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
+const ProprietariList = ({ refreshSignal, headerActions }: ProprietariListProps) => {
   const queryClient = useQueryClient();
   const [proprietari, setProprietari] = useState<ProprietarioRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [agenti, setAgenti] = useState<AgenteOption[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [agenteFilter, setAgenteFilter] = useState<string>('tutti');
+  const [soloCaldi, setSoloCaldi] = useState(false);
   const [avviaPraticaTarget, setAvviaPraticaTarget] = useState<ProprietarioRow | null>(null);
+  const [schedaId, setSchedaId] = useState<string | null>(null);
 
   const fetchProprietari = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
     const { data, error } = await supabase
       .from('proprietari')
       .select(`
-        id, nome, cognome, email, telefono, professione, is_deleted,
+        id, nome, cognome, email, telefono, professione, is_deleted, caldo,
         contatti(agente_id, created_at),
         proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
       `)
@@ -103,6 +108,9 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
     if (agenteFilter !== 'tutti') {
       rows = rows.filter((p) => p.contatti?.agente_id === agenteFilter);
     }
+    if (soloCaldi) {
+      rows = rows.filter((p) => p.caldo);
+    }
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rows;
     const tokens = q.split(/\s+/).filter(Boolean);
@@ -118,7 +126,12 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
         );
       });
     });
-  }, [proprietari, searchQuery, agenteFilter]);
+  }, [proprietari, searchQuery, agenteFilter, soloCaldi]);
+
+  const refreshAll = () => {
+    fetchProprietari();
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+  };
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden min-h-0">
@@ -126,8 +139,21 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
         <p className="text-gray-500 font-medium">{filtered.length} proprietari</p>
 
         <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSoloCaldi((v) => !v)}
+            className={cn(
+              'h-10 rounded-xl text-xs font-bold border-gray-200',
+              soloCaldi && 'bg-orange-50 border-orange-200 text-orange-600 hover:text-orange-600'
+            )}
+          >
+            <Flame size={14} className="mr-1.5" />
+            Solo caldi
+          </Button>
+
           <Select value={agenteFilter} onValueChange={setAgenteFilter}>
-            <SelectTrigger className="h-11 w-[200px] rounded-xl border-gray-200 bg-white text-sm font-medium">
+            <SelectTrigger className="h-10 w-[200px] rounded-xl border-gray-200 bg-white text-sm font-medium">
               <SelectValue placeholder="Tutti gli agenti" />
             </SelectTrigger>
             <SelectContent>
@@ -156,9 +182,11 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
               name="search-proprietari"
-              className="h-11 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
+              className="h-10 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
             />
           </div>
+
+          {headerActions}
         </div>
       </div>
 
@@ -198,9 +226,16 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
                 ) : filtered.map((p) => {
                   const pratica = ultimaPratica(p.proprietari_pratiche ?? []);
                   return (
-                    <tr key={p.id} className="hover:bg-gray-50/30 transition-colors group">
+                    <tr
+                      key={p.id}
+                      onClick={() => setSchedaId(p.id)}
+                      className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
+                    >
                       <td className="px-8 py-5 min-w-0">
-                        <div className="font-bold text-gray-900 truncate">{p.nome} {p.cognome}</div>
+                        <div className="font-bold text-gray-900 truncate flex items-center gap-1.5">
+                          {p.caldo && <Flame size={13} className="text-orange-500 shrink-0" />}
+                          {p.nome} {p.cognome}
+                        </div>
                         <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5 min-w-0">
                           <Phone size={10} className="text-gray-300 shrink-0" />
                           <span className="truncate">{p.telefono || 'N/D'}</span>
@@ -223,12 +258,12 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
                       </td>
                       <td className="px-8 py-5">
                         <div className="flex items-center gap-2 justify-end">
-                          {!pratica && (
+                          {p.caldo && !pratica && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => setAvviaPraticaTarget(p)}
-                              className="h-8 rounded-xl text-xs font-bold border-gray-200 hover:border-[#94b0ab] hover:text-[#7a948f]"
+                              onClick={(e) => { e.stopPropagation(); setAvviaPraticaTarget(p); }}
+                              className="h-8 rounded-xl text-xs font-bold border-orange-200 text-orange-600 hover:bg-orange-50"
                             >
                               <KeyRound size={13} className="mr-1.5" />
                               Avvia pratica
@@ -248,116 +283,14 @@ const ProprietariList = ({ refreshSignal }: ProprietariListProps) => {
       <AvviaPraticaDialog
         proprietario={avviaPraticaTarget}
         onClose={() => setAvviaPraticaTarget(null)}
-        onCreated={() => {
-          fetchProprietari();
-          queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
-        }}
+        onCreated={refreshAll}
+      />
+
+      <ProprietarioSchedaSheet
+        proprietarioId={schedaId}
+        onClose={() => { setSchedaId(null); refreshAll(); }}
       />
     </div>
-  );
-};
-
-interface AvviaPraticaDialogProps {
-  proprietario: ProprietarioRow | null;
-  onClose: () => void;
-  onCreated: () => void;
-}
-
-const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDialogProps) => {
-  const [via, setVia] = useState('');
-  const [tipologia, setTipologia] = useState('');
-  const [citta, setCitta] = useState('');
-
-  useEffect(() => {
-    if (proprietario) {
-      setVia('');
-      setTipologia('');
-      setCitta('');
-    }
-  }, [proprietario]);
-
-  const avviaPratica = useMutation({
-    mutationFn: async () => {
-      if (!proprietario) return;
-      const { error } = await supabase
-        .from('proprietari_pratiche')
-        .insert({
-          proprietario_id: proprietario.id,
-          via: via.trim(),
-          tipologia: tipologia.trim() || null,
-          citta: citta.trim() || null,
-          fase: 'Contatto',
-        });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      showSuccess('Pratica avviata.');
-      onCreated();
-      onClose();
-    },
-    onError: () => showError('Impossibile avviare la pratica.'),
-  });
-
-  return (
-    <Dialog open={!!proprietario} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-full sm:max-w-md border-none shadow-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-extrabold">Avvia pratica</DialogTitle>
-          <DialogDescription className="font-medium">
-            {proprietario && `Per ${proprietario.nome} ${proprietario.cognome ?? ''}`.trim()}
-          </DialogDescription>
-        </DialogHeader>
-
-        <form
-          className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); avviaPratica.mutate(); }}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="ap-via" className="text-xs font-bold text-gray-500">Via *</Label>
-            <Input
-              id="ap-via"
-              value={via}
-              onChange={(e) => setVia(e.target.value)}
-              required
-              className="rounded-xl"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="ap-tipologia" className="text-xs font-bold text-gray-500">Tipologia</Label>
-              <Input
-                id="ap-tipologia"
-                value={tipologia}
-                onChange={(e) => setTipologia(e.target.value)}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ap-citta" className="text-xs font-bold text-gray-500">Città</Label>
-              <Input
-                id="ap-citta"
-                value={citta}
-                onChange={(e) => setCitta(e.target.value)}
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button type="button" variant="outline" onClick={onClose} className="rounded-xl font-bold border-gray-200">
-              Annulla
-            </Button>
-            <Button
-              type="submit"
-              disabled={avviaPratica.isPending || !via.trim()}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold"
-            >
-              Avvia
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 };
 

@@ -1,4 +1,4 @@
--- Pivot Proprietari/Compratori/Collaboratori, Fase 7: motore di alert
+-- Pivot Proprietari/Acquirenti/Collaboratori, Fase 7: motore di alert
 -- configurabile. Sostituisce le soglie di stagnazione hardcoded in
 -- useAlerts.ts (SOGLIA_STAGNAZIONE_GIORNI, solo immobili) con una tabella che
 -- l'Admin gestisce dalla UI Impostazioni — richiesta esplicita della

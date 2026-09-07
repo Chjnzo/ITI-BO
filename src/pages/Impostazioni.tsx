@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { ShieldCheck, Home, KeyRound } from 'lucide-react';
+import { ShieldCheck, Home, KeyRound, UserCircle2 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 import { useAgentRoles, type AgentRoleRow } from '@/hooks/useAgentRoles';
 import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { useAlertRegole } from '@/hooks/useAlertRegole';
+import ProfileSettingsSheet from '@/components/ProfileSettingsSheet';
 import type { AlertRegola } from '@/types';
+
+interface AgentProfile {
+  id: string;
+  nome_completo: string | null;
+  colore_calendario: string | null;
+  avatar_url: string | null;
+}
 
 const RUOLI: AgentRoleRow['ruolo'][] = ['Admin', 'Agente', 'Segreteria'];
 const DESTINATARI: AlertRegola['destinatario'][] = ['tutti', 'agente_responsabile'];
@@ -20,6 +30,23 @@ const Impostazioni = () => {
   const { data: agenti, isLoading: agentiLoading, aggiornaRuolo } = useAgentRoles();
   const { data: currentProfile } = useCurrentProfile();
   const { data: regole, isLoading: regoleLoading, aggiornaRegola } = useAlertRegole();
+
+  const [myProfile, setMyProfile] = useState<AgentProfile | null>(null);
+  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
+
+  useEffect(() => {
+    let aborted = false;
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user || aborted) return;
+      const { data } = await supabase
+        .from('profili_agenti')
+        .select('id, nome_completo, colore_calendario, avatar_url')
+        .eq('id', user.id)
+        .single();
+      if (!aborted) setMyProfile(data as AgentProfile | null);
+    });
+    return () => { aborted = true; };
+  }, []);
 
   const handleChange = (agente: AgentRoleRow, nuovoRuolo: AgentRoleRow['ruolo']) => {
     if (agente.id === currentProfile?.id && agente.ruolo === 'Admin' && nuovoRuolo !== 'Admin') {
@@ -36,6 +63,19 @@ const Impostazioni = () => {
       <div className="mb-8">
         <h1 className="text-3xl font-extrabold text-[#1a1a1a]">Impostazioni</h1>
         <p className="text-gray-500 mt-1">Assegna il ruolo (Admin / Agente / Segreteria) a ciascun agente registrato.</p>
+      </div>
+
+      <div className="max-w-2xl mb-12 bg-white rounded-[2rem] border border-gray-100 shadow-sm px-6 py-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <UserCircle2 size={18} className="text-[#94b0ab] shrink-0" />
+          <div className="min-w-0">
+            <span className="font-medium text-gray-800 truncate block">{myProfile?.nome_completo ?? 'Il tuo profilo'}</span>
+            <span className="text-xs text-gray-400">Nome, colore calendario e immagine profilo</span>
+          </div>
+        </div>
+        <Button type="button" variant="outline" onClick={() => setProfileSheetOpen(true)} disabled={!myProfile} className="shrink-0">
+          Modifica profilo
+        </Button>
       </div>
 
       {agentiLoading ? (
@@ -87,6 +127,16 @@ const Impostazioni = () => {
             onSave={aggiornaRegola}
           />
         </div>
+      )}
+
+      {myProfile && (
+        <ProfileSettingsSheet
+          open={profileSheetOpen}
+          onClose={() => setProfileSheetOpen(false)}
+          profile={myProfile}
+          userId={myProfile.id}
+          onSaved={(updated) => setMyProfile(updated)}
+        />
       )}
     </AdminLayout>
   );

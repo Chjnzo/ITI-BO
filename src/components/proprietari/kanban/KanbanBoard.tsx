@@ -19,16 +19,22 @@ import PraticaDetailSheet from './PraticaDetailSheet';
 interface KanbanBoardProps {
   autoOpenId?: string;
   onAutoOpened?: () => void;
+  // Search "controllata" dal padre: usata in /gestione per portare l'input
+  // sulla stessa riga del pill switcher esterno (uniformità UI). Se assente
+  // mostra la search interna come prima.
+  externalSearch?: { value: string; onChange: (v: string) => void };
 }
 
-const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
+const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch }: KanbanBoardProps = {}) => {
   const { data: cards, isLoading, spostaFase } = useProprietariPipeline();
   const [activeCard, setActiveCard] = useState<PraticaCard | null>(null);
   // Si tiene solo l'id, non l'oggetto card: la card selezionata va ricavata
   // ad ogni render dalla lista aggiornata di React Query (stesso motivo della
   // board immobili — vedi KanbanBoard.tsx in properties/kanban).
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
+  const searchQuery = externalSearch?.value ?? localSearch;
+  const setSearchQuery = externalSearch?.onChange ?? setLocalSearch;
   const selectedCard = selectedCardId ? cards?.find((c) => c.id === selectedCardId) ?? null : null;
 
   // Link diretto dalla pagina Alert (stesso pattern di KanbanBoard.tsx in
@@ -56,7 +62,6 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
       : (cards ?? []);
 
     const grouped: Record<FaseProprietario, PraticaCard[]> = {
-      Contatto: [],
       'Incontro/Sopralluogo': [],
       Rivalutazione: [],
       'Presa in carico': [],
@@ -93,17 +98,19 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened }: KanbanBoardProps = {}) => {
 
   return (
     <>
-      <div className="relative mb-4 max-w-xl group shrink-0">
-        <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={20} />
-        <Input
-          placeholder="Cerca per via, città, tipologia o proprietario..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          autoComplete="off"
-          name="search-proprietari-kanban"
-          className="h-14 pl-14 pr-6 rounded-2xl border-gray-100 bg-white shadow-sm focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
-        />
-      </div>
+      {!externalSearch && (
+        <div className="relative mb-4 max-w-xl group shrink-0">
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={20} />
+          <Input
+            placeholder="Cerca per via, città, tipologia o proprietario..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            autoComplete="off"
+            name="search-proprietari-kanban"
+            className="h-14 pl-14 pr-6 rounded-2xl border-gray-100 bg-white shadow-sm focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
+          />
+        </div>
+      )}
 
       <DndContext
         sensors={sensors}

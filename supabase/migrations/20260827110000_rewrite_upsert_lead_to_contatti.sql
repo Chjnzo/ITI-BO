@@ -1,5 +1,5 @@
--- Pivot Proprietari/Compratori/Collaboratori, Fase 2 (RPC): upsert_lead ora
--- scrive su contatti/proprietari/compratori invece che su leads/lead_immobili.
+-- Pivot Proprietari/Acquirenti/Collaboratori, Fase 2 (RPC): upsert_lead ora
+-- scrive su contatti/proprietari/acquirenti invece che su leads/lead_immobili.
 -- Firma invariata — ITI2.0/ContactForm.tsx non richiede nessuna modifica di
 -- codice (vedi ITI2.0/PIVOT-CONTATTI-ITI-BO.md e docs/DECISIONI.md).
 --
@@ -46,10 +46,10 @@ BEGIN
             ) INTO v_recent_15, v_recent_24;
         ELSE
             SELECT EXISTS (
-                SELECT 1 FROM compratori co JOIN contatti c ON c.id = co.id
+                SELECT 1 FROM acquirenti co JOIN contatti c ON c.id = co.id
                 WHERE co.email = p_email AND c.created_at > now() - interval '15 minutes'
             ), EXISTS (
-                SELECT 1 FROM compratori co JOIN contatti c ON c.id = co.id
+                SELECT 1 FROM acquirenti co JOIN contatti c ON c.id = co.id
                 WHERE co.email = p_email AND c.created_at > now() - interval '24 hours'
             ) INTO v_recent_15, v_recent_24;
         END IF;
@@ -98,17 +98,17 @@ BEGIN
         -- in quel flusso.
     ELSE
         SELECT co.id INTO v_contatto_id
-        FROM compratori co
+        FROM acquirenti co
         WHERE (co.email    IS NOT NULL AND co.email    = p_email)
            OR (co.telefono IS NOT NULL AND co.telefono = p_telefono)
         LIMIT 1;
 
         IF v_contatto_id IS NULL THEN
             INSERT INTO contatti DEFAULT VALUES RETURNING id INTO v_contatto_id;
-            INSERT INTO compratori (id, nome, cognome, email, telefono, note_interne, stato)
+            INSERT INTO acquirenti (id, nome, cognome, email, telefono, note_interne, stato)
             VALUES (v_contatto_id, p_nome, p_cognome, p_email, p_telefono, p_messaggio, 'Nuovo');
         ELSE
-            UPDATE compratori SET
+            UPDATE acquirenti SET
                 nome     = COALESCE(NULLIF(p_nome,     ''), nome),
                 cognome  = COALESCE(NULLIF(p_cognome,  ''), cognome),
                 email    = COALESCE(NULLIF(p_email,    ''), email),
@@ -122,9 +122,9 @@ BEGIN
         END IF;
 
         IF p_immobile_id IS NOT NULL AND v_contatto_id IS NOT NULL THEN
-            INSERT INTO compratori_immobili (compratore_id, immobile_id, stato_interesse)
+            INSERT INTO acquirenti_immobili (acquirente_id, immobile_id, stato_interesse)
             VALUES (v_contatto_id, p_immobile_id, 'Richiesta dal Web')
-            ON CONFLICT (compratore_id, immobile_id) DO NOTHING;
+            ON CONFLICT (acquirente_id, immobile_id) DO NOTHING;
         END IF;
     END IF;
 END;

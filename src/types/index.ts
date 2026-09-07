@@ -73,11 +73,20 @@ export interface Property {
   venduto?: boolean;
   zona_omi_id?: string;
   tipologia?: string;
+  data_preliminare?: string | null;
+  data_atto?: string | null;
 }
 
-export type FasePipeline = 'In Vendita' | 'Venduto' | 'Archivio';
+export type FasePipeline = 'In Vendita' | 'Venduto';
 
-export type FaseProprietario = 'Contatto' | 'Incontro/Sopralluogo' | 'Rivalutazione' | 'Presa in carico';
+export type SottofaseInVendita = 'Preparazione' | 'Pubblicato' | 'In trattativa';
+export type SottofaseVenduto = 'Vincolo' | 'Preliminare' | 'Rogito' | 'Archivio';
+export type Sottofase = SottofaseInVendita | SottofaseVenduto;
+
+export const SOTTOFASI_IN_VENDITA: SottofaseInVendita[] = ['Preparazione', 'Pubblicato', 'In trattativa'];
+export const SOTTOFASI_VENDUTO: SottofaseVenduto[] = ['Vincolo', 'Preliminare', 'Rogito', 'Archivio'];
+
+export type FaseProprietario = 'Incontro/Sopralluogo' | 'Rivalutazione' | 'Presa in carico';
 
 export interface Proprietario {
   id: string;
@@ -120,6 +129,7 @@ export interface ImmobilePipelineStato {
 export interface DocumentoCatalogo {
   id: string;
   fase: FasePipeline;
+  sottofase: Sottofase | null;
   documento: string;
   ordine: number;
 }
@@ -128,6 +138,7 @@ export interface ImmobileDocumento {
   id: string;
   immobile_id: string;
   fase: FasePipeline;
+  sottofase: Sottofase | null;
   documento: string;
   stato: 'Da fare' | 'Fatto';
   responsabile_id?: string;

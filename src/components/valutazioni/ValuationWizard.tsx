@@ -14,16 +14,17 @@ import {
 } from '@/components/ui/select';
 import {
   Check, ChevronLeft, ChevronRight, Minus, Plus,
-  Home, Settings, Star, Euro, Calculator, X, TrendingUp, Info,
+  Home, Settings, Star, Euro, Calculator, X, TrendingUp, Info, UserCheck,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
+import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TIPOLOGIE = ['Monolocale', 'Bilocale', 'Trilocale', 'Quadrilocale', 'Villa', 'Attico'];
+const TIPOLOGIE: readonly string[] = TIPOLOGIE_IMMOBILE;
 const STATI_CONSERVATIVI = ['Da ristrutturare', 'Discreto', 'Buono', 'Ottimo', 'Nuova Costruzione'];
 const CLASSI_ENERGETICHE = ['A4', 'A3', 'A2', 'A1', 'B', 'C', 'D', 'E', 'F', 'G'];
 const TIPI_RISCALDAMENTO = ['Autonomo', 'Centralizzato', 'Teleriscaldamento', 'Assente'];
@@ -82,6 +83,7 @@ export interface ValuationInitialData {
   id: string;
   slug: string | null;
   lead_id: string | null;
+  proprietario_id: string | null;
   indirizzo: string;
   citta: string | null;
   superficie_mq: number;
@@ -157,10 +159,15 @@ interface ValuationWizardProps {
   onClose: () => void;
   onSaved: () => void;
   initialLeadId?: string;
+  /** Avvio da scheda Proprietario: blocca lo step 1 sul contatto passato invece
+   * di far scegliere un lead dalla combobox (i due percorsi sono mutuamente
+   * esclusivi — un proprietario non è un "lead" nel vecchio senso). */
+  initialProprietarioId?: string;
+  initialProprietarioNome?: string;
   initialData?: ValuationInitialData | null;
 }
 
-const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }: ValuationWizardProps) => {
+const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprietarioId, initialProprietarioNome, initialData }: ValuationWizardProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
@@ -174,6 +181,10 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
   const [leadId, setLeadId] = useState('');
   const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
   const [agenteId, setAgenteId] = useState('');
+
+  // Step 1 — Proprietario (avvio da scheda contatto, alternativo al lead)
+  const [proprietarioId, setProprietarioId] = useState('');
+  const [proprietarioNome, setProprietarioNome] = useState('');
 
   // Step 2 — Dati Immobile
   const [indirizzo, setIndirizzo] = useState('');
@@ -281,11 +292,29 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
         setLeadId('');
         setLeadItems([]);
       }
+      if (initialData.proprietario_id) {
+        supabase
+          .from('proprietari')
+          .select('id, nome, cognome')
+          .eq('id', initialData.proprietario_id)
+          .single()
+          .then(({ data: row }) => {
+            if (row) {
+              setProprietarioId(row.id);
+              setProprietarioNome(`${row.nome} ${row.cognome ?? ''}`.trim());
+            }
+          });
+      } else {
+        setProprietarioId('');
+        setProprietarioNome('');
+      }
     } else {
       setValutazioneId(null);
       setValutazioneSlug(null);
       setLeadId('');
       setLeadItems([]);
+      setProprietarioId('');
+      setProprietarioNome('');
       setIndirizzo('');
       setCitta('Ranica');
       setSuperficieMq('');
@@ -305,7 +334,10 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
       setNoteTecniche('');
       setComparabiliAttivi([emptyComparabileAttivo()]);
 
-      if (initialLeadId) {
+      if (initialProprietarioId) {
+        setProprietarioId(initialProprietarioId);
+        setProprietarioNome(initialProprietarioNome ?? '');
+      } else if (initialLeadId) {
         supabase
           .from('leads')
           .select('id, nome, cognome, telefono')
@@ -319,7 +351,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
           });
       }
     }
-  }, [open, initialLeadId, initialData]);
+  }, [open, initialLeadId, initialProprietarioId, initialProprietarioNome, initialData]);
 
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
@@ -396,6 +428,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
 
   const buildDraftPayload = () => ({
     lead_id: leadId || null,
+    proprietario_id: proprietarioId || null,
     agente_id: agenteId || null,
     indirizzo: indirizzo.trim(),
     citta: citta.trim() || 'Ranica',
@@ -587,6 +620,12 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
           testo: `Valutazione AI completata — ${indirizzo.trim()} (${superficieMq} m²). Stima: €${stimaMin}–€${stimaMax}.`,
         });
       }
+      if (proprietarioId && !initialData) {
+        supabase.from('lead_notes').insert({
+          contatto_id: proprietarioId,
+          testo: `Valutazione AI completata — ${indirizzo.trim()} (${superficieMq} m²). Stima: €${stimaMin}–€${stimaMax}.`,
+        });
+      }
 
       showSuccess(initialData ? 'Valutazione aggiornata' : 'Valutazione salvata');
       onSaved();
@@ -657,22 +696,34 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialData }:
                 </h2>
                 <p className="text-sm text-gray-400">Associa la valutazione a un contatto esistente (opzionale).</p>
               </div>
-              <div className="space-y-3">
-                <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead</Label>
-                <Combobox
-                  items={leadItems}
-                  value={leadId}
-                  onSelect={setLeadId}
-                  onSearch={searchLeads}
-                  placeholder="Cerca lead per nome... (opzionale)"
-                  searchPlaceholder="Nome o cognome..."
-                  emptyMessage="Nessun lead trovato."
-                  className="rounded-2xl h-14 border-gray-100"
-                />
-              </div>
-              <p className="text-xs text-gray-400 italic">
-                Puoi creare una valutazione anche senza associarla a un contatto.
-              </p>
+              {proprietarioId ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-[#94b0ab]/30 bg-[#94b0ab]/5 px-5 py-4">
+                  <UserCheck size={20} className="text-[#94b0ab] shrink-0" />
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-[#94b0ab]">Proprietario collegato</p>
+                    <p className="text-sm font-semibold text-gray-800">{proprietarioNome || 'Proprietario'}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-3">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead</Label>
+                    <Combobox
+                      items={leadItems}
+                      value={leadId}
+                      onSelect={setLeadId}
+                      onSearch={searchLeads}
+                      placeholder="Cerca lead per nome... (opzionale)"
+                      searchPlaceholder="Nome o cognome..."
+                      emptyMessage="Nessun lead trovato."
+                      className="rounded-2xl h-14 border-gray-100"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-400 italic">
+                    Puoi creare una valutazione anche senza associarla a un contatto.
+                  </p>
+                </>
+              )}
             </div>
           )}
 

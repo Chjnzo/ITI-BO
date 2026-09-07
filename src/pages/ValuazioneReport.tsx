@@ -1175,6 +1175,8 @@ const ValuazioneReport = () => {
         <p className="text-center text-[11px] text-gray-400 pb-4">
           Documento generato da Il Tuo Immobiliare · {format(parseISO(val.created_at), 'd MMMM yyyy', { locale: it })}
           {' '}· La stima è indicativa e non costituisce perizia legale
+          <br />
+          Valutazione realizzata con l'ausilio di intelligenza artificiale e revisionata da Il Tuo Immobiliare
         </p>
 
       </div>

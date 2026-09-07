@@ -12,12 +12,13 @@ import { useCurrentProfile } from "@/hooks/useCurrentProfile";
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Properties = lazy(() => import('./pages/Properties'));
 const Contatti = lazy(() => import('./pages/Contatti'));
-const Proprietari = lazy(() => import('./pages/Proprietari'));
+const Gestione = lazy(() => import('./pages/Gestione'));
 const Agenda = lazy(() => import('./pages/Agenda'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Valutazioni = lazy(() => import('./pages/Valutazioni'));
 const Alerts = lazy(() => import('./pages/Alerts'));
 const Impostazioni = lazy(() => import('./pages/Impostazioni'));
+const ReportKpi = lazy(() => import('./pages/ReportKpi'));
 const ValuazioneReport = lazy(() => import('./pages/ValuazioneReport'));
 const Login = lazy(() => import('./pages/Login'));
 const NotFound = lazy(() => import('./pages/NotFound'));
@@ -82,12 +83,19 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/immobili" element={<ProtectedRoute><Properties /></ProtectedRoute>} />
               <Route path="/agenda" element={<ProtectedRoute><Agenda /></ProtectedRoute>} />
-              <Route path="/leads" element={<ProtectedRoute><Contatti /></ProtectedRoute>} />
-              <Route path="/proprietari" element={<ProtectedRoute><Proprietari /></ProtectedRoute>} />
+              <Route path="/contatti" element={<ProtectedRoute><Contatti /></ProtectedRoute>} />
+              <Route path="/gestione" element={<ProtectedRoute><Gestione /></ProtectedRoute>} />
+              {/* Rotte legacy: /leads e /proprietari erano pagine distinte prima
+                  della riorganizzazione (contatti unificati in /contatti,
+                  kanban riunite in /gestione). Le teniamo attive come redirect
+                  finché non aggiorniamo tutti i link esterni. */}
+              <Route path="/leads" element={<Navigate to="/contatti" replace />} />
+              <Route path="/proprietari" element={<Navigate to="/gestione" replace state={{ gestioneTab: 'proprietari' }} />} />
               <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
               <Route path="/valutazioni" element={<ProtectedRoute><Valutazioni /></ProtectedRoute>} />
               <Route path="/alert" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
               <Route path="/impostazioni" element={<ProtectedRoute adminOnly><Impostazioni /></ProtectedRoute>} />
+              <Route path="/report-kpi" element={<ProtectedRoute adminOnly><ReportKpi /></ProtectedRoute>} />
               <Route path="/report/:slug" element={<ValuazioneReport />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

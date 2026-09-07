@@ -27,7 +27,7 @@ interface TaskModalProps {
   onSaved?: () => void;
   defaultLeadId?: string;
   defaultLeadName?: string;
-  /** Generic contatto (compratore/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
+  /** Generic contatto (acquirente/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
   defaultContattoId?: string;
   defaultContattoName?: string;
 }

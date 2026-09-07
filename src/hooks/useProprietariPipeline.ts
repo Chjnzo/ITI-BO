@@ -5,7 +5,7 @@ import { upsertFasePipeline, generaChecklistPerFase } from '@/lib/pipelineCheckl
 import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
 import type { FaseProprietario } from '@/types';
 
-export const FASI_PROPRIETARI: FaseProprietario[] = ['Contatto', 'Incontro/Sopralluogo', 'Rivalutazione', 'Presa in carico'];
+export const FASI_PROPRIETARI: FaseProprietario[] = ['Incontro/Sopralluogo', 'Rivalutazione', 'Presa in carico'];
 
 export interface PraticaCard {
   id: string;
@@ -145,7 +145,7 @@ export const useProprietariPipeline = () => {
 const creaImmobileDaPratica = async (praticaId: string) => {
   const { data: pratica, error: praticaError } = await supabase
     .from('proprietari_pratiche')
-    .select('id, via, tipologia, citta, immobile_id, valutazione_stimata, zona_venditore, motivazione_vendita, scadenza_esclusiva')
+    .select('id, via, tipologia, citta, immobile_id, valutazione_stimata, motivazione_vendita, scadenza_esclusiva')
     .eq('id', praticaId)
     .single();
   if (praticaError) throw praticaError;
@@ -162,7 +162,6 @@ const creaImmobileDaPratica = async (praticaId: string) => {
       citta: pratica.citta,
       tipologia: pratica.tipologia,
       prezzo: pratica.valutazione_stimata,
-      zona_venditore: pratica.zona_venditore,
       motivazione_vendita: pratica.motivazione_vendita,
       scadenza_esclusiva: pratica.scadenza_esclusiva,
       stato: 'Bozza',

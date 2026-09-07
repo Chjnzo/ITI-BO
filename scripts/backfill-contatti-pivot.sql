@@ -1,7 +1,7 @@
 -- One-time data backfill: leads (+ lead_immobili) -> contatti/proprietari/
--- proprietari_pratiche/compratori/collaboratori/compratori_immobili.
--- See supabase/migrations/20260827090000_add_contatti_proprietari_compratori_collaboratori.sql
--- for the schema and docs/DECISIONI.md "Pivot Proprietari/Compratori/Collaboratori"
+-- proprietari_pratiche/acquirenti/collaboratori/acquirenti_immobili.
+-- See supabase/migrations/20260827090000_add_contatti_proprietari_acquirenti_collaboratori.sql
+-- for the schema and docs/DECISIONI.md "Pivot Proprietari/Acquirenti/Collaboratori"
 -- for the design decisions this implements.
 --
 -- NOT a migration file, same reason as scripts/backfill-property-centric-model.sql:
@@ -18,7 +18,7 @@
 -- re-run overall.
 --
 -- Lead 'Ibrido' -> produces TWO separate contatti (one proprietari, one
--- compratori), NOT linked to each other (explicit decision, DECISIONI.md).
+-- acquirenti), NOT linked to each other (explicit decision, DECISIONI.md).
 -- Historical tasks/lead_notes/appuntamenti for an Ibrido lead are duplicated,
 -- one copy per side, not assigned to a single side.
 
@@ -88,11 +88,11 @@ WHERE l.tipo_cliente IN ('Proprietario', 'Ibrido')
   );
 
 -- -----------------------------------------------------------------------------
--- 3) Lato compratore: contatti + compratori, per tipo_cliente Acquirente/Ibrido.
+-- 3) Lato acquirente: contatti + acquirenti, per tipo_cliente Acquirente/Ibrido.
 --    Riga di contatto separata da quella proprietario anche per gli Ibridi
 --    (decisione esplicita, non collegate tra loro).
 -- -----------------------------------------------------------------------------
-WITH nuovi_contatti_compratori AS (
+WITH nuovi_contatti_acquirenti AS (
     INSERT INTO public.contatti (agente_id, lead_id_origine)
     SELECT
         CASE WHEN l.assegnato_a ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
@@ -102,27 +102,27 @@ WITH nuovi_contatti_compratori AS (
     WHERE l.tipo_cliente IN ('Acquirente', 'Ibrido')
       AND NOT EXISTS (
           SELECT 1 FROM public.contatti c
-          JOIN public.compratori co ON co.id = c.id
+          JOIN public.acquirenti co ON co.id = c.id
           WHERE c.lead_id_origine = l.id
       )
     RETURNING id, lead_id_origine
 )
-INSERT INTO public.compratori (id, nome, cognome, email, telefono, budget, zone_ricercate, tipologia_ricerca, note_interne, stato)
+INSERT INTO public.acquirenti (id, nome, cognome, email, telefono, budget, zone_ricercate, tipologia_ricerca, note_interne, stato)
 SELECT nc.id, l.nome, l.cognome, l.email, l.telefono, l.budget, l.zone_ricercate, l.tipologia_ricerca, l.note_interne, l.stato
-FROM nuovi_contatti_compratori nc
+FROM nuovi_contatti_acquirenti nc
 JOIN public.leads l ON l.id = nc.lead_id_origine;
 
 -- -----------------------------------------------------------------------------
--- 4) compratori_immobili, da lead_immobili (solo dove esiste un compratore
+-- 4) acquirenti_immobili, da lead_immobili (solo dove esiste un acquirente
 --    corrispondente -- righe di lead legate a un tipo_cliente Proprietario puro
---    non hanno un lato compratore e vengono saltate, non è un errore).
+--    non hanno un lato acquirente e vengono saltate, non è un errore).
 -- -----------------------------------------------------------------------------
-INSERT INTO public.compratori_immobili (compratore_id, immobile_id, stato_interesse, note, created_at)
+INSERT INTO public.acquirenti_immobili (acquirente_id, immobile_id, stato_interesse, note, created_at)
 SELECT co.id, li.immobile_id, li.stato_interesse, li.note, li.created_at
 FROM public.lead_immobili li
 JOIN public.contatti c ON c.lead_id_origine = li.lead_id
-JOIN public.compratori co ON co.id = c.id
-ON CONFLICT (compratore_id, immobile_id) DO NOTHING;
+JOIN public.acquirenti co ON co.id = c.id
+ON CONFLICT (acquirente_id, immobile_id) DO NOTHING;
 
 -- -----------------------------------------------------------------------------
 -- 5) valutazioni.proprietario_id, dal lead che l'ha richiesta (indipendente da
@@ -139,7 +139,7 @@ WHERE c.lead_id_origine = v.lead_id
 -- -----------------------------------------------------------------------------
 -- 6) tasks/lead_notes/appuntamenti: contatto_id. Non-Ibrido è un 1:1 diretto;
 --    Ibrido aggiorna in place verso il lato proprietario e duplica una copia
---    per il lato compratore (guardia `duplicato_da_id` per idempotenza).
+--    per il lato acquirente (guardia `duplicato_da_id` per idempotenza).
 -- -----------------------------------------------------------------------------
 -- 6a) tasks — non Ibrido
 UPDATE public.tasks t
@@ -156,13 +156,13 @@ JOIN public.contatti c ON c.lead_id_origine = l.id
 JOIN public.proprietari p ON p.id = c.id
 WHERE t.lead_id = l.id AND l.tipo_cliente = 'Ibrido' AND t.contatto_id IS NULL;
 
--- 6c) tasks — Ibrido, lato compratore (duplicato)
+-- 6c) tasks — Ibrido, lato acquirente (duplicato)
 INSERT INTO public.tasks (lead_id, contatto_id, agente_id, nota, data, ora, stato, titolo, is_deleted, deleted_at, telefono, colore, urgente, duplicato_da_id)
 SELECT t.lead_id, c.id, t.agente_id, t.nota, t.data, t.ora, t.stato, t.titolo, t.is_deleted, t.deleted_at, t.telefono, t.colore, t.urgente, t.id
 FROM public.tasks t
 JOIN public.leads l ON l.id = t.lead_id
 JOIN public.contatti c ON c.lead_id_origine = l.id
-JOIN public.compratori co ON co.id = c.id
+JOIN public.acquirenti co ON co.id = c.id
 WHERE l.tipo_cliente = 'Ibrido'
   AND t.duplicato_da_id IS NULL
   AND NOT EXISTS (SELECT 1 FROM public.tasks t2 WHERE t2.duplicato_da_id = t.id);
@@ -182,13 +182,13 @@ JOIN public.contatti c ON c.lead_id_origine = l.id
 JOIN public.proprietari p ON p.id = c.id
 WHERE n.lead_id = l.id AND l.tipo_cliente = 'Ibrido' AND n.contatto_id IS NULL;
 
--- 6f) lead_notes — Ibrido, lato compratore (duplicato)
+-- 6f) lead_notes — Ibrido, lato acquirente (duplicato)
 INSERT INTO public.lead_notes (lead_id, contatto_id, testo, autore, duplicato_da_id)
 SELECT n.lead_id, c.id, n.testo, n.autore, n.id
 FROM public.lead_notes n
 JOIN public.leads l ON l.id = n.lead_id
 JOIN public.contatti c ON c.lead_id_origine = l.id
-JOIN public.compratori co ON co.id = c.id
+JOIN public.acquirenti co ON co.id = c.id
 WHERE l.tipo_cliente = 'Ibrido'
   AND n.duplicato_da_id IS NULL
   AND NOT EXISTS (SELECT 1 FROM public.lead_notes n2 WHERE n2.duplicato_da_id = n.id);
@@ -208,13 +208,13 @@ JOIN public.contatti c ON c.lead_id_origine = l.id
 JOIN public.proprietari p ON p.id = c.id
 WHERE a.lead_id = l.id AND l.tipo_cliente = 'Ibrido' AND a.contatto_id IS NULL;
 
--- 6i) appuntamenti — Ibrido, lato compratore (duplicato)
+-- 6i) appuntamenti — Ibrido, lato acquirente (duplicato)
 INSERT INTO public.appuntamenti (agente_id, lead_id, contatto_id, immobile_id, tipologia, data, ora_inizio, ora_fine, note, indirizzo_appuntamento, duplicato_da_id)
 SELECT a.agente_id, a.lead_id, c.id, a.immobile_id, a.tipologia, a.data, a.ora_inizio, a.ora_fine, a.note, a.indirizzo_appuntamento, a.id
 FROM public.appuntamenti a
 JOIN public.leads l ON l.id = a.lead_id
 JOIN public.contatti c ON c.lead_id_origine = l.id
-JOIN public.compratori co ON co.id = c.id
+JOIN public.acquirenti co ON co.id = c.id
 WHERE l.tipo_cliente = 'Ibrido'
   AND a.duplicato_da_id IS NULL
   AND NOT EXISTS (SELECT 1 FROM public.appuntamenti a2 WHERE a2.duplicato_da_id = a.id);
@@ -224,13 +224,13 @@ WHERE l.tipo_cliente = 'Ibrido'
 -- -----------------------------------------------------------------------------
 DO $$
 BEGIN
-    RAISE NOTICE 'contatti totali: % (proprietari: %, compratori: %)',
+    RAISE NOTICE 'contatti totali: % (proprietari: %, acquirenti: %)',
         (SELECT count(*) FROM public.contatti),
         (SELECT count(*) FROM public.proprietari),
-        (SELECT count(*) FROM public.compratori);
+        (SELECT count(*) FROM public.acquirenti);
     RAISE NOTICE 'proprietari_pratiche: %', (SELECT count(*) FROM public.proprietari_pratiche);
-    RAISE NOTICE 'compratori_immobili: % (lead_immobili originali: %)',
-        (SELECT count(*) FROM public.compratori_immobili), (SELECT count(*) FROM public.lead_immobili);
+    RAISE NOTICE 'acquirenti_immobili: % (lead_immobili originali: %)',
+        (SELECT count(*) FROM public.acquirenti_immobili), (SELECT count(*) FROM public.lead_immobili);
     RAISE NOTICE 'valutazioni con proprietario_id: % (valutazioni totali: %)',
         (SELECT count(*) FROM public.valutazioni WHERE proprietario_id IS NOT NULL), (SELECT count(*) FROM public.valutazioni);
     RAISE NOTICE 'tasks con contatto_id: % (di cui duplicate): % / totale tasks: %',

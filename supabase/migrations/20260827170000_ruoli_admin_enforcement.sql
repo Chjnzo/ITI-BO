@@ -1,4 +1,4 @@
--- Pivot Proprietari/Compratori/Collaboratori, Fase 6: rende operativo il campo
+-- Pivot Proprietari/Acquirenti/Collaboratori, Fase 6: rende operativo il campo
 -- profili_agenti.ruolo introdotto (solo schema, nessun enforcement) in
 -- 20260821090000_add_ruolo_profili_agenti.sql — vedi docs/DECISIONI.md
 -- "2026-08-21 — Ruoli (Admin/Agente/Segreteria) solo a livello di schema/dati",

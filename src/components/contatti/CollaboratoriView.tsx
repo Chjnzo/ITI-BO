@@ -220,15 +220,15 @@ const CollaboratoriView = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
               name="search-collaboratori"
-              className="h-11 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
+              className="h-10 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
             />
           </div>
 
           <Button
             onClick={openCreateModal}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-5 h-10 font-bold text-xs"
           >
-            <Plus className="mr-2" size={16} /> Nuovo Collaboratore
+            <Plus className="mr-1.5" size={14} /> Nuovo Collaboratore
           </Button>
         </div>
       </div>

@@ -8,15 +8,18 @@ import type { FasePipeline } from '@/types';
 export const generaChecklistPerFase = async (immobileId: string, fase: FasePipeline) => {
   const { data: catalogo, error: catalogoError } = await supabase
     .from('documenti_catalogo')
-    .select('documento')
+    .select('documento, sottofase')
     .eq('fase', fase);
   if (catalogoError) throw catalogoError;
   if (!catalogo || catalogo.length === 0) return;
 
+  // Salviamo anche sottofase: senza questa colonna la card in Kanban
+  // finiva sempre nell'ultima sottofase (derivaSottofase in
+  // useImmobiliPipeline non trovava match e cadeva sul fallback).
   const { error: docError } = await supabase
     .from('immobile_documenti')
     .upsert(
-      catalogo.map((c) => ({ immobile_id: immobileId, fase, documento: c.documento })),
+      catalogo.map((c) => ({ immobile_id: immobileId, fase, documento: c.documento, sottofase: c.sottofase })),
       { onConflict: 'immobile_id,documento', ignoreDuplicates: true },
     );
   if (docError) throw docError;

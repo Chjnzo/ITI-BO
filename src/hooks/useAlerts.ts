@@ -27,13 +27,25 @@ export interface AlertAutomatico {
   messaggio: string;
 }
 
+// Aggregato per immobile dei documenti della fase corrente ancora "Da fare".
+// Usato dalla pagina Alerts per mostrare una card unica per immobile con la
+// lista di ciò che manca — molto più leggibile del vecchio testo lungo.
+export interface DocumentiIncompletiImmobile {
+  immobileId: string;
+  titolo: string;
+  indirizzo: string;
+  citta: string;
+  fase: FasePipeline;
+  documentiDaFare: string[];
+}
+
 interface RawImmobileRow {
   id: string;
   titolo: string;
   indirizzo: string;
   citta: string;
   pipeline: { fase: FasePipeline; updated_at: string } | null;
-  documenti: { documento: string; fase: FasePipeline }[] | null;
+  documenti: { documento: string; fase: FasePipeline; stato: 'Da fare' | 'Fatto' }[] | null;
   // Reverse embed dalla pratica proprietari che ha generato questo immobile
   // (creaImmobileDaPratica in useProprietariPipeline.ts) — unico modo
   // affidabile di risalire all'agente responsabile: immobili.proprietario_id
@@ -116,7 +128,7 @@ export const useAlerts = () => {
         .select(`
           id, titolo, indirizzo, citta,
           pipeline:immobile_pipeline_stato(fase, updated_at),
-          documenti:immobile_documenti(documento, fase),
+          documenti:immobile_documenti(documento, fase, stato),
           pratiche:proprietari_pratiche(proprietario:proprietari(contatti(agente_id)))
         `)
         .eq('is_deleted', false);
@@ -276,9 +288,33 @@ export const useAlerts = () => {
     onError: () => showError('Risoluzione alert non riuscita.'),
   });
 
+  // Aggregato "cosa manca per immobile": una entry per immobile che ha almeno
+  // un documento della fase corrente ancora "Da fare". La pagina Alerts la usa
+  // per renderizzare una card compatta e cliccabile invece del vecchio testo
+  // discorsivo lungo una riga.
+  const documentiIncompleti: DocumentiIncompletiImmobile[] = [];
+  if (immobiliBase.data) {
+    for (const immobile of immobiliBase.data) {
+      const fase = immobile.pipeline?.fase ?? 'In Vendita';
+      const daFare = (immobile.documenti ?? [])
+        .filter((d) => d.fase === fase && d.stato === 'Da fare')
+        .map((d) => d.documento);
+      if (daFare.length === 0) continue;
+      documentiIncompleti.push({
+        immobileId: immobile.id,
+        titolo: immobile.titolo,
+        indirizzo: immobile.indirizzo,
+        citta: immobile.citta,
+        fase,
+        documentiDaFare: daFare,
+      });
+    }
+  }
+
   return {
     manuali: manuali.data ?? [],
     automatici,
+    documentiIncompleti,
     isLoading: manuali.isLoading || regole.isLoading || immobiliBase.isLoading || proprietariBase.isLoading || catalogo.isLoading,
     totalCount: (manuali.data?.length ?? 0) + automatici.length,
     creaAlert: creaAlert.mutate,

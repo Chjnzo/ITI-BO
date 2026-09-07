@@ -23,6 +23,10 @@ import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
+import { useQueryClient } from '@tanstack/react-query';
+import { FASI_PROPRIETARI } from '@/hooks/useProprietariPipeline';
+import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
+import type { FaseProprietario } from '@/types';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -66,6 +70,7 @@ export const TIPOLOGIE = [
   'Terza Visita',
   'Valutazione Vendita',
   'Valutazione Affitto',
+  'Rivalutazione',
   'Incontro con proprietario',
   'Firma proposta',
   'Rogito',
@@ -84,6 +89,7 @@ export const TIPOLOGIA_COLORS: Record<string, { bg: string; text: string; border
   'Terza Visita':              { bg: '#a855f7', text: '#ffffff', border: '#9333ea' },  // Viola
   'Valutazione Vendita':       { bg: '#2563eb', text: '#ffffff', border: '#1d4ed8' },  // Blu
   'Valutazione Affitto':       { bg: '#0284c7', text: '#ffffff', border: '#0369a1' },  // Azzurro
+  'Rivalutazione':             { bg: '#0d9488', text: '#ffffff', border: '#0f766e' },  // Teal
   'Incontro con proprietario': { bg: '#92400e', text: '#ffffff', border: '#78350f' },  // Marrone
   'Firma proposta':            { bg: '#d97706', text: '#ffffff', border: '#b45309' },  // Ambra
   'Rogito':                    { bg: '#ea580c', text: '#ffffff', border: '#c2410c' },  // Arancione
@@ -156,7 +162,7 @@ interface EventFormModalProps {
   defaultTimeStart?: string;
   defaultLeadId?: string;
   defaultLeadName?: string;
-  /** Generic contatto (compratore/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
+  /** Generic contatto (acquirente/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
   defaultContattoId?: string;
   defaultContattoName?: string;
   agents: AgentProfile[];
@@ -174,6 +180,7 @@ const EventFormModal = ({
 }: EventFormModalProps) => {
   const isEdit = !!event;
   const isContattoLinked = !!(event ? event.contatto_id : defaultContattoId);
+  const queryClient = useQueryClient();
 
   const [agenteId, setAgenteId] = useState('');
   const [tipologia, setTipologia] = useState('');
@@ -404,6 +411,34 @@ const EventFormModal = ({
     if (suggested) setIndirizzo(suggested);
   };
 
+  // Fissare un appuntamento di tipologia "Rivalutazione" su un proprietario fa
+  // avanzare la sua pratica alla fase omonima — ma solo in avanti: se la
+  // pratica è già oltre (es. "Presa in carico"), non torna indietro.
+  const avanzaFaseSeRivalutazione = async (contattoId: string) => {
+    const { data: pratica } = await supabase
+      .from('proprietari_pratiche')
+      .select('id, fase')
+      .eq('proprietario_id', contattoId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!pratica) return;
+
+    const targetIdx = FASI_PROPRIETARI.indexOf('Rivalutazione');
+    const currentIdx = FASI_PROPRIETARI.indexOf(pratica.fase as FaseProprietario);
+    if (currentIdx === -1 || currentIdx >= targetIdx) return;
+
+    const { error } = await supabase
+      .from('proprietari_pratiche')
+      .update({ fase: 'Rivalutazione', updated_at: new Date().toISOString() })
+      .eq('id', pratica.id);
+    if (error) return;
+
+    await generaChecklistPraticaPerFase(pratica.id, 'Rivalutazione');
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pratica-documenti', pratica.id] });
+  };
+
   const handleSave = async () => {
     if (!selectedDate) {
       showError('Seleziona una data');
@@ -436,6 +471,10 @@ const EventFormModal = ({
       autosavedIdRef.current = null;
     } else {
       ({ error } = await supabase.from('appuntamenti').insert([payload]));
+    }
+
+    if (!error && payload.tipologia === 'Rivalutazione' && payload.contatto_id) {
+      await avanzaFaseSeRivalutazione(payload.contatto_id);
     }
 
     setIsSaving(false);

@@ -35,7 +35,7 @@ import {
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 import { z } from 'zod';
 import { PropertySchema } from '@/schemas';
-import { PREDEFINED_FEATURES } from '@/lib/constants';
+import { PREDEFINED_FEATURES, TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 import type { Property } from '@/types';
 
 interface PropertyWizardProps {
@@ -48,23 +48,12 @@ interface PropertyWizardProps {
   onLeadLinked?: (leadId: string, immobileId: string) => void;
 }
 
-const LOCALI_STANZE: Record<string, number | null> = {
-  Monolocale: 1,
-  Bilocale: 2,
-  Trilocale: 3,
-  Quadrilocale: 4,
-  'Pentalocale+': 5,
-  'Nuova costruzione': null,
-  Villa: null,
-  'Villetta a schiera': null,
-  Attico: null,
-  Loft: null,
-  Box: null,
-  'Posto auto': null,
-  'Locale commerciale': null,
-  Capannone: null,
-  Terreno: null,
+const STANZE_PER_TIPOLOGIA: Partial<Record<string, number>> = {
+  Monolocale: 1, Bilocale: 2, Trilocale: 3, Quadrilocale: 4, 'Pentalocale+': 5,
 };
+const LOCALI_STANZE: Record<string, number | null> = Object.fromEntries(
+  TIPOLOGIE_IMMOBILE.map((t) => [t, STANZE_PER_TIPOLOGIA[t] ?? null]),
+);
 
 type GalleryItem = { id: string; preview: string; file?: File };
 

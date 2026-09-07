@@ -1,4 +1,4 @@
--- Pivot Proprietari/Compratori/Collaboratori, Fase 5: rimuove 'Acquisizione'
+-- Pivot Proprietari/Acquirenti/Collaboratori, Fase 5: rimuove 'Acquisizione'
 -- dalla pipeline immobili. Da quando un proprietario passa dalla pipeline
 -- proprietari_pratiche (Fase 4), l'acquisizione avviene lì, non più come
 -- prima fase del Kanban immobili — un immobile ora nasce già in 'In Vendita'

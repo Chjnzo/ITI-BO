@@ -638,6 +638,12 @@ Deno.serve(async (req) => {
           }
         }
       }
+
+      // AI act disclaimer — must appear on every valuation report
+      page.drawText(
+        "Valutazione realizzata con l'ausilio di intelligenza artificiale e revisionata da Il Tuo Immobiliare",
+        { x: ML, y: 35, size: 6.5, font, color: C.gray },
+      );
     }
 
     // =========================================================================

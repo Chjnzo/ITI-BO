@@ -33,13 +33,14 @@ import {
   Calendar, CalendarPlus, Plus, ExternalLink,
   Heart, UserCheck, Briefcase, MapPin, ChevronDown, Trash2,
   CheckSquare, AlertTriangle, SlidersHorizontal, X as XIcon,
-  MessageSquare, FileText,
+  MessageSquare, FileText, Folder, Sparkles,
 } from 'lucide-react';
 import TaskModal from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
+import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 
-// compratori.stato pipeline — new mapping, no equivalent existed pre-pivot
+// acquirenti.stato pipeline — new mapping, no equivalent existed pre-pivot
 // (SELLER_STATES in the old Leads.tsx covered only the 3 seller-side states).
 const STATO_COLORS: Record<string, string> = {
   'Nuovo':       'bg-blue-50 border border-blue-100 text-blue-700',
@@ -56,10 +57,12 @@ interface PropertyRef {
   prezzo?: number | null;
   copertina_url?: string | null;
   stato?: string | null;
+  citta?: string | null;
+  tipologia?: string | null;
   zone?: { nome: string } | null;
 }
 
-interface CompratoreImmobileLink {
+interface AcquirenteImmobileLink {
   id: string;
   stato_interesse?: string | null;
   note?: string | null;
@@ -67,7 +70,7 @@ interface CompratoreImmobileLink {
   immobili: PropertyRef;
 }
 
-interface CompratoreRecord {
+interface AcquirenteRecord {
   id?: string;
   nome: string;
   cognome: string;
@@ -83,10 +86,11 @@ interface CompratoreRecord {
   _version?: number;
   created_at?: string;
   agente_id?: string | null;
-  compratori_immobili?: CompratoreImmobileLink[];
+  drive_folder_url?: string | null;
+  acquirenti_immobili?: AcquirenteImmobileLink[];
 }
 
-interface CompratoreTaskItem {
+interface AcquirenteTaskItem {
   id: string;
   titolo?: string | null;
   nota?: string | null;
@@ -98,7 +102,7 @@ interface CompratoreTaskItem {
   urgente?: boolean;
 }
 
-interface CompratoreEventItem {
+interface AcquirenteEventItem {
   id: string;
   tipologia: string;
   data: string;
@@ -109,7 +113,7 @@ interface CompratoreEventItem {
   contatto_id?: string | null;
 }
 
-interface CompratoreNote {
+interface AcquirenteNote {
   id: string;
   testo: string;
   autore: string;
@@ -133,17 +137,17 @@ const safeFormat = (date: string | number | Date | null | undefined, fmt: string
   return format(d, fmt, options);
 };
 
-interface CompratoriViewProps {
+interface AcquirentiViewProps {
   /** Old leads.id passed via router state from Tasks.tsx — translated to the new
-   * compratori.id through contatti.lead_id_origine before opening the dialog. */
+   * acquirenti.id through contatti.lead_id_origine before opening the dialog. */
   deepLinkLeadId?: string | null;
 }
 
-const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
+const AcquirentiView = ({ deepLinkLeadId }: AcquirentiViewProps) => {
   const pendingDeepLinkRef = useRef<string | null>(deepLinkLeadId ?? null);
-  const [compratori, setCompratori] = useState<CompratoreRecord[]>([]);
+  const [acquirenti, setAcquirenti] = useState<AcquirenteRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCompratore, setSelectedCompratore] = useState<CompratoreRecord | null>(null);
+  const [selectedAcquirente, setSelectedAcquirente] = useState<AcquirenteRecord | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -160,7 +164,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSaveStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef<CompratoreRecord | null>(null);
+  const pendingSaveRef = useRef<AcquirenteRecord | null>(null);
   const hasInteractedRef = useRef(false);
 
   const [totalCount, setTotalCount] = useState(0);
@@ -168,17 +172,17 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   const PAGE_SIZE = 50;
 
   const [unlinkConfirmId, setUnlinkConfirmId] = useState<string | null>(null);
-  const [compratoreToDelete, setCompratoreToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
+  const [acquirenteToDelete, setAcquirenteToDelete] = useState<{ id: string; nome: string; cognome: string } | null>(null);
 
   // Tasks state
-  const [compratoreTasks, setCompratoreTasks] = useState<CompratoreTaskItem[]>([]);
+  const [acquirenteTasks, setAcquirenteTasks] = useState<AcquirenteTaskItem[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
-  const [taskDetail, setTaskDetail] = useState<CompratoreTaskItem | null>(null);
+  const [taskDetail, setTaskDetail] = useState<AcquirenteTaskItem | null>(null);
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailSaving, setTaskDetailSaving] = useState(false);
 
   // Events state (appuntamenti linked via contatto_id)
-  const [compratoreEvents, setCompratoreEvents] = useState<CompratoreEventItem[]>([]);
+  const [acquirenteEvents, setAcquirenteEvents] = useState<AcquirenteEventItem[]>([]);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [eventModalDefaultId, setEventModalDefaultId] = useState<string | undefined>(undefined);
   const [eventModalDefaultName, setEventModalDefaultName] = useState<string | undefined>(undefined);
@@ -204,25 +208,25 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   const [filterStato, setFilterStato] = useState('');
 
   // Notes tab
-  const [compratoreNotes, setCompratoreNotes] = useState<CompratoreNote[]>([]);
+  const [acquirenteNotes, setAcquirenteNotes] = useState<AcquirenteNote[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
 
   const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '';
 
   // Slim query — only fields needed to render the list rows
-  const fetchCompratori = useCallback(async (signal?: AbortSignal) => {
+  const fetchAcquirenti = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
 
     if (searchQuery.trim() || hasActiveFilters) {
       // Search mode: load all matches with full search fields, no pagination
       let query = supabase
-        .from('compratori')
+        .from('acquirenti')
         .select(`
           id, nome, cognome, stato, budget, tipologia_ricerca, zone_ricercate,
           note_interne, telefono, email,
           contatti(created_at, agente_id),
-          compratori_immobili(immobili(titolo))
+          acquirenti_immobili(immobili(titolo))
         `)
         .eq('is_deleted', false)
         .order('created_at', { ascending: false, foreignTable: 'contatti' });
@@ -254,8 +258,8 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        const sanitized = (data || []) as unknown as CompratoreRecord[];
-        setCompratori(sanitized);
+        const sanitized = (data || []) as unknown as AcquirenteRecord[];
+        setAcquirenti(sanitized);
         setTotalCount(sanitized.length);
       }
     } else {
@@ -264,11 +268,11 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       const to = from + PAGE_SIZE - 1;
 
       const { data, count, error } = await supabase
-        .from('compratori')
+        .from('acquirenti')
         .select(`
           id, nome, cognome, stato, telefono, email,
           contatti(created_at, agente_id),
-          compratori_immobili(immobili(titolo))
+          acquirenti_immobili(immobili(titolo))
         `, { count: 'exact' })
         .eq('is_deleted', false)
         .order('created_at', { ascending: false, foreignTable: 'contatti' })
@@ -278,7 +282,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       if (error) {
         showError("Errore nel caricamento contatti");
       } else {
-        setCompratori((data || []) as unknown as CompratoreRecord[]);
+        setAcquirenti((data || []) as unknown as AcquirenteRecord[]);
         setTotalCount(count ?? 0);
       }
     }
@@ -287,16 +291,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, searchQuery, hasActiveFilters, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  // Full query — fired only when a compratore dialog is opened
-  const fetchCompratoreDetail = useCallback(async (id: string) => {
+  // Full query — fired only when a acquirente dialog is opened
+  const fetchAcquirenteDetail = useCallback(async (id: string) => {
     setIsLoadingDetail(true);
     const { data, error } = await supabase
-      .from('compratori')
+      .from('acquirenti')
       .select(`
         *,
         _version,
-        contatti(created_at, agente_id),
-        compratori_immobili(
+        contatti(created_at, agente_id, drive_folder_url),
+        acquirenti_immobili(
           id, stato_interesse, note, created_at,
           immobili(id, titolo, prezzo, copertina_url)
         )
@@ -305,13 +309,14 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       .single();
 
     if (!error && data) {
-      const row = data as unknown as CompratoreRecord & { contatti?: { created_at?: string; agente_id?: string | null } };
-      const full: CompratoreRecord = {
+      const row = data as unknown as AcquirenteRecord & { contatti?: { created_at?: string; agente_id?: string | null; drive_folder_url?: string | null } };
+      const full: AcquirenteRecord = {
         ...row,
         created_at: row.contatti?.created_at,
         agente_id: row.contatti?.agente_id,
+        drive_folder_url: row.contatti?.drive_folder_url,
       };
-      setSelectedCompratore((prev) => prev?.id === id ? full : prev);
+      setSelectedAcquirente((prev) => prev?.id === id ? full : prev);
     } else if (error) {
       showError('Errore nel caricamento del dettaglio contatto');
     }
@@ -320,58 +325,58 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   }, []);
 
   // Opens the dialog immediately with row data, then hydrates with full detail
-  const openCompratoreDetail = useCallback((compratore: CompratoreRecord) => {
-    setSelectedCompratore(compratore);
-    if (compratore.id) fetchCompratoreDetail(compratore.id);
-  }, [fetchCompratoreDetail]);
+  const openAcquirenteDetail = useCallback((acquirente: AcquirenteRecord) => {
+    setSelectedAcquirente(acquirente);
+    if (acquirente.id) fetchAcquirenteDetail(acquirente.id);
+  }, [fetchAcquirenteDetail]);
 
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
-    setSelectedCompratore({ nome: '', cognome: '', email: '', telefono: '', stato: 'Nuovo', created_at: new Date().toISOString() });
+    setSelectedAcquirente({ nome: '', cognome: '', email: '', telefono: '', stato: 'Nuovo', created_at: new Date().toISOString() });
     setZoneInput('');
   }, []);
 
-  const handleDeleteCompratore = async () => {
-    if (!compratoreToDelete) return;
-    const targetId = compratoreToDelete.id;
-    setCompratoreToDelete(null);
+  const handleDeleteAcquirente = async () => {
+    if (!acquirenteToDelete) return;
+    const targetId = acquirenteToDelete.id;
+    setAcquirenteToDelete(null);
     const { error } = await supabase
-      .from('compratori')
+      .from('acquirenti')
       .update({ is_deleted: true, deleted_at: new Date().toISOString() })
       .eq('id', targetId);
     if (error) {
       showError("Errore nell'eliminazione.");
     } else {
       showSuccess('Contatto eliminato.');
-      fetchCompratori();
+      fetchAcquirenti();
     }
   };
 
   /** Optimistically update stato in the list and persist to Supabase. */
   const updateStato = useCallback(async (id: string, newStato: string) => {
-    setCompratori(prev => prev.map(c => c.id === id ? { ...c, stato: newStato } : c));
+    setAcquirenti(prev => prev.map(c => c.id === id ? { ...c, stato: newStato } : c));
     const { error } = await supabase
-      .from('compratori')
+      .from('acquirenti')
       .update({ stato: newStato })
       .eq('id', id);
     if (error) {
       showError('Errore aggiornamento stato: ' + error.message);
-      fetchCompratori();
+      fetchAcquirenti();
     }
-  }, [fetchCompratori]);
+  }, [fetchAcquirenti]);
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchCompratori(controller.signal);
+    fetchAcquirenti(controller.signal);
     return () => controller.abort();
-  }, [fetchCompratori]);
+  }, [fetchAcquirenti]);
 
   useEffect(() => { setPage(1); }, [searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  // Load distinct zone names used across all compratori for autocomplete
+  // Load distinct zone names used across all acquirenti for autocomplete
   useEffect(() => {
     supabase
-      .from('compratori')
+      .from('acquirenti')
       .select('zone_ricercate')
       .not('zone_ricercate', 'is', null)
       .then(({ data }) => {
@@ -384,7 +389,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   }, []);
 
   // Join all zone strings into one text blob for token-based matching.
-  const zoneTextOf = (c: CompratoreRecord) =>
+  const zoneTextOf = (c: AcquirenteRecord) =>
     (c.zone_ricercate ?? []).join(' ').toLowerCase();
 
   // Returns true if ALL whitespace-separated tokens in `query` appear
@@ -396,11 +401,11 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
 
   const isSearchOrFilterMode = searchQuery.trim() !== '' || hasActiveFilters;
 
-  const filteredCompratori = useMemo(() => {
+  const filteredAcquirenti = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const tokens = q.split(/\s+/).filter(Boolean);
 
-    return compratori.filter(c => {
+    return acquirenti.filter(c => {
       const zoneText = zoneTextOf(c);
 
       if (tokens.length > 0) {
@@ -433,14 +438,14 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
 
       return true;
     });
-  }, [compratori, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
+  }, [acquirenti, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
 
-  const displayCount = isSearchOrFilterMode ? filteredCompratori.length : totalCount;
-  const pagedCompratori = isSearchOrFilterMode
-    ? filteredCompratori.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-    : filteredCompratori;
+  const displayCount = isSearchOrFilterMode ? filteredAcquirenti.length : totalCount;
+  const pagedAcquirenti = isSearchOrFilterMode
+    ? filteredAcquirenti.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+    : filteredAcquirenti;
 
-  const CompratoreValidationSchema = z.object({
+  const AcquirenteValidationSchema = z.object({
     nome: z.string().max(100).optional().or(z.literal('')),
     cognome: z.string().max(100).optional().or(z.literal('')),
     email: z.string().email('Email non valida').optional().or(z.literal('')),
@@ -450,7 +455,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     { message: 'Inserisci almeno il nome o il cognome' },
   );
 
-  const buildPayload = (c: CompratoreRecord) => ({
+  const buildPayload = (c: AcquirenteRecord) => ({
     nome: c.nome.trim(),
     cognome: c.cognome.trim(),
     telefono: c.telefono || null,
@@ -463,13 +468,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
 
   const handleSaveDetails = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCompratore) return;
+    if (!selectedAcquirente) return;
 
-    const validation = CompratoreValidationSchema.safeParse({
-      nome: selectedCompratore.nome?.trim() ?? '',
-      cognome: selectedCompratore.cognome?.trim() ?? '',
-      email: selectedCompratore.email ?? '',
-      telefono: selectedCompratore.telefono ?? '',
+    const validation = AcquirenteValidationSchema.safeParse({
+      nome: selectedAcquirente.nome?.trim() ?? '',
+      cognome: selectedAcquirente.cognome?.trim() ?? '',
+      email: selectedAcquirente.email ?? '',
+      telefono: selectedAcquirente.telefono ?? '',
     });
 
     if (!validation.success) {
@@ -477,13 +482,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       return;
     }
 
-    const isCreateMode = !selectedCompratore.id;
-    const payload = buildPayload(selectedCompratore);
+    const isCreateMode = !selectedAcquirente.id;
+    const payload = buildPayload(selectedAcquirente);
 
     setIsSaving(true);
 
     if (isCreateMode) {
-      // Two-step insert: contatti first (base row), then compratori with the same id.
+      // Two-step insert: contatti first (base row), then acquirenti with the same id.
       // No automatic rollback if the second insert fails — surfaced via showError.
       const { data: contatto, error: contattoError } = await supabase
         .from('contatti')
@@ -498,7 +503,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       }
 
       const { error } = await supabase
-        .from('compratori')
+        .from('acquirenti')
         .insert({ id: contatto.id, ...payload, stato: 'Nuovo' });
 
       if (error) {
@@ -506,15 +511,15 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       } else {
         showSuccess("Contatto creato correttamente");
         setZoneInput('');
-        fetchCompratori();
-        setSelectedCompratore(null);
+        fetchAcquirenti();
+        setSelectedAcquirente(null);
       }
     } else {
-      const version = selectedCompratore._version ?? 1;
+      const version = selectedAcquirente._version ?? 1;
       const { data: updated, error } = await supabase
-        .from('compratori')
+        .from('acquirenti')
         .update({ ...payload, _version: version + 1 })
-        .eq('id', selectedCompratore.id)
+        .eq('id', selectedAcquirente.id)
         .eq('_version', version)
         .select('_version');
 
@@ -522,16 +527,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         showError("Errore nel salvataggio");
       } else if (!updated || updated.length === 0) {
         showError('Conflitto: il contatto è stato modificato da un altro utente. Ricaricamento...');
-        fetchCompratoreDetail(selectedCompratore.id!);
+        fetchAcquirenteDetail(selectedAcquirente.id!);
       } else {
         showSuccess("Scheda cliente aggiornata");
-        setCompratori(prev => prev.map(c => c.id === selectedCompratore.id ? {
+        setAcquirenti(prev => prev.map(c => c.id === selectedAcquirente.id ? {
           ...c,
-          nome: selectedCompratore.nome.trim(),
-          cognome: selectedCompratore.cognome.trim(),
+          nome: selectedAcquirente.nome.trim(),
+          cognome: selectedAcquirente.cognome.trim(),
         } : c));
         setZoneInput('');
-        setSelectedCompratore(null);
+        setSelectedAcquirente(null);
       }
     }
 
@@ -539,13 +544,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   };
 
   // Autosave — only fires in edit mode after the user has interacted
-  const performAutoSave = useCallback(async (c: CompratoreRecord) => {
+  const performAutoSave = useCallback(async (c: AcquirenteRecord) => {
     if (!c?.id || !c.nome?.trim()) return;
     setAutoSaveStatus('saving');
     const version = c._version ?? 1;
     const payload = { ...buildPayload(c), _version: version + 1 };
     const { data: updated, error } = await supabase
-      .from('compratori')
+      .from('acquirenti')
       .update(payload)
       .eq('id', c.id)
       .eq('_version', version)
@@ -556,53 +561,53 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     } else if (!updated || updated.length === 0) {
       showError('Il contatto è stato modificato da un altro utente. Ricaricamento...');
       setAutoSaveStatus('error');
-      if (c.id) fetchCompratoreDetail(c.id);
+      if (c.id) fetchAcquirenteDetail(c.id);
     } else {
-      setSelectedCompratore((prev) => prev?.id === c.id ? ({ ...prev, _version: updated[0]._version } as CompratoreRecord) : prev);
-      setCompratori(prev => prev.map(x => x.id === c.id ? { ...x, nome: c.nome.trim(), cognome: c.cognome.trim() } : x));
+      setSelectedAcquirente((prev) => prev?.id === c.id ? ({ ...prev, _version: updated[0]._version } as AcquirenteRecord) : prev);
+      setAcquirenti(prev => prev.map(x => x.id === c.id ? { ...x, nome: c.nome.trim(), cognome: c.cognome.trim() } : x));
       setAutoSaveStatus('saved');
       if (autoSaveStatusTimerRef.current) clearTimeout(autoSaveStatusTimerRef.current);
       autoSaveStatusTimerRef.current = setTimeout(() => setAutoSaveStatus('idle'), 2000);
     }
-  }, [fetchCompratoreDetail]);
+  }, [fetchAcquirenteDetail]);
 
   useEffect(() => {
-    if (!selectedCompratore?.id || !hasInteractedRef.current) return;
-    if (!selectedCompratore.nome?.trim()) return;
-    pendingSaveRef.current = selectedCompratore;
+    if (!selectedAcquirente?.id || !hasInteractedRef.current) return;
+    if (!selectedAcquirente.nome?.trim()) return;
+    pendingSaveRef.current = selectedAcquirente;
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       if (!pendingSaveRef.current) return;
       performAutoSave(pendingSaveRef.current);
     }, 1500);
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-  }, [selectedCompratore, performAutoSave]);
+  }, [selectedAcquirente, performAutoSave]);
 
-  // Reset interaction tracking on new compratore
+  // Reset interaction tracking on new acquirente
   useEffect(() => {
-    if (!selectedCompratore?.id) {
+    if (!selectedAcquirente?.id) {
       hasInteractedRef.current = false;
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       setAutoSaveStatus('idle');
       return;
     }
-  }, [selectedCompratore?.id]);
+  }, [selectedAcquirente?.id]);
 
   // Mark as "interacted" after detail finishes loading (so autosave ignores initial hydration)
   useEffect(() => {
-    if (!selectedCompratore?.id || isLoadingDetail) return;
+    if (!selectedAcquirente?.id || isLoadingDetail) return;
     const t = setTimeout(() => { hasInteractedRef.current = true; }, 300);
     return () => clearTimeout(t);
-  }, [selectedCompratore?.id, isLoadingDetail]);
+  }, [selectedAcquirente?.id, isLoadingDetail]);
 
   const handleUnlinkProperty = async (linkId: string) => {
-    const { error } = await supabase.from('compratori_immobili').delete().eq('id', linkId);
+    const { error } = await supabase.from('acquirenti_immobili').delete().eq('id', linkId);
     if (error) {
       showError("Errore nella rimozione");
     } else {
-      setSelectedCompratore((prev) => prev ? {
+      setSelectedAcquirente((prev) => prev ? {
         ...prev,
-        compratori_immobili: (prev.compratori_immobili ?? []).filter((li) => li.id !== linkId),
+        acquirenti_immobili: (prev.acquirenti_immobili ?? []).filter((li) => li.id !== linkId),
       } : prev);
       setUnlinkConfirmId(null);
     }
@@ -612,7 +617,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     setIsLoadingProperties(true);
     const { data, error } = await supabase
       .from('immobili')
-      .select('id, titolo, prezzo, copertina_url, stato')
+      .select('id, titolo, prezzo, copertina_url, stato, citta, tipologia')
       .neq('stato', 'Venduto')
       .order('created_at', { ascending: false });
     if (!error) setAllProperties(data || []);
@@ -624,11 +629,69 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     if (allProperties.length === 0) await fetchAllProperties();
   };
 
-  const handleAssociateProperty = async (immobile: PropertyRef) => {
-    if (!selectedCompratore) return;
+  // Precarica gli immobili disponibili appena si apre una scheda, per poter
+  // calcolare subito il matching automatico nella tab "Immobili".
+  useEffect(() => {
+    if (!selectedAcquirente?.id || allProperties.length > 0) return;
+    fetchAllProperties();
+  }, [selectedAcquirente?.id, allProperties.length, fetchAllProperties]);
+
+  // Matching automatico contro i criteri di ricerca dell'acquirente (budget,
+  // tipologia_ricerca, zone_ricercate): "match perfetto" soddisfa tutti i
+  // criteri che l'acquirente ha effettivamente specificato, "potrebbero
+  // interessare" ne soddisfa almeno 2 ma non tutti. Esclude gli immobili già
+  // collegati manualmente (mostrati a parte in "Collegati") e quelli non
+  // disponibili.
+  const acquirenteMatches = useMemo(() => {
+    if (!selectedAcquirente) return { perfetti: [] as PropertyRef[], parziali: [] as PropertyRef[] };
+
+    const budget = selectedAcquirente.budget != null && selectedAcquirente.budget !== ''
+      ? Number(selectedAcquirente.budget)
+      : null;
+    const tipologieRicerca = selectedAcquirente.tipologia_ricerca ?? [];
+    const zoneRicercate = selectedAcquirente.zone_ricercate ?? [];
+
+    const activeCriteria: Array<'budget' | 'tipologia' | 'zona'> = [];
+    if (budget) activeCriteria.push('budget');
+    if (tipologieRicerca.length > 0) activeCriteria.push('tipologia');
+    if (zoneRicercate.length > 0) activeCriteria.push('zona');
+    if (activeCriteria.length === 0) return { perfetti: [] as PropertyRef[], parziali: [] as PropertyRef[] };
+
+    const linkedIds = new Set((selectedAcquirente.acquirenti_immobili ?? []).map((l) => l.immobili.id));
+
+    const perfetti: PropertyRef[] = [];
+    const parziali: PropertyRef[] = [];
+    for (const immobile of allProperties) {
+      if (immobile.stato !== 'Disponibile' || linkedIds.has(immobile.id)) continue;
+
+      let matched = 0;
+      if (activeCriteria.includes('budget') && immobile.prezzo != null && Number(immobile.prezzo) <= budget!) matched++;
+      if (activeCriteria.includes('tipologia') && immobile.tipologia && tipologieRicerca.includes(immobile.tipologia)) matched++;
+      if (activeCriteria.includes('zona') && immobile.citta && zoneRicercate.some((z) =>
+        immobile.citta!.toLowerCase().includes(z.toLowerCase()) || z.toLowerCase().includes(immobile.citta!.toLowerCase())
+      )) matched++;
+
+      if (matched === activeCriteria.length) perfetti.push(immobile);
+      else if (matched >= 2) parziali.push(immobile);
+    }
+    return { perfetti, parziali };
+  }, [selectedAcquirente, allProperties]);
+
+  const handleSaveDriveUrl = async () => {
+    if (!selectedAcquirente?.id) return;
     const { error } = await supabase
-      .from('compratori_immobili')
-      .insert({ compratore_id: selectedCompratore.id, immobile_id: immobile.id, stato_interesse: 'Interessato' });
+      .from('contatti')
+      .update({ drive_folder_url: selectedAcquirente.drive_folder_url?.trim() || null })
+      .eq('id', selectedAcquirente.id);
+    if (error) showError('Errore nel salvataggio del link cartella.');
+    else showSuccess('Cartella documenti aggiornata.');
+  };
+
+  const handleAssociateProperty = async (immobile: PropertyRef) => {
+    if (!selectedAcquirente) return;
+    const { error } = await supabase
+      .from('acquirenti_immobili')
+      .insert({ acquirente_id: selectedAcquirente.id, immobile_id: immobile.id, stato_interesse: 'Interessato' });
 
     if (error) {
       showError("Errore nell'associazione: " + error.message);
@@ -639,68 +702,68 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     setIsPropertyPickerOpen(false);
     setPropertySearch('');
 
-    fetchCompratoreDetail(selectedCompratore.id!);
+    fetchAcquirenteDetail(selectedAcquirente.id!);
   };
 
-  // Fetch tasks whenever a different compratore is opened
+  // Fetch tasks whenever a different acquirente is opened
   useEffect(() => {
-    if (!selectedCompratore?.id) { setCompratoreTasks([]); return; }
+    if (!selectedAcquirente?.id) { setAcquirenteTasks([]); return; }
     (async () => {
       const { data } = await supabase
         .from('tasks')
         .select('id, titolo, nota, data, ora, stato, agente_id, telefono, urgente')
-        .eq('contatto_id', selectedCompratore.id)
+        .eq('contatto_id', selectedAcquirente.id)
         .order('urgente', { ascending: false })
         .order('data', { ascending: true });
-      setCompratoreTasks(data || []);
+      setAcquirenteTasks(data || []);
     })();
-  }, [selectedCompratore?.id]);
+  }, [selectedAcquirente?.id]);
 
-  // Fetch events (appuntamenti) whenever a different compratore is opened
+  // Fetch events (appuntamenti) whenever a different acquirente is opened
   useEffect(() => {
-    if (!selectedCompratore?.id) { setCompratoreEvents([]); return; }
+    if (!selectedAcquirente?.id) { setAcquirenteEvents([]); return; }
     (async () => {
       const { data } = await supabase
         .from('appuntamenti')
         .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id, contatto_id')
-        .eq('contatto_id', selectedCompratore.id)
+        .eq('contatto_id', selectedAcquirente.id)
         .order('data', { ascending: true })
         .order('ora_inizio', { ascending: true });
-      setCompratoreEvents(data || []);
+      setAcquirenteEvents(data || []);
     })();
-  }, [selectedCompratore?.id]);
+  }, [selectedAcquirente?.id]);
 
-  // Fetch notes whenever a different compratore is opened
+  // Fetch notes whenever a different acquirente is opened
   useEffect(() => {
-    if (!selectedCompratore?.id) { setCompratoreNotes([]); setNewNoteText(''); return; }
+    if (!selectedAcquirente?.id) { setAcquirenteNotes([]); setNewNoteText(''); return; }
     (async () => {
       const { data } = await supabase
         .from('lead_notes')
         .select('id, testo, autore, created_at')
-        .eq('contatto_id', selectedCompratore.id)
+        .eq('contatto_id', selectedAcquirente.id)
         .order('created_at', { ascending: true });
-      setCompratoreNotes(data || []);
+      setAcquirenteNotes(data || []);
     })();
-  }, [selectedCompratore?.id]);
+  }, [selectedAcquirente?.id]);
 
   const handleSaveNote = async () => {
-    if (!newNoteText.trim() || !selectedCompratore?.id) return;
+    if (!newNoteText.trim() || !selectedAcquirente?.id) return;
     setIsSavingNote(true);
     const { data, error } = await supabase
       .from('lead_notes')
-      .insert({ contatto_id: selectedCompratore.id, testo: newNoteText.trim(), autore: 'Agente' })
+      .insert({ contatto_id: selectedAcquirente.id, testo: newNoteText.trim(), autore: 'Agente' })
       .select('id, testo, autore, created_at')
       .single();
     setIsSavingNote(false);
     if (error) {
       showError('Errore nel salvataggio della nota');
     } else {
-      setCompratoreNotes(prev => [...prev, data]);
+      setAcquirenteNotes(prev => [...prev, data]);
       setNewNoteText('');
     }
   };
 
-  // Open compratore from navigation state (e.g. coming from Tasks page).
+  // Open acquirente from navigation state (e.g. coming from Tasks page).
   // contatti.id is freshly generated during the pivot backfill and does NOT equal
   // the old leads.id, so the old id is translated via contatti.lead_id_origine first.
   useEffect(() => {
@@ -714,18 +777,18 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         .eq('lead_id_origine', oldLeadId)
         .maybeSingle();
       if (!contatto?.id) return;
-      const existing = compratori.find((c) => c.id === contatto.id);
+      const existing = acquirenti.find((c) => c.id === contatto.id);
       if (existing) {
-        openCompratoreDetail(existing);
+        openAcquirenteDetail(existing);
       } else {
-        setSelectedCompratore({ id: contatto.id, nome: '', cognome: '' });
-        fetchCompratoreDetail(contatto.id);
+        setSelectedAcquirente({ id: contatto.id, nome: '', cognome: '' });
+        fetchAcquirenteDetail(contatto.id);
       }
     })();
-  }, [loading, compratori, openCompratoreDetail, fetchCompratoreDetail]);
+  }, [loading, acquirenti, openAcquirenteDetail, fetchAcquirenteDetail]);
 
-  // Open EventFormModal pre-filled with a compratore
-  const openEventForCompratore = useCallback(async (c: CompratoreRecord) => {
+  // Open EventFormModal pre-filled with a acquirente
+  const openEventForAcquirente = useCallback(async (c: AcquirenteRecord) => {
     if (agentsForEventModal.length === 0) {
       const [{ data: agents }, { data: props }] = await Promise.all([
         supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
@@ -742,23 +805,23 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   const cycleTaskStato = async (taskId: string, currentStato: string) => {
     const STATI = ['Da fare', 'In corso', 'Completata'];
     const nextStato = STATI[(STATI.indexOf(currentStato) + 1) % STATI.length];
-    setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
+    setAcquirenteTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: nextStato } : t));
     if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, stato: nextStato } : prev);
     const { error } = await supabase.from('tasks').update({ stato: nextStato }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento stato');
-      setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
+      setAcquirenteTasks(prev => prev.map(t => t.id === taskId ? { ...t, stato: currentStato } : t));
     }
   };
 
   const toggleTaskUrgente = async (taskId: string, currentUrgente: boolean | undefined) => {
     const newUrgente = !currentUrgente;
-    setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: newUrgente } : t));
+    setAcquirenteTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: newUrgente } : t));
     if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: newUrgente } : prev);
     const { error } = await supabase.from('tasks').update({ urgente: newUrgente }).eq('id', taskId);
     if (error) {
       showError('Errore aggiornamento urgenza');
-      setCompratoreTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: currentUrgente } : t));
+      setAcquirenteTasks(prev => prev.map(t => t.id === taskId ? { ...t, urgente: currentUrgente } : t));
       if (taskDetail?.id === taskId) setTaskDetail((prev) => prev ? { ...prev, urgente: currentUrgente } : prev);
     }
   };
@@ -770,7 +833,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     if (error) {
       showError('Errore nel salvataggio della nota');
     } else {
-      setCompratoreTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, nota: taskDetailNota } : t));
+      setAcquirenteTasks(prev => prev.map(t => t.id === taskDetail.id ? { ...t, nota: taskDetailNota } : t));
       showSuccess('Nota aggiornata');
       setTaskDetail(null);
     }
@@ -787,7 +850,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
     <div className="flex flex-col flex-1 overflow-hidden min-h-0">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0 pt-2">
         <div>
-          <p className="text-gray-500 font-medium">{displayCount} compratori</p>
+          <p className="text-gray-500 font-medium">{displayCount} acquirenti</p>
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -808,8 +871,8 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoComplete="off"
-              name="search-compratori"
-              className="h-11 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
+              name="search-acquirenti"
+              className="h-10 pl-9 w-[280px] rounded-xl border-gray-200 bg-white"
             />
           </div>
 
@@ -818,11 +881,11 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
             variant="outline"
             onClick={() => setShowFilters(f => !f)}
             className={cn(
-              "h-11 rounded-xl border-gray-200 gap-2 font-semibold text-sm",
+              "h-10 rounded-xl border-gray-200 gap-2 font-semibold text-xs",
               (showFilters || hasActiveFilters) && "border-[#94b0ab] text-[#94b0ab] bg-[#94b0ab]/5"
             )}
           >
-            <SlidersHorizontal size={15} />
+            <SlidersHorizontal size={14} />
             Filtri
             {hasActiveFilters && (
               <span className="ml-0.5 w-5 h-5 rounded-full bg-[#94b0ab] text-white text-[10px] font-black flex items-center justify-center">
@@ -833,9 +896,9 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
 
           <Button
             onClick={openCreateModal}
-            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
+            className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-5 h-10 font-bold text-xs"
           >
-            <Plus className="mr-2" size={16} /> Nuovo Compratore
+            <Plus className="mr-1.5" size={14} /> Nuovo Acquirente
           </Button>
         </div>
       </div>
@@ -904,7 +967,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
                   <SelectItem value="_all">Qualsiasi</SelectItem>
-                  {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => (
+                  {TIPOLOGIE_IMMOBILE.map(t => (
                     <SelectItem key={t} value={t}>{t}</SelectItem>
                   ))}
                 </SelectContent>
@@ -970,13 +1033,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       <td className="px-8 py-5"><div className="h-8 bg-gray-50 rounded-xl animate-pulse w-16 ml-auto" /></td>
                     </tr>
                   ))
-                ) : filteredCompratori.length === 0 ? (
-                  <tr><td colSpan={4} className="px-8 py-16 text-center text-gray-300 italic">Nessun compratore trovato</td></tr>
-                ) : pagedCompratori.map((c) => (
+                ) : filteredAcquirenti.length === 0 ? (
+                  <tr><td colSpan={4} className="px-8 py-16 text-center text-gray-300 italic">Nessun acquirente trovato</td></tr>
+                ) : pagedAcquirenti.map((c) => (
                   <tr
                     key={c.id}
                     className="hover:bg-gray-50/30 transition-colors group cursor-pointer"
-                    onClick={() => openCompratoreDetail(c)}
+                    onClick={() => openAcquirenteDetail(c)}
                   >
                     <td className="px-8 py-5 min-w-0">
                       <div className="font-bold text-gray-900 truncate">{c.nome} {c.cognome}</div>
@@ -1013,8 +1076,8 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       </DropdownMenu>
                     </td>
                     <td className="px-8 py-5 min-w-0">
-                      {c.compratori_immobili?.[0]?.immobili?.titolo
-                        ? <span className="text-xs text-gray-500 truncate block">{c.compratori_immobili[0].immobili.titolo}</span>
+                      {c.acquirenti_immobili?.[0]?.immobili?.titolo
+                        ? <span className="text-xs text-gray-500 truncate block">{c.acquirenti_immobili[0].immobili.titolo}</span>
                         : <span className="text-xs text-gray-200">—</span>}
                     </td>
                     <td className="px-8 py-5">
@@ -1026,7 +1089,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                           variant="ghost"
                           size="sm"
                           title="Nuovo evento"
-                          onClick={() => openEventForCompratore(c)}
+                          onClick={() => openEventForAcquirente(c)}
                           className="h-8 w-8 p-0 rounded-xl text-gray-400 hover:text-[#94b0ab] hover:bg-[#94b0ab]/5"
                         >
                           <CalendarPlus size={15} />
@@ -1047,8 +1110,8 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          title="Elimina compratore"
-                          onClick={() => setCompratoreToDelete({ id: c.id!, nome: c.nome, cognome: c.cognome })}
+                          title="Elimina acquirente"
+                          onClick={() => setAcquirenteToDelete({ id: c.id!, nome: c.nome, cognome: c.cognome })}
                           className="h-8 w-8 p-0 rounded-xl text-gray-300 hover:text-red-500 hover:bg-red-50"
                         >
                           <Trash2 size={15} />
@@ -1091,13 +1154,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         </div>
       )}
 
-      <Dialog open={!!selectedCompratore} onOpenChange={(open) => { if (!open) { setSelectedCompratore(null); setZoneInput(''); } }}>
+      <Dialog open={!!selectedAcquirente} onOpenChange={(open) => { if (!open) { setSelectedAcquirente(null); setZoneInput(''); } }}>
         <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
-          {selectedCompratore && (
+          {selectedAcquirente && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
 
               {(() => {
-                const isCreate = !selectedCompratore.id;
+                const isCreate = !selectedAcquirente.id;
                 return (
                   <DialogHeader className="px-7 pt-5 pb-4 border-b bg-white shrink-0">
                     <div className="flex items-center gap-4">
@@ -1110,16 +1173,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <DialogTitle className="text-xl font-bold text-gray-900 leading-none">
-                            {isCreate ? 'Nuovo Compratore' : `${selectedCompratore.nome} ${selectedCompratore.cognome}`}
+                            {isCreate ? 'Nuovo Acquirente' : `${selectedAcquirente.nome} ${selectedAcquirente.cognome}`}
                           </DialogTitle>
                           {!isCreate && (
                             <Popover>
                               <PopoverTrigger asChild>
                                 <button type="button" className={cn(
                                   "px-3 py-1 rounded-full font-bold uppercase tracking-widest text-[10px] border cursor-pointer hover:opacity-80 transition-opacity",
-                                  STATO_COLORS[selectedCompratore.stato ?? 'Nuovo'] ?? STATO_COLORS['Nuovo']
+                                  STATO_COLORS[selectedAcquirente.stato ?? 'Nuovo'] ?? STATO_COLORS['Nuovo']
                                 )}>
-                                  {selectedCompratore.stato || 'Nuovo'}
+                                  {selectedAcquirente.stato || 'Nuovo'}
                                 </button>
                               </PopoverTrigger>
                               <PopoverContent className="w-auto p-2 rounded-xl shadow-xl border-none" align="start">
@@ -1129,12 +1192,12 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                                       key={stato}
                                       type="button"
                                       onClick={() => {
-                                        setSelectedCompratore({ ...selectedCompratore, stato });
-                                        if (selectedCompratore.id) updateStato(selectedCompratore.id, stato);
+                                        setSelectedAcquirente({ ...selectedAcquirente, stato });
+                                        if (selectedAcquirente.id) updateStato(selectedAcquirente.id, stato);
                                       }}
                                       className={cn(
                                         "px-3 py-1.5 rounded-lg text-xs font-bold text-left transition-colors",
-                                        selectedCompratore.stato === stato ? "bg-gray-100" : "hover:bg-gray-50"
+                                        selectedAcquirente.stato === stato ? "bg-gray-100" : "hover:bg-gray-50"
                                       )}
                                     >
                                       {stato}
@@ -1148,7 +1211,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                         <DialogDescription className="text-xs text-gray-400 font-medium mt-1 flex items-center gap-2">
                           {isCreate
                             ? 'Compila il profilo e salva per creare il contatto.'
-                            : <>Contatto acquisito il {safeFormat(selectedCompratore.created_at, 'PPP', { locale: it })}</>
+                            : <>Contatto acquisito il {safeFormat(selectedAcquirente.created_at, 'PPP', { locale: it })}</>
                           }
                           {isLoadingDetail && <span className="inline-block w-3 h-3 rounded-full border-2 border-[#94b0ab]/40 border-t-[#94b0ab] animate-spin" />}
                         </DialogDescription>
@@ -1159,7 +1222,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
               })()}
 
               {(() => {
-                const isCreate = !selectedCompratore.id;
+                const isCreate = !selectedAcquirente.id;
                 return (
                   <Tabs defaultValue="profilo" className="flex flex-col flex-1 min-h-0">
                     <div className="px-7 border-b bg-white shrink-0">
@@ -1172,21 +1235,24 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                         </TabsTrigger>
                         <TabsTrigger value="eventi" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <Calendar size={15} /> Eventi
-                          {compratoreEvents.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreEvents.length}</span>
+                          {acquirenteEvents.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteEvents.length}</span>
                           )}
                         </TabsTrigger>
                         <TabsTrigger value="task" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <CheckSquare size={15} /> Task
-                          {compratoreTasks.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreTasks.length}</span>
+                          {acquirenteTasks.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteTasks.length}</span>
                           )}
                         </TabsTrigger>
                         <TabsTrigger value="note" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <FileText size={15} /> Note
-                          {compratoreNotes.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{compratoreNotes.length}</span>
+                          {acquirenteNotes.length > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteNotes.length}</span>
                           )}
+                        </TabsTrigger>
+                        <TabsTrigger value="documenti" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                          <Folder size={15} /> Documenti
                         </TabsTrigger>
                       </TabsList>
                     </div>
@@ -1205,16 +1271,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                           <Label className="text-xs font-bold text-gray-500">Nome <span className="text-red-400">*</span></Label>
                           <Input
                             required
-                            value={selectedCompratore.nome || ''}
-                            onChange={(e) => setSelectedCompratore({...selectedCompratore, nome: e.target.value})}
+                            value={selectedAcquirente.nome || ''}
+                            onChange={(e) => setSelectedAcquirente({...selectedAcquirente, nome: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Cognome</Label>
                           <Input
-                            value={selectedCompratore.cognome || ''}
-                            onChange={(e) => setSelectedCompratore({...selectedCompratore, cognome: e.target.value})}
+                            value={selectedAcquirente.cognome || ''}
+                            onChange={(e) => setSelectedAcquirente({...selectedAcquirente, cognome: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1222,16 +1288,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                           <Label className="text-xs font-bold text-gray-500">Email</Label>
                           <Input
                             type="email"
-                            value={selectedCompratore.email || ''}
-                            onChange={(e) => setSelectedCompratore({...selectedCompratore, email: e.target.value})}
+                            value={selectedAcquirente.email || ''}
+                            onChange={(e) => setSelectedAcquirente({...selectedAcquirente, email: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
                           <Input
-                            value={selectedCompratore.telefono || ''}
-                            onChange={(e) => setSelectedCompratore({...selectedCompratore, telefono: e.target.value})}
+                            value={selectedAcquirente.telefono || ''}
+                            onChange={(e) => setSelectedAcquirente({...selectedAcquirente, telefono: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1249,12 +1315,12 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                           <Label className="text-xs font-bold text-gray-500">Budget Massimo (€)</Label>
                           <div className="flex flex-wrap gap-1.5">
                             {[100000, 150000, 200000, 250000, 300000, 500000, 750000, 1000000].map((preset) => {
-                              const isActive = Number(selectedCompratore.budget) === preset;
+                              const isActive = Number(selectedAcquirente.budget) === preset;
                               return (
                                 <button
                                   key={preset}
                                   type="button"
-                                  onClick={() => setSelectedCompratore({...selectedCompratore, budget: isActive ? '' : String(preset)})}
+                                  onClick={() => setSelectedAcquirente({...selectedAcquirente, budget: isActive ? '' : String(preset)})}
                                   className={cn(
                                     "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150",
                                     isActive
@@ -1272,12 +1338,12 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                             <Input
                               type="text"
                               inputMode="numeric"
-                              value={selectedCompratore.budget
-                                ? Number(String(selectedCompratore.budget).replace(/\./g, '')).toLocaleString('it-IT')
+                              value={selectedAcquirente.budget
+                                ? Number(String(selectedAcquirente.budget).replace(/\./g, '')).toLocaleString('it-IT')
                                 : ''}
                               onChange={(e) => {
                                 const raw = e.target.value.replace(/\./g, '').replace(/[^0-9]/g, '');
-                                setSelectedCompratore({...selectedCompratore, budget: raw});
+                                setSelectedAcquirente({...selectedAcquirente, budget: raw});
                               }}
                               placeholder="Importo personalizzato..."
                               className="h-10 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
@@ -1288,16 +1354,16 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                         <div className="space-y-2">
                           <Label className="text-xs font-bold text-gray-500">Tipologie Ricercate</Label>
                           <div className="flex flex-wrap gap-1.5">
-                            {['Monolocale','Bilocale','Trilocale','Quadrilocale','Pentalocale+','Villa','Villetta a schiera','Attico','Box','Posto auto','Locale commerciale','Capannone','Terreno'].map(t => {
-                              const active = (selectedCompratore.tipologia_ricerca ?? []).includes(t);
+                            {TIPOLOGIE_IMMOBILE.map(t => {
+                              const active = (selectedAcquirente.tipologia_ricerca ?? []).includes(t);
                               return (
                                 <button
                                   key={t}
                                   type="button"
                                   onClick={() => {
-                                    const cur: string[] = selectedCompratore.tipologia_ricerca ?? [];
-                                    setSelectedCompratore({
-                                      ...selectedCompratore,
+                                    const cur: string[] = selectedAcquirente.tipologia_ricerca ?? [];
+                                    setSelectedAcquirente({
+                                      ...selectedAcquirente,
                                       tipologia_ricerca: active ? cur.filter((v: string) => v !== t) : [...cur, t],
                                     });
                                   }}
@@ -1319,9 +1385,9 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                           <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5">
                             <MapPin size={11} className="text-blue-400" /> Zone di Ricerca
                           </Label>
-                          {(selectedCompratore.zone_ricercate ?? []).length > 0 && (
+                          {(selectedAcquirente.zone_ricercate ?? []).length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
-                              {(selectedCompratore.zone_ricercate as string[]).map(z => (
+                              {(selectedAcquirente.zone_ricercate as string[]).map(z => (
                                 <span
                                   key={z}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-500 text-white border border-blue-500"
@@ -1329,9 +1395,9 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                                   {z}
                                   <button
                                     type="button"
-                                    onClick={() => setSelectedCompratore({
-                                      ...selectedCompratore,
-                                      zone_ricercate: (selectedCompratore.zone_ricercate as string[]).filter((v: string) => v !== z),
+                                    onClick={() => setSelectedAcquirente({
+                                      ...selectedAcquirente,
+                                      zone_ricercate: (selectedAcquirente.zone_ricercate as string[]).filter((v: string) => v !== z),
                                     })}
                                     className="ml-0.5 hover:opacity-70"
                                   >
@@ -1351,10 +1417,10 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                                     e.preventDefault();
                                     const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
                                     if (vals.length === 0) return;
-                                    const cur: string[] = selectedCompratore.zone_ricercate ?? [];
+                                    const cur: string[] = selectedAcquirente.zone_ricercate ?? [];
                                     const newZones = vals.filter(v => !cur.includes(v));
                                     if (newZones.length === 0) { setZoneInput(''); return; }
-                                    setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, ...newZones] });
+                                    setSelectedAcquirente({ ...selectedAcquirente, zone_ricercate: [...cur, ...newZones] });
                                     newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
                                     setZoneInput('');
                                   }
@@ -1367,10 +1433,10 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                                 onClick={() => {
                                   const vals = zoneInput.split(',').map(v => v.trim()).filter(v => v.length > 0);
                                   if (vals.length === 0) return;
-                                  const cur: string[] = selectedCompratore.zone_ricercate ?? [];
+                                  const cur: string[] = selectedAcquirente.zone_ricercate ?? [];
                                   const newZones = vals.filter(v => !cur.includes(v));
                                   if (newZones.length === 0) { setZoneInput(''); return; }
-                                  setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, ...newZones] });
+                                  setSelectedAcquirente({ ...selectedAcquirente, zone_ricercate: [...cur, ...newZones] });
                                   newZones.forEach(v => { if (!zoneSuggestions.includes(v)) setZoneSuggestions(prev => [...prev, v].sort()); });
                                   setZoneInput('');
                                 }}
@@ -1381,13 +1447,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                             </div>
                             {zoneInput.trim() && zoneSuggestions.filter(s =>
                               s.toLowerCase().includes(zoneInput.toLowerCase()) &&
-                              !(selectedCompratore.zone_ricercate ?? []).includes(s)
+                              !(selectedAcquirente.zone_ricercate ?? []).includes(s)
                             ).length > 0 && (
                               <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
                                 {zoneSuggestions
                                   .filter(s =>
                                     s.toLowerCase().includes(zoneInput.toLowerCase()) &&
-                                    !(selectedCompratore.zone_ricercate ?? []).includes(s)
+                                    !(selectedAcquirente.zone_ricercate ?? []).includes(s)
                                   )
                                   .slice(0, 6)
                                   .map(s => (
@@ -1396,8 +1462,8 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                                       type="button"
                                       onMouseDown={(e) => {
                                         e.preventDefault();
-                                        const cur: string[] = selectedCompratore.zone_ricercate ?? [];
-                                        setSelectedCompratore({ ...selectedCompratore, zone_ricercate: [...cur, s] });
+                                        const cur: string[] = selectedAcquirente.zone_ricercate ?? [];
+                                        setSelectedAcquirente({ ...selectedAcquirente, zone_ricercate: [...cur, s] });
                                         setZoneInput('');
                                       }}
                                       className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
@@ -1415,6 +1481,70 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                   </TabsContent>
 
                   <TabsContent value="immobili" className="mt-0 p-6 space-y-6">
+                    {acquirenteMatches.perfetti.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-emerald-600 flex items-center gap-1.5">
+                          <Sparkles size={13} /> Match perfetto
+                        </h3>
+                        <div className="space-y-2">
+                          {acquirenteMatches.perfetti.map((immobile) => (
+                            <div key={immobile.id} className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden flex items-stretch group hover:border-emerald-300 transition-all">
+                              <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
+                                {immobile.copertina_url ? (
+                                  <img src={immobile.copertina_url} alt={immobile.titolo} className="w-full h-full object-cover min-h-[68px]" />
+                                ) : (
+                                  <div className="w-full min-h-[68px] flex items-center justify-center text-slate-300"><HomeIcon size={20} /></div>
+                                )}
+                              </div>
+                              <div className="flex-1 px-4 py-3 min-w-0">
+                                <p className="font-bold text-gray-900 truncate text-sm leading-tight">{immobile.titolo}</p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className="text-sm font-bold text-[#94b0ab]">{formatPrice(immobile.prezzo)}</span>
+                                  {immobile.citta && <span className="text-[10px] text-gray-400 font-medium">{immobile.citta}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center pr-3 shrink-0">
+                                <Button type="button" variant="outline" size="sm" className="rounded-xl font-bold gap-1.5 border-emerald-200 text-emerald-600 hover:bg-emerald-50 text-xs h-8" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssociateProperty(immobile); }}>
+                                  <Plus size={13} /> Collega
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {acquirenteMatches.parziali.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-bold uppercase tracking-widest text-amber-600">Potrebbero interessare</h3>
+                        <div className="space-y-2">
+                          {acquirenteMatches.parziali.map((immobile) => (
+                            <div key={immobile.id} className="bg-white rounded-xl border border-amber-100 shadow-sm overflow-hidden flex items-stretch group hover:border-amber-300 transition-all">
+                              <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
+                                {immobile.copertina_url ? (
+                                  <img src={immobile.copertina_url} alt={immobile.titolo} className="w-full h-full object-cover min-h-[68px]" />
+                                ) : (
+                                  <div className="w-full min-h-[68px] flex items-center justify-center text-slate-300"><HomeIcon size={20} /></div>
+                                )}
+                              </div>
+                              <div className="flex-1 px-4 py-3 min-w-0">
+                                <p className="font-bold text-gray-900 truncate text-sm leading-tight">{immobile.titolo}</p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className="text-sm font-bold text-[#94b0ab]">{formatPrice(immobile.prezzo)}</span>
+                                  {immobile.citta && <span className="text-[10px] text-gray-400 font-medium">{immobile.citta}</span>}
+                                </div>
+                              </div>
+                              <div className="flex items-center pr-3 shrink-0">
+                                <Button type="button" variant="outline" size="sm" className="rounded-xl font-bold gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50 text-xs h-8" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssociateProperty(immobile); }}>
+                                  <Plus size={13} /> Collega
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Collegati</h3>
@@ -1429,14 +1559,14 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                         </Button>
                       </div>
 
-                      {!selectedCompratore.compratori_immobili || selectedCompratore.compratori_immobili.length === 0 ? (
+                      {!selectedAcquirente.acquirenti_immobili || selectedAcquirente.acquirenti_immobili.length === 0 ? (
                         <div className="py-6 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <Heart className="mx-auto text-gray-200 mb-2" size={24} />
                           <p className="text-xs text-gray-400 italic">Nessun immobile collegato manualmente.</p>
                         </div>
                       ) : (
                         <div className="space-y-2">
-                          {selectedCompratore.compratori_immobili.map((item) => (
+                          {selectedAcquirente.acquirenti_immobili.map((item) => (
                             <div key={item.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden flex items-stretch group hover:border-[#94b0ab]/40 transition-all">
                               <div className="w-20 shrink-0 bg-slate-100 overflow-hidden">
                                 {item.immobili.copertina_url ? (
@@ -1488,26 +1618,26 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                   <TabsContent value="eventi" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-muted-foreground tracking-wide uppercase">
-                        Appuntamenti ({compratoreEvents.length})
+                        Appuntamenti ({acquirenteEvents.length})
                       </p>
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => { setEditingEvent(null); openEventForCompratore(selectedCompratore); }}
+                        onClick={() => { setEditingEvent(null); openEventForAcquirente(selectedAcquirente); }}
                         className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-3 text-xs font-bold gap-1.5"
                       >
                         <Plus size={13} /> Nuovo Evento
                       </Button>
                     </div>
 
-                    {compratoreEvents.length === 0 ? (
+                    {acquirenteEvents.length === 0 ? (
                       <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                         <Calendar className="mx-auto text-gray-200 mb-2" size={26} />
                         <p className="text-xs text-gray-400 italic">Nessun appuntamento per questo contatto.</p>
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {compratoreEvents.map((evt) => {
+                        {acquirenteEvents.map((evt) => {
                           const colors = TIPOLOGIA_COLORS[evt.tipologia] ?? TIPOLOGIA_COLORS['Altro'];
                           const isPast = evt.data < new Date().toISOString().slice(0, 10);
                           return (
@@ -1547,7 +1677,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                   <TabsContent value="task" className="mt-0 p-6 space-y-4 animate-in fade-in slide-in-from-bottom-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[11px] font-semibold text-muted-foreground tracking-wide uppercase">
-                        Task ({compratoreTasks.length})
+                        Task ({acquirenteTasks.length})
                       </p>
                       <Button
                         type="button"
@@ -1559,14 +1689,14 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                       </Button>
                     </div>
 
-                    {compratoreTasks.length === 0 ? (
+                    {acquirenteTasks.length === 0 ? (
                       <div className="py-10 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                         <CheckSquare className="mx-auto text-gray-200 mb-2" size={24} />
                         <p className="text-[11px] text-gray-400 italic">Nessuna task per questo contatto.</p>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        {compratoreTasks.map((task) => {
+                        {acquirenteTasks.map((task) => {
                           const STATO_BADGE: Record<string, string> = {
                             'Da fare':    'bg-amber-100 text-amber-700 border-amber-200',
                             'In corso':   'bg-blue-100 text-blue-700 border-blue-200',
@@ -1631,11 +1761,11 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                   <TabsContent value="note" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
 
                     {(() => {
-                      const siteMsg = selectedCompratore.note_interne?.trim()
-                        ? selectedCompratore.note_interne
-                        : compratoreNotes.find((n) => n.autore !== 'Agente')?.testo;
+                      const siteMsg = selectedAcquirente.note_interne?.trim()
+                        ? selectedAcquirente.note_interne
+                        : acquirenteNotes.find((n) => n.autore !== 'Agente')?.testo;
                       if (!siteMsg) return null;
-                      const siteDate = compratoreNotes.find((n) => n.autore !== 'Agente')?.created_at;
+                      const siteDate = acquirenteNotes.find((n) => n.autore !== 'Agente')?.created_at;
                       return (
                         <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 space-y-2">
                           <div className="flex items-center gap-2">
@@ -1653,13 +1783,13 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
                     })()}
 
                     <div className="space-y-2">
-                      {compratoreNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedCompratore.note_interne && compratoreNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
+                      {acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedAcquirente.note_interne && acquirenteNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
                         <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <FileText className="mx-auto text-gray-200 mb-2" size={26} />
                           <p className="text-xs text-gray-400 italic">Nessuna nota per questo contatto.</p>
                         </div>
                       ) : (
-                        compratoreNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
+                        acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
                           <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
@@ -1704,13 +1834,41 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
 
                   </TabsContent>
 
+                  <TabsContent value="documenti" className="mt-0 p-6 space-y-5 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="bg-white border rounded-xl shadow-sm p-5 space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Folder size={15} className="text-[#94b0ab]" />
+                        <h3 className="text-sm font-semibold text-muted-foreground tracking-wide uppercase">Documenti</h3>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-bold text-gray-500">Link cartella Drive</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={selectedAcquirente.drive_folder_url ?? ''}
+                            onChange={(e) => setSelectedAcquirente({ ...selectedAcquirente, drive_folder_url: e.target.value })}
+                            placeholder="https://drive.google.com/..."
+                            className="rounded-xl"
+                          />
+                          <Button type="button" onClick={handleSaveDriveUrl} className="rounded-xl font-bold bg-[#94b0ab] hover:bg-[#7a948f] text-white shrink-0">
+                            Salva
+                          </Button>
+                        </div>
+                        {selectedAcquirente.drive_folder_url && (
+                          <a href={selectedAcquirente.drive_folder_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#94b0ab] hover:underline mt-1">
+                            <ExternalLink size={12} /> Apri cartella
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </TabsContent>
+
                 </div>
                   </Tabs>
                 );
               })()}
 
               {(() => {
-                const isCreate = !selectedCompratore.id;
+                const isCreate = !selectedAcquirente.id;
                 return (
                   <div className="px-7 py-4 bg-white border-t shrink-0 flex items-center justify-between gap-4">
                     {!isCreate ? (
@@ -1760,17 +1918,17 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
       <TaskModal
         open={isTaskModalOpen}
         onClose={() => setIsTaskModalOpen(false)}
-        defaultContattoId={selectedCompratore?.id}
-        defaultContattoName={selectedCompratore ? `${selectedCompratore.nome} ${selectedCompratore.cognome}` : undefined}
+        defaultContattoId={selectedAcquirente?.id}
+        defaultContattoName={selectedAcquirente ? `${selectedAcquirente.nome} ${selectedAcquirente.cognome}` : undefined}
         onSaved={async () => {
           setIsTaskModalOpen(false);
-          if (!selectedCompratore?.id) return;
+          if (!selectedAcquirente?.id) return;
           const { data } = await supabase
             .from('tasks')
             .select('id, titolo, nota, data, ora, stato, agente_id, telefono, urgente')
-            .eq('contatto_id', selectedCompratore.id)
+            .eq('contatto_id', selectedAcquirente.id)
             .order('data', { ascending: true });
-          if (data) setCompratoreTasks(data);
+          if (data) setAcquirenteTasks(data);
         }}
       />
 
@@ -1909,7 +2067,7 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         onClose={() => setIsQuickTaskModalOpen(false)}
         defaultContattoId={quickTaskId}
         defaultContattoName={quickTaskName}
-        onSaved={() => { setIsQuickTaskModalOpen(false); fetchCompratori(); }}
+        onSaved={() => { setIsQuickTaskModalOpen(false); fetchAcquirenti(); }}
       />
 
       <EventFormModal
@@ -1918,14 +2076,14 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         onSaved={async () => {
           setIsEventModalOpen(false);
           setEditingEvent(null);
-          if (selectedCompratore?.id) {
+          if (selectedAcquirente?.id) {
             const { data } = await supabase
               .from('appuntamenti')
               .select('id, tipologia, data, ora_inizio, ora_fine, note, agente_id, contatto_id')
-              .eq('contatto_id', selectedCompratore.id)
+              .eq('contatto_id', selectedAcquirente.id)
               .order('data', { ascending: true })
               .order('ora_inizio', { ascending: true });
-            setCompratoreEvents(data || []);
+            setAcquirenteEvents(data || []);
           }
         }}
         event={editingEvent ?? undefined}
@@ -1935,17 +2093,17 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
         properties={propertiesForEventModal}
       />
 
-      <AlertDialog open={!!compratoreToDelete} onOpenChange={(open) => !open && setCompratoreToDelete(null)}>
+      <AlertDialog open={!!acquirenteToDelete} onOpenChange={(open) => !open && setAcquirenteToDelete(null)}>
         <AlertDialogContent className="border-none shadow-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle className="text-2xl font-bold">Confermi l'eliminazione?</AlertDialogTitle>
             <AlertDialogDescription className="text-gray-500 font-medium">
-              Stai per eliminare <span className="font-bold text-gray-800">{compratoreToDelete?.nome} {compratoreToDelete?.cognome}</span>. L'operazione è irreversibile.
+              Stai per eliminare <span className="font-bold text-gray-800">{acquirenteToDelete?.nome} {acquirenteToDelete?.cognome}</span>. L'operazione è irreversibile.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel className="rounded-xl border-gray-200 font-bold">Annulla</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCompratore} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteAcquirente} className="bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold">Sì, elimina</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1954,4 +2112,4 @@ const CompratoriView = ({ deepLinkLeadId }: CompratoriViewProps) => {
   );
 };
 
-export default CompratoriView;
+export default AcquirentiView;
