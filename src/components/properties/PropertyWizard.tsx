@@ -23,6 +23,7 @@ import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import { Sentry } from '@/lib/sentry';
 import { compressCopertina, compressGalleria } from '@/utils/imageCompression';
+import { creaPipelineIniziale } from '@/lib/pipelineChecklist';
 import { cn } from '@/lib/utils';
 import {
   Select,
@@ -34,7 +35,7 @@ import {
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 import { z } from 'zod';
 import { PropertySchema } from '@/schemas';
-import { PREDEFINED_FEATURES } from '@/lib/constants';
+import { PREDEFINED_FEATURES, TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 import type { Property } from '@/types';
 
 interface PropertyWizardProps {
@@ -47,23 +48,12 @@ interface PropertyWizardProps {
   onLeadLinked?: (leadId: string, immobileId: string) => void;
 }
 
-const LOCALI_STANZE: Record<string, number | null> = {
-  Monolocale: 1,
-  Bilocale: 2,
-  Trilocale: 3,
-  Quadrilocale: 4,
-  'Pentalocale+': 5,
-  'Nuova costruzione': null,
-  Villa: null,
-  'Villetta a schiera': null,
-  Attico: null,
-  Loft: null,
-  Box: null,
-  'Posto auto': null,
-  'Locale commerciale': null,
-  Capannone: null,
-  Terreno: null,
+const STANZE_PER_TIPOLOGIA: Partial<Record<string, number>> = {
+  Monolocale: 1, Bilocale: 2, Trilocale: 3, Quadrilocale: 4, 'Pentalocale+': 5,
 };
+const LOCALI_STANZE: Record<string, number | null> = Object.fromEntries(
+  TIPOLOGIE_IMMOBILE.map((t) => [t, STANZE_PER_TIPOLOGIA[t] ?? null]),
+);
 
 type GalleryItem = { id: string; preview: string; file?: File };
 
@@ -256,6 +246,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
           .single();
         if (error) throw error;
         setDraftId(inserted.id);
+        try {
+          await creaPipelineIniziale(inserted.id);
+        } catch (pipelineErr) {
+          Sentry.captureException(pipelineErr, { tags: { feature: 'property_creation_pipeline_init' } });
+        }
       } catch (err) {
         showError("Errore nel salvataggio bozza: " + (err instanceof Error ? err.message : String(err)));
         setLoading(false);
@@ -273,9 +268,17 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   const handleClose = async () => {
     if (!initialData && !draftId && formData.titolo) {
       try {
-        await supabase
+        const { data: inserted, error } = await supabase
           .from('immobili')
-          .insert([{ ...buildPayload(), stato: 'Bozza', copertina_url: null, immagini_urls: [] }]);
+          .insert([{ ...buildPayload(), stato: 'Bozza', copertina_url: null, immagini_urls: [] }])
+          .select('id')
+          .single();
+        if (error) throw error;
+        try {
+          await creaPipelineIniziale(inserted.id);
+        } catch (pipelineErr) {
+          Sentry.captureException(pipelineErr, { tags: { feature: 'property_creation_pipeline_init' } });
+        }
         showSuccess("Bozza salvata");
         onSuccess();
       } catch (err) {
@@ -424,6 +427,11 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
           .single();
         if (insertErr) throw insertErr;
         immobileId = inserted.id;
+        try {
+          await creaPipelineIniziale(immobileId);
+        } catch (pipelineErr) {
+          Sentry.captureException(pipelineErr, { tags: { feature: 'property_creation_pipeline_init' } });
+        }
       }
 
       const ts = Date.now();

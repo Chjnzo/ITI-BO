@@ -15,7 +15,7 @@ export const PropertySchema = z.object({
   anno_costruzione: z.number().int().min(1800).max(new Date().getFullYear()),
   caratteristiche: z.array(z.string()),
   descrizione: z.string().max(5000).optional(),
-  stato: z.enum(['Disponibile', 'Venduto', 'Ritirato']),
+  stato: z.enum(['Disponibile', 'Venduto', 'Bozza']),
   link_immobiliare: z.string().url().optional().or(z.literal('')),
   proprietario: z.string().optional(),
 });
@@ -26,7 +26,7 @@ export const LeadSchema = z.object({
   email: z.string().email('Email non valida'),
   telefono: z.string().regex(/^\+?[\d\s\-()]+$/, 'Telefono non valido'),
   budget: z.number().positive().optional(),
-  tipo_cliente: z.enum(['Acquirente', 'Venditore', 'Ibrido']),
+  tipo_cliente: z.enum(['Acquirente', 'Proprietario', 'Ibrido']),
   stato: z.enum(['Nuovo', 'Contattato', 'Trattativa', 'Chiuso', 'Perso']),
 });
 

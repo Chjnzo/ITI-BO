@@ -148,10 +148,10 @@ The `/valutazioni` module calls the `generate-evaluation` Edge Function which us
 - **Deduplication** — looks up existing lead by email OR phone; updates instead of inserting a second row
 - The old unsafe overload `upsert_lead(p_nome, p_email, p_telefono, p_messaggio, ...)` (no cognome, plain INSERT, no dedup, no search_path) has been dropped
 
-### ITI2.0 ContactForm — required client-side hardening (TODO)
+### ITI2.0 ContactForm hardening — done
 
-The public contact form in the `ITI2.0` sibling repo should implement:
-- **30-second submit cooldown** after a successful submission (disable button, show toast)
-- **Email regex validation** before calling the RPC (fail fast on the client)
-
-These are defence-in-depth measures; the DB-level guards above remain the authoritative enforcement layer.
+`ContactForm.tsx` in the `ITI2.0` sibling repo already implements the 30-second submit cooldown
+and client-side email regex validation before calling the RPC (defence-in-depth; the DB-level
+guards above remain the authoritative layer). `OpenHouseBooking.tsx` in the same repo does
+**not** have equivalent hardening — see its own `CLAUDE.md`/backlog for that gap, it's out of
+scope for this repo.

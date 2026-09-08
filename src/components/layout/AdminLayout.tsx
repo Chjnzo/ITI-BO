@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Home, Users, LogOut, Calendar, LayoutDashboard, Menu, X, ListTodo, Calculator, PanelLeft, BellRing, Settings, LayoutGrid, BarChart3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
+import { useAlerts } from '@/hooks/useAlerts';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -16,6 +19,7 @@ const SIDEBAR_EXPANDED_W  = 224; // px — full label width
 const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isPinned, setIsPinned] = useState<boolean>(() => {
@@ -31,19 +35,38 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
   };
 
   const isExpanded = isPinned || isHovered;
+  const { totalCount: alertCount } = useAlerts();
+  const { data: currentProfile } = useCurrentProfile();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // Svuota la cache React Query: senza questo, il prossimo utente che fa login
+    // nella stessa tab (es. Admin -> logout -> Agente) vede dati/ruolo cache-ati
+    // del vecchio utente finché ogni singola query non scade per staleTime.
+    queryClient.clear();
     navigate('/login');
   };
 
-  const navItems = [
+  const navItems: {
+    icon: typeof Home;
+    label: string;
+    path: string;
+    badge?: number;
+  }[] = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
+    { icon: LayoutGrid, label: 'Gestione', path: '/gestione' },
     { icon: Home, label: 'Immobili', path: '/immobili' },
+    { icon: Users, label: 'Contatti', path: '/contatti' },
     { icon: Calculator, label: 'Valutazioni', path: '/valutazioni' },
     { icon: Calendar, label: 'Agenda', path: '/agenda' },
-    { icon: Users, label: 'Lead', path: '/leads' },
     { icon: ListTodo, label: 'Task', path: '/tasks' },
+    { icon: BellRing, label: 'Alert', path: '/alert', badge: alertCount },
+    ...(currentProfile?.ruolo === 'Admin'
+      ? [
+          { icon: BarChart3, label: 'Report KPI', path: '/report-kpi' },
+          { icon: Settings, label: 'Impostazioni', path: '/impostazioni' },
+        ]
+      : []),
   ];
 
   const SidebarContent = ({ expanded = false, pinned = false, onTogglePin }: { expanded?: boolean; pinned?: boolean; onTogglePin?: () => void }) => (
@@ -67,6 +90,34 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
       <nav className="flex-1 py-4 space-y-1 overflow-y-auto px-2">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
+
+          const linkContent = (
+            <>
+              <span className="relative shrink-0">
+                <item.icon size={20} className={cn(
+                  "transition-colors",
+                  isActive ? "text-[#94b0ab]" : "text-gray-400 group-hover:text-[#1a1a1a]"
+                )} />
+                {!!item.badge && !expanded && (
+                  <span className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {item.badge > 9 ? '9+' : item.badge}
+                  </span>
+                )}
+              </span>
+              <span className={cn(
+                "ml-3 font-medium whitespace-nowrap transition-all duration-250 overflow-hidden flex items-center gap-1.5",
+                expanded ? "opacity-100 max-w-[140px]" : "opacity-0 max-w-0 ml-0"
+              )}>
+                {item.label}
+                {!!item.badge && (
+                  <span className="h-4 min-w-[1rem] px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {item.badge}
+                  </span>
+                )}
+              </span>
+            </>
+          );
+
           return (
             <Link
               key={item.path}
@@ -79,16 +130,7 @@ const AdminLayout = ({ children, fullHeight = false, wide = false }: AdminLayout
                   : "text-gray-500 hover:bg-gray-50 hover:text-[#1a1a1a]"
               )}
             >
-              <item.icon size={20} className={cn(
-                "shrink-0 transition-colors",
-                isActive ? "text-[#94b0ab]" : "text-gray-400 group-hover:text-[#1a1a1a]"
-              )} />
-              <span className={cn(
-                "ml-3 font-medium whitespace-nowrap transition-all duration-250 overflow-hidden",
-                expanded ? "opacity-100 max-w-[140px]" : "opacity-0 max-w-0 ml-0"
-              )}>
-                {item.label}
-              </span>
+              {linkContent}
             </Link>
           );
         })}

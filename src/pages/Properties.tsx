@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import {
-  Plus, Pencil, Trash2, Home, CheckCircle2,
-  RotateCcw, Search, Star, Calendar, Building2, Eye, EyeOff
+  Pencil, Trash2, Home, CheckCircle2,
+  RotateCcw, Search, Star, Calendar, Building2, Eye, EyeOff,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -41,6 +42,16 @@ import type { Property } from '@/types';
 const PAGE_SIZE = 20;
 
 const Properties = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Link diretto dalla pagina Alert: se arriva un openImmobileId ridirigiamo
+  // subito a /gestione, che è dove ora vivono le kanban immobili.
+  const openImmobileId = (location.state as { openImmobileId?: string } | null)?.openImmobileId;
+  useEffect(() => {
+    if (openImmobileId) {
+      navigate('/gestione', { replace: true, state: { openImmobileId, gestioneTab: 'in-vendita' } });
+    }
+  }, [openImmobileId, navigate]);
   const [filter, setFilter] = useState<'active' | 'sold'>('active');
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -138,28 +149,9 @@ const Properties = () => {
   return (
     <AdminLayout fullHeight>
       <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-6 shrink-0">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
-            <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              onClick={() => setEvidenzaOpen(true)}
-              title="In Evidenza"
-              className="rounded-2xl w-11 h-11 p-0 border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all"
-            >
-              <Star size={15} className="fill-[#facc15] text-[#facc15]" />
-            </Button>
-            <Button
-              onClick={() => { setEditingProperty(null); setIsWizardOpen(true); }}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-8 h-14 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
-            >
-              <Plus className="mr-2" size={20} />
-              Nuovo Immobile
-            </Button>
-          </div>
+        <div className="mb-6 shrink-0">
+          <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Dashboard Immobili</h1>
+          <p className="text-gray-500 mt-1 font-medium">Gestione immediata del tuo portafoglio.</p>
         </div>
 
         <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between mb-6 gap-4 shrink-0">
@@ -174,14 +166,24 @@ const Properties = () => {
             </TabsList>
           </Tabs>
 
-          <div className="relative flex-1 max-w-xl group">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={20} />
-            <Input
-              placeholder="Cerca per titolo, zona o indirizzo..."
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="h-14 pl-14 pr-6 rounded-2xl border-gray-100 bg-white shadow-sm focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
-            />
+          <div className="flex items-center gap-3 flex-1 max-w-xl">
+            <div className="relative flex-1 group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={16} />
+              <Input
+                placeholder="Cerca per titolo, zona o indirizzo..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="h-10 pl-11 pr-4 rounded-xl border-gray-200 bg-white focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"
+              />
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setEvidenzaOpen(true)}
+              title="In Evidenza"
+              className="rounded-xl w-10 h-10 p-0 border-gray-200 hover:border-amber-300 hover:bg-amber-50 transition-all shrink-0"
+            >
+              <Star size={14} className="fill-[#facc15] text-[#facc15]" />
+            </Button>
           </div>
         </div>
 

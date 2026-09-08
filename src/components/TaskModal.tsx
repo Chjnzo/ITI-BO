@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { CalendarIcon } from 'lucide-react';
+import { CalendarIcon, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,9 @@ interface TaskModalProps {
   onSaved?: () => void;
   defaultLeadId?: string;
   defaultLeadName?: string;
+  /** Generic contatto (acquirente/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
+  defaultContattoId?: string;
+  defaultContattoName?: string;
 }
 
 const TASK_COLORS = [
@@ -37,7 +40,7 @@ const TASK_COLORS = [
   { id: 'violet', hex: '#8b5cf6', label: 'Viola' },
 ];
 
-const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: TaskModalProps) => {
+const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
   const [telefono, setTelefono] = useState('');
   const [leadId, setLeadId] = useState('');
@@ -47,6 +50,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
   const [nota, setNota] = useState('');
   const [agenteId, setAgenteId] = useState('');
   const [colore, setColore] = useState<string | null>(null);
+  const [urgente, setUrgente] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
   const [teamMembers, setTeamMembers] = useState<{ id: string; nome_completo: string | null }[]>([]);
@@ -71,6 +75,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     setOra('');
     setNota('');
     setColore(null);
+    setUrgente(false);
     if (defaultLeadId) {
       setLeadId(defaultLeadId);
       setLeadItems(defaultLeadName ? [{ id: defaultLeadId, label: defaultLeadName }] : []);
@@ -79,6 +84,8 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
       setLeadItems([]);
     }
   }, [open, defaultLeadId, defaultLeadName]);
+
+  const isContattoLinked = !!defaultContattoId;
 
   const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
 
@@ -120,13 +127,15 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
     const { error } = await supabase.from('tasks').insert({
       titolo: titolo.trim(),
       telefono: telefono.trim() || null,
-      lead_id: leadId || null,
+      lead_id: isContattoLinked ? null : (leadId || null),
+      contatto_id: defaultContattoId || null,
       agente_id: agenteId || currentUserId,
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora: ora || null,
       stato: 'Da fare',
       colore: colore || null,
+      urgente,
     });
     setIsSaving(false);
     if (error) {
@@ -156,6 +165,23 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
               placeholder="Es: Richiamare cliente, Preparare documentazione..."
               className="h-11 border-slate-200 bg-slate-50/50"
             />
+          </div>
+
+          {/* Urgente */}
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setUrgente((u) => !u)}
+              className={cn(
+                'flex items-center gap-2 h-11 px-4 rounded-none border font-bold text-sm transition-all',
+                urgente
+                  ? 'bg-red-500 border-red-500 text-white'
+                  : 'bg-slate-50/50 border-slate-200 text-gray-500 hover:border-red-300 hover:text-red-500',
+              )}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              {urgente ? 'Task urgente' : 'Segna come urgente'}
+            </button>
           </div>
 
           {/* Colore */}
@@ -206,10 +232,14 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName }: T
             </Select>
           </div>
 
-          {/* Lead collegato (opzionale) */}
+          {/* Lead/contatto collegato (opzionale) */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Lead collegato</Label>
-            {defaultLeadId ? (
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Contatto collegato</Label>
+            {isContattoLinked ? (
+              <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
+                {defaultContattoName || 'Contatto selezionato'}
+              </div>
+            ) : defaultLeadId ? (
               <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
                 {defaultLeadName || 'Lead selezionato'}
               </div>

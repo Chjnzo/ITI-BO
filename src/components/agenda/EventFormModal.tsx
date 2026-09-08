@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag } from 'lucide-react';
+import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,10 @@ import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
+import { useQueryClient } from '@tanstack/react-query';
+import { FASI_PROPRIETARI } from '@/hooks/useProprietariPipeline';
+import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
+import type { FaseProprietario } from '@/types';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -31,6 +35,7 @@ export interface Appointment {
   agente_id: string;
   tipologia: string;
   lead_id: string | null;
+  contatto_id?: string | null;
   immobile_id: string | null;
   data: string;
   ora_inizio: string | null;
@@ -65,6 +70,7 @@ export const TIPOLOGIE = [
   'Terza Visita',
   'Valutazione Vendita',
   'Valutazione Affitto',
+  'Rivalutazione',
   'Incontro con proprietario',
   'Firma proposta',
   'Rogito',
@@ -83,6 +89,7 @@ export const TIPOLOGIA_COLORS: Record<string, { bg: string; text: string; border
   'Terza Visita':              { bg: '#a855f7', text: '#ffffff', border: '#9333ea' },  // Viola
   'Valutazione Vendita':       { bg: '#2563eb', text: '#ffffff', border: '#1d4ed8' },  // Blu
   'Valutazione Affitto':       { bg: '#0284c7', text: '#ffffff', border: '#0369a1' },  // Azzurro
+  'Rivalutazione':             { bg: '#0d9488', text: '#ffffff', border: '#0f766e' },  // Teal
   'Incontro con proprietario': { bg: '#92400e', text: '#ffffff', border: '#78350f' },  // Marrone
   'Firma proposta':            { bg: '#d97706', text: '#ffffff', border: '#b45309' },  // Ambra
   'Rogito':                    { bg: '#ea580c', text: '#ffffff', border: '#c2410c' },  // Arancione
@@ -136,6 +143,15 @@ interface LeadDetail {
   assegnato_a?: string | null;
 }
 
+interface RelatedAppuntamento {
+  id: string;
+  data: string;
+  ora_inizio: string | null;
+  tipologia: string;
+  agente_id: string;
+  motivo: 'contatto' | 'immobile' | 'indirizzo';
+}
+
 interface EventFormModalProps {
   open: boolean;
   onClose: () => void;
@@ -146,6 +162,9 @@ interface EventFormModalProps {
   defaultTimeStart?: string;
   defaultLeadId?: string;
   defaultLeadName?: string;
+  /** Generic contatto (acquirente/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
+  defaultContattoId?: string;
+  defaultContattoName?: string;
   agents: AgentProfile[];
   properties: Property[];
   coloriMap?: TipologieMap;
@@ -156,9 +175,12 @@ const EventFormModal = ({
   open, onClose, onSaved, event,
   defaultAgentId, defaultDate, defaultTimeStart,
   defaultLeadId, defaultLeadName,
+  defaultContattoId, defaultContattoName,
   agents, properties, coloriMap, tipologieList,
 }: EventFormModalProps) => {
   const isEdit = !!event;
+  const isContattoLinked = !!(event ? event.contatto_id : defaultContattoId);
+  const queryClient = useQueryClient();
 
   const [agenteId, setAgenteId] = useState('');
   const [tipologia, setTipologia] = useState('');
@@ -177,9 +199,11 @@ const EventFormModal = ({
   const [leadSheet, setLeadSheet] = useState(false);
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [isLoadingLeadDetail, setIsLoadingLeadDetail] = useState(false);
+  const [relatedAppuntamenti, setRelatedAppuntamenti] = useState<RelatedAppuntamento[]>([]);
 
   const autosavedIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relatedCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -227,7 +251,8 @@ const EventFormModal = ({
       const payload = {
         agente_id: agenteId,
         tipologia: tipologia || 'Altro',
-        lead_id: leadId || null,
+        lead_id: isContattoLinked ? null : (leadId || null),
+        contatto_id: defaultContattoId || null,
         immobile_id: immobileId !== 'none' ? immobileId : null,
         data: format(selectedDate, 'yyyy-MM-dd'),
         ora_inizio: oraInizio || null,
@@ -254,6 +279,70 @@ const EventFormModal = ({
     return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, open, selectedDate, agenteId, tipologia, leadId, immobileId, oraInizio, oraFine, note, indirizzo]);
+
+  // Solo avviso informativo (non blocca il salvataggio): appena si collega un
+  // contatto/lead, un immobile o si scrive un indirizzo, cerca altri
+  // appuntamenti già fissati per la stessa entità e li mostra in un banner.
+  // Priorità immobile_id/contatto_id/lead_id (match esatto) sull'indirizzo
+  // libero (ILIKE, usato solo quando non c'è un immobile collegato — copre il
+  // caso "ho scritto la via/il paese ma non ho selezionato l'immobile dalla
+  // lista").
+  useEffect(() => {
+    if (relatedCheckTimerRef.current) clearTimeout(relatedCheckTimerRef.current);
+
+    if (!open) {
+      setRelatedAppuntamenti([]);
+      return;
+    }
+
+    const contattoId = isContattoLinked ? (event?.contatto_id ?? defaultContattoId ?? null) : null;
+    const currentLeadId = !isContattoLinked ? (leadId || null) : null;
+    const currentImmobileId = immobileId !== 'none' ? immobileId : null;
+    const currentIndirizzo = indirizzo.trim();
+
+    if (!contattoId && !currentLeadId && !currentImmobileId && currentIndirizzo.length < 4) {
+      setRelatedAppuntamenti([]);
+      return;
+    }
+
+    relatedCheckTimerRef.current = setTimeout(async () => {
+      const excludeIds = [event?.id, autosavedIdRef.current].filter((v): v is string => !!v);
+      const matches = new Map<string, RelatedAppuntamento>();
+
+      const pushRows = (rows: Omit<RelatedAppuntamento, 'motivo'>[] | null, motivo: RelatedAppuntamento['motivo']) => {
+        for (const r of rows ?? []) {
+          if (excludeIds.includes(r.id) || matches.has(r.id)) continue;
+          matches.set(r.id, { ...r, motivo });
+        }
+      };
+
+      const cols = 'id, data, ora_inizio, tipologia, agente_id';
+
+      if (contattoId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('contatto_id', contattoId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'contatto');
+      } else if (currentLeadId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('lead_id', currentLeadId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'contatto');
+      }
+
+      if (currentImmobileId) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .eq('immobile_id', currentImmobileId).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'immobile');
+      } else if (currentIndirizzo.length >= 4) {
+        const { data } = await supabase.from('appuntamenti').select(cols)
+          .ilike('indirizzo_appuntamento', `%${currentIndirizzo}%`).order('data', { ascending: true }).limit(5);
+        pushRows(data, 'indirizzo');
+      }
+
+      setRelatedAppuntamenti(Array.from(matches.values()).sort((a, b) => a.data.localeCompare(b.data)));
+    }, 400);
+
+    return () => { if (relatedCheckTimerRef.current) clearTimeout(relatedCheckTimerRef.current); };
+  }, [open, isContattoLinked, defaultContattoId, event?.contatto_id, event?.id, leadId, immobileId, indirizzo]);
 
   const handleClose = () => {
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -322,6 +411,34 @@ const EventFormModal = ({
     if (suggested) setIndirizzo(suggested);
   };
 
+  // Fissare un appuntamento di tipologia "Rivalutazione" su un proprietario fa
+  // avanzare la sua pratica alla fase omonima — ma solo in avanti: se la
+  // pratica è già oltre (es. "Presa in carico"), non torna indietro.
+  const avanzaFaseSeRivalutazione = async (contattoId: string) => {
+    const { data: pratica } = await supabase
+      .from('proprietari_pratiche')
+      .select('id, fase')
+      .eq('proprietario_id', contattoId)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!pratica) return;
+
+    const targetIdx = FASI_PROPRIETARI.indexOf('Rivalutazione');
+    const currentIdx = FASI_PROPRIETARI.indexOf(pratica.fase as FaseProprietario);
+    if (currentIdx === -1 || currentIdx >= targetIdx) return;
+
+    const { error } = await supabase
+      .from('proprietari_pratiche')
+      .update({ fase: 'Rivalutazione', updated_at: new Date().toISOString() })
+      .eq('id', pratica.id);
+    if (error) return;
+
+    await generaChecklistPraticaPerFase(pratica.id, 'Rivalutazione');
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pratica-documenti', pratica.id] });
+  };
+
   const handleSave = async () => {
     if (!selectedDate) {
       showError('Seleziona una data');
@@ -336,7 +453,8 @@ const EventFormModal = ({
     const payload = {
       agente_id: agenteId,
       tipologia: tipologia || 'Altro',
-      lead_id: leadId || null,
+      lead_id: isContattoLinked ? null : (leadId || null),
+      contatto_id: isContattoLinked ? (event?.contatto_id ?? defaultContattoId ?? null) : null,
       immobile_id: immobileId !== 'none' ? immobileId : null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora_inizio: oraInizio || null,
@@ -353,6 +471,10 @@ const EventFormModal = ({
       autosavedIdRef.current = null;
     } else {
       ({ error } = await supabase.from('appuntamenti').insert([payload]));
+    }
+
+    if (!error && payload.tipologia === 'Rivalutazione' && payload.contatto_id) {
+      await avanzaFaseSeRivalutazione(payload.contatto_id);
     }
 
     setIsSaving(false);
@@ -381,6 +503,14 @@ const EventFormModal = ({
 
   const formatPrice = (v: number | null) =>
     v != null ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v) : null;
+
+  const nomeAgente = (id: string) => agents.find(a => a.id === id)?.nome_completo ?? 'Agente';
+
+  const MOTIVO_LABEL: Record<RelatedAppuntamento['motivo'], string> = {
+    contatto: 'per questo contatto',
+    immobile: 'per questo immobile',
+    indirizzo: 'a questo indirizzo',
+  };
 
   return (
     <>
@@ -556,20 +686,26 @@ const EventFormModal = ({
             </Select>
           </div>
 
-          {/* Lead */}
+          {/* Lead / contatto collegato */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead collegato</Label>
-            <Combobox
-              items={leadItems}
-              value={leadId}
-              onSelect={handleLeadSelect}
-              onSearch={searchLeads}
-              placeholder="Cerca lead per nome o telefono..."
-              searchPlaceholder="Nome, cognome o telefono..."
-              emptyMessage="Nessun lead trovato."
-            />
+            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Contatto collegato</Label>
+            {isContattoLinked ? (
+              <div className="h-12 flex items-center px-4 rounded-xl border border-gray-100 bg-gray-100 text-sm text-gray-700 font-medium">
+                {defaultContattoName || 'Contatto selezionato'}
+              </div>
+            ) : (
+              <Combobox
+                items={leadItems}
+                value={leadId}
+                onSelect={handleLeadSelect}
+                onSearch={searchLeads}
+                placeholder="Cerca lead per nome o telefono..."
+                searchPlaceholder="Nome, cognome o telefono..."
+                emptyMessage="Nessun lead trovato."
+              />
+            )}
             {/* Phone + WhatsApp + Scheda lead */}
-            {leadPhone && (
+            {!isContattoLinked && leadPhone && (
               <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-4 py-3 mt-2">
                 <Phone size={15} className="text-green-600 shrink-0" />
                 <span className="font-bold text-green-800 text-sm flex-1 tracking-wide">{leadPhone}</span>
@@ -594,7 +730,7 @@ const EventFormModal = ({
               </div>
             )}
             {/* Scheda lead anche senza telefono */}
-            {leadId && !leadPhone && (
+            {!isContattoLinked && leadId && !leadPhone && (
               <button
                 type="button"
                 onClick={openLeadSheet}
@@ -648,6 +784,28 @@ const EventFormModal = ({
               emptyMessage="Nessun immobile trovato."
             />
           </div>
+
+          {/* Avviso informativo: altri appuntamenti già fissati per lo stesso contatto/immobile/indirizzo */}
+          {relatedAppuntamenti.length > 0 && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 space-y-2">
+              <div className="flex items-center gap-2 text-sky-700 font-semibold text-xs uppercase tracking-widest">
+                <Info size={14} />
+                Altri appuntamenti trovati ({relatedAppuntamenti.length})
+              </div>
+              <div className="space-y-1.5">
+                {relatedAppuntamenti.map((r) => (
+                  <p key={r.id} className="text-sm text-sky-900">
+                    <span className="font-semibold">
+                      {format(parseISO(r.data), "d MMM yyyy", { locale: it })}
+                      {r.ora_inizio ? ` alle ${r.ora_inizio.slice(0, 5)}` : ''}
+                    </span>
+                    {' — '}{r.tipologia} con {nomeAgente(r.agente_id)}{' '}
+                    <span className="text-sky-600">({MOTIVO_LABEL[r.motivo]})</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Data */}
           <div className="space-y-2">

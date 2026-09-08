@@ -42,3 +42,9 @@ ruvector.db
 .claude/skills/
 .claude/.ruflo-status-cache.json
 .claude/.ruflo-status-refresh.lock
+.claude/scheduled_tasks.lock
+.claude/settings.json
+.mcp.json
+
+# Not meant for this repo — see file header (written to be copied elsewhere)
+/ADOZIONE-METODO-ALTRO-PROGETTO.md

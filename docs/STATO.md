@@ -5,15 +5,491 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-08-20 — audit completo della codebase (struttura, sicurezza, qualità)
-+ creazione della migration baseline da introspezione produzione + pulizia sistematica a basso
-rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI minima, collaudo
-RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/`appuntamenti` in
-produzione (con fix di una regressione live su `leads` INSERT causata da un fix precedente nello
-stesso giorno) + stack Supabase locale via Docker avviato e verificato riproducibile da zero +
-risolti tutti e 7 i `TODO(review)` della baseline, incluso un bug live in produzione
-(`tasks.tipologia` inesistente, rompeva il caricamento della Dashboard) e una colonna morta
-droppata (`valutazioni.status`)._
+_Ultimo aggiornamento: 2026-08-27 — Fase 7 (Motore alert configurabile) del pivot
+Proprietari/Compratori/Collaboratori **fatta e verificata in locale — pivot completo, 7 fasi su
+7**. Migration `20260827190000_alert_regole.sql`: nuova tabella `alert_regole` con 7 righe fisse
+pre-seedate (una per ogni combinazione valida `entita_tipo`/`fase`: 3 immobili + 4 proprietari,
+CHECK che vincola la combinazione, `UNIQUE(entita_tipo, fase)` — niente CRUD libero, le fasi sono
+un enum chiuso condiviso con i CHECK di `immobile_pipeline_stato`/`proprietari_pratiche`, un "aggiungi
+regola" avrebbe permesso righe orfane). Per riga: `giorni_soglia`, `destinatario`
+(`tutti`/`agente_responsabile`), `attiva`. RLS: SELECT aperto a tutti gli `authenticated` (serve al
+motore di calcolo per chiunque sia loggato), UPDATE ristretto ad Admin via `is_admin()` (riuso della
+Fase 6, nessuna logica duplicata).
+
+Sostituisce le soglie di stagnazione hardcoded in `useAlerts.ts` (prima solo immobili) con un
+motore a runtime che copre anche il kanban proprietari, come richiesto dalla pianificazione
+2026-08-21. `useAlerts.ts` riscritto: `AlertAutomatico` generalizzato con campi `entita`/`entitaId`
+(non più immobili-only); nuova query `proprietariBase` su `proprietari_pratiche`; risoluzione
+"agente responsabile" per gli immobili via reverse-embed
+`pratiche:proprietari_pratiche(proprietario:proprietari(contatti(agente_id)))` (non tramite
+`immobili.proprietario_id`, che punta ancora alla vecchia `leads` — gap noto Fase 5, volutamente non
+toccato); nuovo helper `visibileAUtente` che filtra per `destinatario`, con fallback a "visibile a
+tutti" se non è possibile risolvere un agente responsabile (per non far sparire in silenzio un
+alert). L'alert "documento mancante" resta fuori dal motore (non è un pattern "N giorni in fase X",
+scope escluso esplicitamente). Nuovo hook `src/hooks/useAlertRegole.ts` (gestione Admin, condivide
+query key/fetch con `useAlerts.ts` per dedupe react-query). Nuova sezione "Regole di alert
+automatico" in `Impostazioni.tsx` (tabella editabile: soglia giorni, destinatario, switch attiva,
+per entrambe le pipeline). `Alerts.tsx` aggiornato per il deep-link verso `/proprietari` sugli
+alert di tipo proprietario (stesso pattern già usato per `/immobili`); `KanbanBoard.tsx` proprietari
+e `Proprietari.tsx` estesi con `autoOpenId`/`location.state.openPraticaId`, analogo al kanban
+immobili.
+
+Collaudo: schema/RLS/CHECK testati via `psql` diretto (transazione con `ROLLBACK`) — combinazione
+duplicata rigettata da `UNIQUE`, combinazione non valida rigettata dal CHECK, SELECT libero per
+qualunque `authenticated`, UPDATE riuscita solo in sessione Admin simulata (`SET LOCAL ROLE
+authenticated; SET LOCAL request.jwt.claim.sub = '<uuid>'`), bloccata per Agente. Collaudo separato
+della logica applicativa con dati sintetici inseriti in transazione (il seed locale non popola
+`proprietari`/`proprietari_pratiche`/`immobile_pipeline_stato`): join di stagnazione verificato sia
+per immobile (90gg fermi ≥ soglia 60) sia per pratica proprietari (20gg fermi ≥ soglia 7),
+risoluzione `agente_responsabile` verificata via reverse-embed. Migration applicata per davvero con
+`npx supabase db reset`. `npx tsc --noEmit -p tsconfig.app.json`: 0 nuovi errori rispetto al
+baseline noto (`feedback_tsc_check.md`). `npm run build`: OK. Nessuna verifica UI in browser (nessun
+tool di automazione browser disponibile in questo ambiente) — solo collaudo DB diretto + type-check
++ build. Pivot Proprietari/Compratori/Collaboratori concluso: nessuna fase successiva pianificata.
+
+_Aggiornamento precedente: 2026-08-27 — Fase 6 (Ruoli: UI assegnazione Admin/Agente/Segreteria +
+enforcement RLS) del pivot Proprietari/Compratori/Collaboratori **fatta e verificata in locale**.
+Migration `20260827170000_ruoli_admin_enforcement.sql`, scope volutamente limitato a
+`profili_agenti` (dettagli/motivazione completi in `docs/DECISIONI.md`, non una matrice di
+permessi CRM-wide): funzione `is_admin()` (SECURITY DEFINER); trigger `sync_is_admin_from_ruolo`
+che tiene `is_admin` derivato da `ruolo` senza riscrivere `Dashboard.tsx`; trigger
+`enforce_ruolo_change_admin_only` (solo un Admin cambia `ruolo`, proprio o altrui, condizionato ad
+`auth.uid() IS NOT NULL` per non bloccare migration/seed/service_role); trigger
+`handle_new_agente_profile` (`AFTER INSERT ON auth.users`) per auto-provisioning di una riga
+`profili_agenti` (ruolo default `'Agente'`) ad ogni nuovo utente. RLS: sostituita la vecchia
+policy permissiva `"Authenticated can manage profili_agenti"` con SELECT aperto a tutti gli
+`authenticated` e UPDATE ristretto a "se stesso, o Admin per chiunque".
+
+`supabase/seed.sql` aggiornato: `ON CONFLICT (id) DO UPDATE` (altrimenti PK violation contro
+l'auto-provisioning) e scrive `ruolo` esplicito invece di `is_admin` (ora derivato).
+
+Frontend: `src/hooks/useCurrentProfile.ts` (profilo utente loggato + ruolo, usato anche dalla
+route guard) e `src/hooks/useAgentRoles.ts` (lista agenti + mutation `aggiornaRuolo`). Nuova
+pagina `src/pages/Impostazioni.tsx` (tabella agenti, `Select` ruolo per riga, `window.confirm` se
+un Admin sta per togliersi da solo il ruolo Admin). Route `/impostazioni` in `App.tsx` protetta
+dal nuovo prop `adminOnly` su `ProtectedRoute` (redirige a `/` se `ruolo !== 'Admin'`). Voce
+sidebar "Impostazioni" (icona `Settings`) in `AdminLayout.tsx`, visibile solo per Admin.
+
+Collaudo: migration + trigger + RLS testati via `psql` diretto (transazione con `ROLLBACK`),
+incluse simulazioni di sessione RLS (`SET LOCAL ROLE authenticated; SET LOCAL
+request.jwt.claim.sub = '<uuid>'`) per il path Admin e non-Admin sulla UPDATE di `ruolo`; durante
+il collaudo emersi e risolti due bug (PK violation in `seed.sql` sotto l'auto-provisioning trigger;
+trigger di enforcement che rigettava l'`UPDATE` dello stesso `seed.sql` per assenza di sessione
+JWT) — dettagli in `docs/DECISIONI.md`. Migration applicata per davvero con `npx supabase db
+reset`, superato al primo tentativo dopo i fix. `npx tsc --noEmit -p tsconfig.app.json`: 0 nuovi
+errori rispetto al baseline noto (`feedback_tsc_check.md`). `npm run build`: OK. Nessuna verifica
+UI in browser (nessun tool di automazione browser disponibile in questo ambiente) — solo collaudo
+DB diretto + type-check + build. Prossimo passo: Fase 7.
+
+_Aggiornamento precedente: 2026-08-27 — Fase 5 (Kanban immobili: rimozione fase "Acquisizione",
+documenti spostati sulla pipeline proprietari) del pivot Proprietari/Compratori/Collaboratori
+**fatta e verificata in locale**. Migration `20260827150000_remove_acquisizione_fase_immobili.sql`:
+`FasePipeline` immobili ridotta a `'In Vendita' | 'Venduto' | 'Archivio'` (CHECK stretti su
+`documenti_catalogo`, `immobile_pipeline_stato` con nuovo `DEFAULT 'In Vendita'`,
+`immobile_documenti`); i 4 documenti ex-"Acquisizione" (Doc Valutazione; Privacy proprietario
+firmata, Incarico di mediazione firmato, CI/CF proprietario) si spostano sulle nuove tabelle
+`proprietari_documenti_catalogo`/`proprietari_pratica_documenti` (stesso pattern di
+`documenti_catalogo`/`immobile_documenti` ma senza upload Drive — solo toggle Da fare/Fatto),
+distribuiti su "Contatto" (1 doc) e "Presa in carico" (3 doc) della pipeline proprietari.
+Migrazione dati inclusa nella stessa migration (non uno script backfill separato, a differenza di
+leads→contatti): sposta i documenti storici sulla pratica collegata allo stesso `immobile_id`
+prima di stringere i CHECK, poi passa gli eventuali immobili ancora in "Acquisizione" a "In
+Vendita"/sottofase "Burocratiche" e rigenera la relativa checklist — pensata per girare come
+no-op sicuro su un `db reset` locale pulito e per l'uso in produzione dopo
+`backfill-contatti-pivot.sql` (per non perdere lo stato "Fatto" storico, vedi commento in testa
+alla migration). Nuovo `src/lib/proprietariChecklist.ts` (`generaChecklistPraticaPerFase`,
+analogo di `generaChecklistPerFase` ma senza sottofase). `useProprietariPipeline.ts` ora calcola
+`docTotali`/`docCompletati` per fase corrente (stesso criterio di `useImmobiliPipeline.ts`) e
+chiama `generaChecklistPraticaPerFase` in `spostaFase` e in `NewProprietarioDialog.tsx` alla
+creazione della prima pratica. Nuova sezione "Checklist documenti" in `PraticaDetailSheet.tsx`
+(checkbox semplice, no upload/Collapsible — solo 1-3 documenti per fase). `FASI_VALIDE` nella
+Edge Function `drive-documenti` allineata (rimossa "Acquisizione").
+
+Collaudo eseguito via `psql` diretto sul container `supabase_db_ITI-BO` (transazione con
+`ROLLBACK` finale, sia per la migration che per il flusso applicativo): generazione checklist
+"Contatto", idempotenza su rigenerazione, toggle stato, generazione checklist "Presa in carico"
+al cambio fase (stato "Contatto" preservato), cascade delete su `proprietari_pratiche` — tutti
+verificati. Migration applicata per davvero con `npx supabase db reset` (nessuna riga
+"Acquisizione" preesistente in locale, sezione di migrazione dati eseguita come no-op corretto).
+`npx tsc --noEmit -p tsconfig.app.json`: 0 nuovi errori (stesso baseline pre-esistente di
+`feedback_tsc_check.md`). `npm run build`: OK. Nessuna verifica UI in browser (nessun tool di
+automazione browser disponibile in questo ambiente) — solo collaudo DB diretto + type-check +
+build. Prossimo passo: Fase 6.
+
+_Aggiornamento precedente: 2026-08-27 — Fase 4 (Modulo Proprietari) del pivot Proprietari/Compratori/
+Collaboratori **fatta e verificata in locale**. Nuovo hook `src/hooks/useProprietariPipeline.ts`
+(React Query, stesso pattern di `useImmobiliPipeline.ts`): query `proprietari_pratiche` con embed
+a 2 livelli (`proprietario:proprietari!...(nome, cognome, telefono, contatti(agente_id))`),
+mutation `spostaFase` con optimistic update/rollback. Quando una pratica arriva a "Presa in
+carico" si crea automaticamente l'`immobile` corrispondente (`creaImmobileDaPratica`, idempotente
+su `immobile_id` già presente), saltando la fase "Acquisizione" della pipeline immobili — entra
+direttamente in "In Vendita" come bozza (`stato: 'Bozza'`), riusando `upsertFasePipeline`/
+`generaChecklistPerFase` invece di `creaPipelineIniziale`. Nessun `proprietario_id` impostato
+sull'immobile (quella FK punta ancora a `leads`, gap rimandato a una fase successiva) e nessun
+override esplicito di `visibile` (stessa convenzione di `PropertyWizard.tsx`). Nuovi tipi
+`FaseProprietario`/`Proprietario`/`ProprietarioPratica` in `src/types/index.ts`.
+
+UI: `src/pages/Proprietari.tsx` (route `/proprietari`, voce sidebar "Proprietari" con icona
+`KeyRound` in `AdminLayout.tsx`) con toggle Kanban/Lista che mirror `Properties.tsx`.
+`src/components/proprietari/kanban/{KanbanBoard,KanbanColumn,KanbanCard,PraticaDetailSheet}.tsx`
+adattano gli equivalenti in `properties/kanban/` (dnd-kit) alle 4 fasi proprietario, senza
+concetto di checklist documenti/sottofase (non pertinenti a questa pipeline).
+`src/components/proprietari/ProprietariList.tsx` mostra TUTTI i proprietari (fetch locale
+useState/useEffect, come `CompratoriView.tsx`, non un hook React Query) — inclusi quelli arrivati
+dal form pubblico via `upsert_lead` senza ancora una pratica (via/tipologia/città le raccoglie
+l'agente, non il form) — con filtro per agente (`profili_agenti`) e azione "Avvia pratica" per chi
+non ne ha una. `src/components/proprietari/NewProprietarioDialog.tsx` fa l'insert a 3 passi
+(`contatti` → `proprietari` → `proprietari_pratiche`, fase iniziale "Contatto"), stesso pattern
+two-step già usato da `CompratoriView.tsx`/`CollaboratoriView.tsx` esteso con lo step pratica.
+
+Collaudo eseguito via `psql` diretto sul container `supabase_db_ITI-BO` (transazione con
+`ROLLBACK` finale): contatto→proprietario→pratica→cambio fase a "Presa in carico"→creazione
+immobile (stato Bozza, visibile true di default) — tutti i passaggi verificati. `npx tsc --noEmit
+-p tsconfig.app.json`: 0 nuovi errori (stesso baseline pre-esistente di `feedback_tsc_check.md`).
+Nessuna verifica UI in browser (nessun tool di automazione browser disponibile in questo
+ambiente) — solo collaudo DB diretto + type-check. Prossimo passo: Fase 5 (Kanban immobili —
+migrazione immobili esistenti, FK `immobili.proprietario_id` da `leads` a `proprietari`).
+
+_Aggiornamento precedente: 2026-08-27 — Fase 3 (UI Contatti) del pivot Proprietari/Compratori/
+Collaboratori **fatta e verificata in locale**. `src/pages/Leads.tsx` eliminata, sostituita da
+`src/pages/Contatti.tsx` (container con tab shadcn Compratori/Collaboratori) montata sulla
+stessa route `/leads` in `App.tsx` (nome UI provvisorio invariato). `src/components/contatti/
+CompratoriView.tsx` porta la UI CRM completa (lista, filtri, paginazione, dialog
+creazione/modifica con tab Profilo/Immobili/Eventi/Task/Note, property picker, soft delete,
+concorrenza ottimistica su `_version`) sullo schema `contatti`+`compratori`+
+`compratori_immobili`, con inserimento in due passi (`INSERT contatti` poi `INSERT compratori`
+sullo stesso id) e task/note/appuntamenti collegati via `contatto_id` invece di `lead_id`.
+Rimossa ogni logica venditore (stato_venditore, valutazione_stimata, scadenza_esclusiva,
+motivazione_vendita, zona_venditore, "Dati di Vendita", tipo_cliente/fonte/telefono_fisso/
+immobile_primo_contatto) — nessuna colonna del genere esiste su `compratori`, verrà eventualmente
+gestita dal futuro modulo Proprietari dedicato (Fase 4). "Esigenze di Acquisto" ora
+incondizionata (ogni riga `compratori` è per definizione un acquirente).
+`src/components/contatti/CollaboratoriView.tsx` è CRUD semplice (no pipeline/stato/tab, no
+`_version` — la tabella non ce l'ha) su `contatti`+`collaboratori`. `TaskModal.tsx` e
+`EventFormModal.tsx` estesi in modo additivo con `defaultContattoId`/`defaultContattoName`
+(collegamento via `contatto_id`, invariati i chiamanti esistenti che non passano queste prop).
+
+**Bug di schema trovato e corretto durante il collaudo**: `lead_notes.lead_id` era rimasta
+`NOT NULL` nella migration di Fase 1 (a differenza di `tasks.lead_id`/`appuntamenti.lead_id`, già
+nullable prima del pivot) — bloccava l'inserimento di note collegate solo via `contatto_id` (es.
+un compratore creato dopo il cutover, senza nessun `leads.id` di origine). Corretto con
+`supabase/migrations/20260827130000_lead_notes_lead_id_nullable.sql`
+(`ALTER TABLE lead_notes ALTER COLUMN lead_id DROP NOT NULL`), applicata e verificata contro il
+container Docker locale.
+
+Collaudo eseguito via `psql` diretto sul container `supabase_db_ITI-BO` (dentro una transazione
+con `ROLLBACK` finale, nessun dato di test persistito): inserimento in due passi
+`contatti`→`compratori`, task/nota/appuntamento collegati via `contatto_id`, inserimento
+`collaboratori`, link `compratori_immobili`, soft delete — tutti riusciti dopo il fix di cui
+sopra. RLS confermata invariata (`ALL` per `authenticated` su tutte e 5 le tabelle nuove, stesso
+pattern del resto del CRM). `npx tsc --noEmit -p tsconfig.app.json`: stesso baseline di errori
+pre-esistenti documentato in `feedback_tsc_check.md` (0 nuovi errori dai file di questa fase).
+`npm run build`: OK. Nessuna verifica UI in browser (nessun tool di automazione browser
+disponibile in questo ambiente) — solo collaudo DB diretto + type-check + build. Prossimo passo:
+Fase 4 (Modulo Proprietari: kanban + lista + auto-creazione immobile su "Presa in carico").
+
+**Bugfix UI trovati dall'utente in collaudo manuale del 2026-08-27 (Fase 3), tutti corretti**:
+- Cambio tab Compratori/Collaboratori mostrava entrambi i pannelli sovrapposti/schiacciati:
+  Radix `TabsContent` non smonta mai il pannello inattivo, lo nasconde solo con l'attributo HTML
+  `hidden` — che le classi Tailwind `flex`/`grid` (`display`) impostate sullo stesso elemento
+  sovrascrivono per precedenza di cascata CSS. Fix: aggiunta `data-[state=inactive]:hidden` a
+  entrambi i `TabsContent` in `src/pages/Contatti.tsx`.
+- Barra di ricerca apriva il menu di autocompletamento email di Chrome (placeholder conteneva la
+  parola "email"): aggiunto `autoComplete="off"` + `name` dedicato agli input di ricerca in
+  `CompratoriView.tsx`/`CollaboratoriView.tsx`.
+- Anello di focus della barra di ricerca tagliato in alto: era il primo figlio di un contenitore
+  `overflow-hidden` senza spazio sopra, a differenza di `Properties.tsx` dove la ricerca segue un
+  blocco titolo con `mb-6` che fa da cuscinetto. Fix: `pt-2` sulla riga header di entrambe le view.
+- Placeholder fittizi "Mario"/"Rossi" sui campi Nome/Cognome dei form di creazione/modifica
+  (in entrambe le view) rimossi su richiesta esplicita dell'utente.
+
+_Ultimo aggiornamento precedente: 2026-08-27 — Fase 1 (schema) del pivot Proprietari/Compratori/
+Collaboratori **implementata e verificata in locale**. Modalità operativa concordata con
+l'utente per l'intero pivot: deroga temporanea ai gate di conferma per-fase (vedi memoria
+`project_proprietari_pivot.md`), tutto il lavoro solo contro lo stack Supabase locale via
+Docker, nessuna scrittura/push/merge su prod finché non funziona tutto end-to-end in locale.
+Fatto: `supabase/migrations/20260827090000_add_contatti_proprietari_compratori_collaboratori.sql`
+(additiva, non tocca `leads`/`lead_immobili`) crea `contatti` (tabella base condivisa, con
+`lead_id_origine` come colonna temporanea di tracciabilità da rimuovere al cutover),
+`proprietari` + `proprietari_pratiche` (pipeline a 4 fasi), `compratori`, `collaboratori`,
+`compratori_immobili`, e aggiunge `valutazioni.proprietario_id` +
+`tasks`/`lead_notes`/`appuntamenti.contatto_id`/`duplicato_da_id`. Script
+`scripts/backfill-contatti-pivot.sql` (idempotente, non una migration — segue il pattern di
+`backfill-property-centric-model.sql`) popola le nuove tabelle da `leads` esistenti, duplicando
+in due contatti separati (proprietario + compratore, non collegati) i lead `tipo_cliente =
+'Ibrido'` insieme a task/note/appuntamenti storici collegati (via `duplicato_da_id`). Verificato
+con `supabase db reset` + esecuzione dello script contro il container Docker locale: conteggi
+coerenti con i dati di seed (7 contatti totali = 3 proprietari + 4 compratori, 2
+proprietari_pratiche solo per i lead con immobile collegato, 2/3 valutazioni linkate — la terza
+resta orfana come da seed, 2 compratori_immobili = lead_immobili originali). La logica di
+duplicazione per Ibrido, non esercitata dai dati di seed di default (il lead Ibrido `...204` non
+ha task/note/appuntamenti in seed), è stata testata manualmente inserendo un task di prova sul
+lead Ibrido e rieseguendo lo script: risultato corretto (1 UPDATE in-place lato proprietario + 1
+INSERT duplicato lato compratore con `duplicato_da_id` verso l'originale), poi il DB locale è
+stato resettato per tornare allo stato pulito da seed. `tsc --noEmit` pulito (nessun codice
+frontend toccato in questa fase).
+
+Fase 2 (RPC) **fatta e verificata nella stessa sessione**: migration
+`20260827110000_rewrite_upsert_lead_to_contatti.sql` riscrive il corpo di `upsert_lead`
+(firma invariata a 8 argomenti, quella realmente chiamata da `ContactForm.tsx` in `ITI2.0`) per
+scrivere su `contatti`+`proprietari` (ramo `p_tipo_interesse='vendere'`) o
+`contatti`+`compratori`+`compratori_immobili` (ramo default "acquistare"), invece che su
+`leads`/`lead_immobili`. Rimosso l'overload a 7 argomenti (senza `p_tipo_interesse`): dead code,
+non chiamato da nessun punto del codice in questo repo né in `ITI2.0`. Rate-limit 15 minuti,
+duplicate-guard 24 ore e validazione regex email preservati identici, ma ora scoped per tabella
+di destinazione (proprietari o compratori) invece che sull'unica `leads`. Inasprita anche la
+grant: `REVOKE ALL ... FROM PUBLIC` + `GRANT EXECUTE ... TO anon, authenticated` esplicito (prima
+l'EXECUTE era sul default `PUBLIC`, funzionalmente equivalente ma implicito), seguendo lo stesso
+pattern di hardening di `20260820122500_revoke_public_execute_on_internal_functions.sql`.
+Verificato con `supabase db reset` + chiamate dirette via `psql` (anche con `SET ROLE anon` per
+confermare l'execute grant): flusso acquirente crea `compratori`+`compratori_immobili` corretti,
+flusso venditore crea `proprietari` corretto (nessun collegamento immobile lato proprietari — una
+pratica richiede via/tipologia/città raccolte dall'agente, non solo un id, e il form pubblico non
+li valorizza in quel flusso), rate-limit e dedup guard scattano come da comportamento originale,
+email malformata rigettata. DB locale poi resettato allo stato pulito da seed. `tsc --noEmit`
+pulito. Prossimo passo: Fase 3 (UI Contatti — split in tab Compratori/Collaboratori).
+
+_Ultimo aggiornamento precedente: 2026-08-21 — pianificazione (solo design, **nessun codice/migration
+scritto**) del pivot Proprietari/Compratori/Collaboratori: `leads` verrà sostituita da tre
+tabelle separate (`proprietari` con pipeline/kanban dedicata a 4 fasi senza sottofasi,
+`compratori`, `collaboratori`), il kanban immobili perderà la fase "Acquisizione" (assorbita dal
+nuovo kanban proprietari, che crea l'immobile in automatico alla "Presa in carico"), i ruoli
+Admin/Agente/Segreteria passeranno da schema-only a enforcement reale, e gli alert diventeranno
+un motore di regole configurabile da UI. Decisioni di design in `docs/DECISIONI.md` (voce
+"Pivot Proprietari/Compratori/Collaboratori"), obiettivo/roadmap in `docs/OBIETTIVI.md`. Creato
+anche `ITI2.0/PIVOT-CONTATTI-ITI-BO.md` (repo sibling): conclusione, nessuna modifica di codice
+richiesta lì, solo una checklist di collaudo post-cutover. Piano a 7 fasi tracciato con task
+interni all'agente, in attesa di via libera per iniziare dalla Fase 1 (schema). Riepilogo per
+preventivo in `docs/PREVENTIVO-PIVOT-CONTATTI.md`.
+
+_Ultimo aggiornamento precedente: 2026-08-21 — sessione di follow-up/bugfix sulla sezione alert e sul Kanban
+appena implementati, **non ancora committata** (modifiche solo in working tree su
+`nuovo-Gestionale`): (1) `aggiornaSottofase` ora chiama anche `generaChecklistPerFase` — prima un
+immobile mai passato da un drag&drop (dati pre-pipeline) restava con checklist vuota anche dopo
+aver impostato la sottofase da UI; (2) corretto un bug per cui la pill sottofase nella
+`PipelineDetailSheet` non sembrava mai cambiare — `KanbanBoard.tsx` teneva la card selezionata
+come snapshot congelato (`selectedCard`) invece di ricavarla ad ogni render dalla lista live di
+React Query, ora si tiene solo `selectedCardId`; (3) apertura della sheet su un immobile senza
+sottofase imposta ora automaticamente la prima sottofase della fase corrente (invece di lasciare
+la pill vuota in attesa di un click manuale), generando la checklist nello stesso momento; (4) il
+checkbox "Fatto" di un documento è disabilitato finché non ha un file caricato (`drive_file_id`);
+(5) pulsanti carica/visualizza file unificati in una sola icona (graffetta ↔ spunta verde), con
+perdita della funzione "sostituisci file" — segnalata all'utente, non ancora reintrodotta (vedi
+`DECISIONI.md`). Verificato solo `tsc --noEmit` (nessun tool di automazione browser disponibile).
+Investigata anche l'ipotesi di spostare le foto immobili su Google Drive (come già i documenti):
+**decisione di non procedere**, foto restano su Supabase Storage — vedi `DECISIONI.md` per il
+ragionamento e i numeri di produzione verificati (101 immobili, 278,8 MB/1.699 file nel bucket
+`immobili`).
+
+_Ultimo aggiornamento precedente: 2026-08-21 — implementata la sezione alert (§3.6): nuova tabella
+`immobile_alert` per promemoria manuali per immobile, alert automatici (stagnazione fase,
+documento non generato in checklist) calcolati a runtime senza righe persistite, nuova pagina
+`/alert` con badge contatore in `AdminLayout.tsx`, creazione/risoluzione alert manuali da
+`PipelineDetailSheet.tsx`. Corretto anche un bug preesistente: `upsertFasePipeline` non
+aggiornava mai `immobile_pipeline_stato.updated_at` sui cambi fase, rendendo impossibile
+calcolare la stagnazione. Dettagli sotto (era "design proposto" nell'aggiornamento precedente,
+ora implementato).
+
+_Ultimo aggiornamento precedente 3: 2026-08-21 — flag `urgente` sulle task (`supabase/migrations/
+20260821100000_add_urgente_to_tasks.sql`), evidenziato in rosso su tutte e 4 le superfici che
+mostrano task (`TaskModal.tsx`, `Tasks.tsx`, `Dashboard.tsx`, tab task + mini modale in
+`Leads.tsx`); creati e popolati `docs/RUNBOOK.md` e `docs/DECISIONI.md` (ultimi due dei 4
+documenti vivi del metodo Serplay). Lavoro su branch `nuovo-Gestionale`, non ancora su `main`.
+
+_Ultimo aggiornamento precedente 4: 2026-08-21 — chiusura §3.1-§3.5 della `specifica-progetto-iti-bo-v1.md`
+(evoluzione da CRM lead-centrico a property-centrico): popolazione e UI della sottofase Kanban,
+ricerca nel Kanban, colonna `ruolo` su `profili_agenti` (solo schema, nessun enforcement), pulizia
+roadmap documentale. Lavoro svolto su branch `nuovo-Gestionale`, **non ancora mergiato su `main`**
+(vedi sezione dedicata sotto). Sessione precedente (stesso branch, non ancora annotata qui prima
+d'ora): introdotto lo schema property-centrico (tabelle pipeline/documenti/ownership) e riscritta
+la gestione documenti da Supabase Storage a Google Drive tramite Edge Function proxy._
+
+_Ultimo aggiornamento precedente 5: 2026-08-20 — audit completo della codebase (struttura,
+sicurezza, qualità) + creazione della migration baseline da introspezione produzione + pulizia
+sistematica a basso rischio pre-major-change (file morti, dipendenza inutilizzata, fix lint, CI
+minima, collaudo RLS di sola lettura) + fix gap RLS `tasks`/`lead_notes`/`profili_agenti`/
+`appuntamenti` in produzione (con fix di una regressione live su `leads` INSERT causata da un fix
+precedente nello stesso giorno) + stack Supabase locale via Docker avviato e verificato
+riproducibile da zero + risolti tutti e 7 i `TODO(review)` della baseline, incluso un bug live in
+produzione (`tasks.tipologia` inesistente, rompeva il caricamento della Dashboard) e una colonna
+morta droppata (`valutazioni.status`).
+
+## Evoluzione property-centrica (branch `nuovo-Gestionale`, non su `main`)
+
+Lavoro guidato da `specifica-progetto-iti-bo-v1.md` (nuovo documento di specifica, non ancora
+menzionato altrove in questo file). Tutto quanto segue è **su branch `nuovo-Gestionale`, non
+ancora mergiato su `main`** — nessuna di queste modifiche è in produzione. Testato contro lo
+stack Supabase locale Docker (`supabase db reset`), mai contro produzione.
+
+**Gestione documenti spostata da Supabase Storage a Google Drive** (sessione precedente a questa,
+qui documentata per la prima volta): `supabase/functions/drive-documenti/` — nuova Edge Function
+proxy verso Google Apps Script (`google-apps-script/DocumentiDrive.gs`, deployato live); il
+frontend (`PipelineDetailSheet.tsx`) non carica più file su Storage ma tramite questo proxy;
+naming standardizzato dei file su Drive (`{documento} - {indirizzo}.ext`) con logica di
+sostituzione basata su prefisso invece che su ID fisso, e struttura cartelle appiattita. Bucket
+Storage `immobile-documenti` (locale) ora orfano — da rimuovere in una sessione futura, non
+ancora fatto.
+
+**§3.1 (modello dati anagrafica) — chiuso, solo documentazione**: confermato che non esiste e non
+è mai esistita nel codice una tabella "persona" dedicata da rimuovere (verificato via grep
+sull'intero repo). `leads` con `tipo_cliente` (Acquirente/Proprietario/Ibrido) resta l'unica fonte
+di verità; `immobili.proprietario_id` è già una FK reale verso `leads.id`. `specifica-progetto-iti-bo-v1.md`
+§3.1 riscritto per riflettere la decisione come chiusa.
+
+**§3.2 (sottofase pipeline) — implementato**: `immobile_pipeline_stato.sottofase` era sempre
+scritto `null`; ora viene popolato con la prima sottofase della fase macro (selezione manuale,
+default alla prima sottofase quando l'immobile entra in una fase — nessun auto-avanzamento da
+checklist, per decisione esplicita dell'utente). Mappa fase→sottofasi introdotta in
+`src/lib/pipelineChecklist.ts` (`SOTTOFASI_PIPELINE`, ri-esportata da `useImmobiliPipeline.ts` per
+evitare un import circolare): Acquisizione (Contatto→Incontro→Sopralluogo→Rivalutazione→Presa in
+carico), In Vendita (Burocratiche→Marketing→Appuntamenti), Venduto (Vincolo→Preliminare→Rogito),
+Archivio (nessuna). Nuovo `Select` in `PipelineDetailSheet.tsx` per la selezione manuale, nascosto
+per Archivio. **Bug trovato e risolto durante la verifica live** (Playwright + query DB dirette):
+la mutation `aggiornaSottofase` usava un `.update()` semplice, che su un immobile senza ancora una
+riga in `immobile_pipeline_stato` (es. dati pre-pipeline, o creati da Wizard e mai spostati)
+falliva silenziosamente (0 righe toccate, nessun errore, nessun toast) — cambiato a `.upsert(...,
+{ onConflict: 'immobile_id' })`. Riverificato dopo il fix: persistenza confermata sia in DB sia
+nella UI dopo reload.
+
+**§3.3 (Kanban) — portato al 100%**: aggiunta una barra di ricerca sopra le colonne
+(`KanbanBoard.tsx`, filtro client-side case-insensitive su titolo/indirizzo/città/proprietario,
+stesso pattern visivo della vista lista) e un badge sottofase su ogni card (`KanbanCard.tsx`).
+Ragionamento sulla scala per quando gli immobili saranno molti (richiesto esplicitamente
+dall'utente, nessuna azione presa oltre alla ricerca): il fetch attuale (una query con join,
+nessuna paginazione) resta adeguato per i volumi tipici di un'agenzia di Bergamo; paginazione o
+virtualizzazione per-colonna e caricamento separato dell'Archivio sono note per una lavorazione
+futura, non implementate ora per non introdurre complessità non richiesta.
+
+**§3.4 (ruoli) — solo schema/dati, nessun enforcement**: nuova migration
+`supabase/migrations/20260821090000_add_ruolo_profili_agenti.sql` — colonna `ruolo` (Admin/
+Agente/Segreteria, default `Agente`) su `profili_agenti`, backfill `Admin` dove `is_admin = true`.
+Additiva: `is_admin` resta invariato (ancora usato da `Dashboard.tsx` per il filtro client-side).
+**Nessuna UI di assegnazione ruolo, nessuna policy RLS che lo usa** — enforcement esplicitamente
+rimandato a una lavorazione futura separata, per decisione dell'utente. `AgentProfile` in
+`src/types/index.ts` aggiornato con il campo `ruolo?`.
+
+**§3.5 (controllo accessi documenti) — chiuso, solo pulizia roadmap**: confermato che non esiste
+ancora nel codice alcuna logica di controllo accessi ai documenti basata su ruolo. Rimossi i
+riferimenti a questo come "prossimo passo imminente": `specifica-progetto-iti-bo-v1.md` (§3.5
+secondo paragrafo, §6) e `google-apps-script/README.md` ("Debito noto") ora dichiarano
+esplicitamente che il collegamento permessi-documenti↔ruolo è fuori dal perimetro della fase
+corrente, rimandato a una lavorazione futura separata — non più un item aperto da chiudere a
+breve.
+
+**§3.6 (automazioni: alert stagnazione 60gg, matching acquirente/immobile) — non iniziato**, per
+esplicita richiesta dell'utente di tenerlo per dopo la chiusura di §3.1-§3.5.
+
+Verifica eseguita: `npx tsc --noEmit -p .` pulito; `supabase db reset` locale applica tutte le
+migration (incluse quelle di questa fase) senza errori; verifica end-to-end via Playwright sul
+Kanban (login, cambio vista, selezione sottofase con persistenza confermata in DB, ricerca
+funzionante su tutte le colonne).
+
+### Flag "urgente" sulle task (2026-08-21, dopo la chiusura di §3.1-§3.5)
+
+Prima richiesta esplicita per l'evoluzione oltre §3.1-§3.5: un modo per marcare una task come
+urgente e renderla rossa/più visibile ovunque compaia. Implementato come singolo booleano
+`urgente` (non una scala di priorità, vedi `DECISIONI.md`), con toggle in tutte e 4 le superfici:
+- `TaskModal.tsx` — toggle alla creazione, stile pulsante coerente con lo swatch-picker colore
+  già esistente.
+- `Tasks.tsx` — bordo/sfondo rosso su `TaskCard`, badge "Urgente", toggle rapido nelle azioni
+  della card (sempre visibile se attivo, altrimenti solo su hover).
+- `Dashboard.tsx` — task urgenti ordinate per prime nel widget "Task in sospeso" (`.order('urgente',
+  { ascending: false })` prima dell'ordinamento per data), riga evidenziata in rosso con icona.
+- `Leads.tsx` — tab task del lead e relativa mini modale di dettaglio, stesso pattern visivo;
+  colto e corretto in corsa un bug preesistente minore: la select del tab task non includeva mai
+  `telefono` nonostante il tipo lo dichiarasse e la UI lo rendesse condizionalmente — ora incluso.
+
+Verifica eseguita: `npx tsc --noEmit -p .` pulito su tutto il repo. Nessuna verifica browser
+live in questa sessione (nessun tool di automazione browser disponibile nell'ambiente) — il
+pattern replica esattamente `toggleComplete`/`cycleLeadTaskStato`, già in produzione e verificati
+in precedenza.
+
+### Sezione alert (§3.6) — implementata (2026-08-21)
+
+Approvata dall'utente ("procedi con l'implementazione degli alert") sul design proposto nella
+sessione precedente. Implementazione:
+
+- **Alert manuali per immobile**: nuova tabella `immobile_alert` (migration
+  `20260821110000_add_immobile_alert.sql`: `immobile_id`, `messaggio`, `creato_da`, `risolto
+  boolean default false`, `created_at`, `risolto_at`, RLS `ALL` per `authenticated`). Creazione e
+  risoluzione da `PipelineDetailSheet.tsx` (nuova sezione "Alert" sopra la checklist documenti).
+- **Alert automatici**, calcolati a runtime in `src/hooks/useAlerts.ts` (nessuna tabella,
+  nessun job schedulato — scelta esplicita per non introdurre infrastruttura non richiesta finché
+  il volume di immobili resta quello attuale, vedi `docs/DECISIONI.md`):
+  - *Stagnazione fase*: `immobile_pipeline_stato.updated_at` più vecchio di una soglia per fase
+    (Acquisizione 30gg, In Vendita 60gg — valore esplicito della spec, Venduto 45gg; Archivio
+    esente). Le soglie diverse da "In Vendita" sono una stima non confermata dall'utente, da
+    tarare se si rivelano sbagliate in pratica.
+  - *Documento non generato*: confronto tra `documenti_catalogo` atteso per la fase corrente
+    dell'immobile e le righe realmente presenti in `immobile_documenti` (per presenza riga, non
+    per stato "Fatto"/"Da fare" — quello è già visibile nella checklist stessa; questo alert
+    cattura solo il caso in cui il catalogo è stato aggiornato dopo la generazione della
+    checklist per quell'immobile).
+- **Bug corretto come prerequisito**: `upsertFasePipeline` (`src/lib/pipelineChecklist.ts`) non
+  includeva mai `updated_at` nel payload dell'upsert — Postgrest aggiorna solo le colonne
+  presenti nel payload in caso di conflitto, quindi il timestamp restava congelato alla
+  creazione della riga per ogni immobile, rendendo impossibile calcolare la stagnazione. Corretto
+  aggiungendo `updated_at: new Date().toISOString()` esplicitamente in quella funzione (non in
+  `aggiornaSottofase`, che non deve resettare il timer di stagnazione per un cambio di sola
+  sottofase).
+- **Superficie UI**: nuova pagina `/alert` (`src/pages/Alerts.tsx`) che lista alert manuali e
+  automatici separatamente, ciascuno con link diretto alla scheda Kanban dell'immobile (apre
+  `/immobili` in vista Kanban con la sheet già aperta sulla card giusta, via `location.state`).
+  Badge contatore rosso sulla voce "Alert" del menu laterale (`AdminLayout.tsx`), somma di alert
+  manuali non risolti + alert automatici correnti.
+- **Non implementato, deliberatamente fuori scope per questo giro**: nessun meccanismo di
+  "silenziamento" temporaneo di un alert automatico (non richiesto esplicitamente, e avrebbe
+  richiesto una tabella di stato aggiuntiva solo per gli alert calcolati); nessuna verifica
+  manuale in browser (nessun tool di automazione browser disponibile nell'ambiente — verificato
+  solo `tsc --noEmit`, `npm run build`, `supabase db reset` con controllo grant su
+  `immobile_alert`).
+
+### Follow-up bugfix su alert/Kanban, non ancora committati (2026-08-21)
+
+Emersi dall'uso reale della UI subito dopo l'implementazione della sezione alert. **Tutte le
+modifiche sotto sono solo in working tree su `nuovo-Gestionale`, non ancora committate.**
+
+- **`aggiornaSottofase` non generava la checklist**: chiamava solo l'upsert su
+  `immobile_pipeline_stato`, mai `generaChecklistPerFase` (a differenza di `spostaFase`, che la
+  chiama sempre). Un immobile mai passato da un drag&drop reale (es. dati seed, o import diretto)
+  restava con checklist vuota anche dopo aver impostato manualmente la sottofase da UI — bug
+  segnalato dall'utente come "non vedo più la checklist dei documenti" per "Trilocale in Città
+  Alta" (confermato via query dirette sul DB locale: 0 righe in `immobile_documenti`, 4 attese da
+  `documenti_catalogo` per `fase='Acquisizione'`). **Causa concomitante**: la sessione precedente
+  aveva anche eseguito `supabase db reset` per validare la migration `immobile_alert`, che ha
+  cancellato dati di test manuali (checklist generate da precedenti drag&drop) mai presenti in
+  `seed.sql` — non un bug di codice, ma un effetto collaterale del reset non segnalato
+  all'utente al momento.
+- **Pill sottofase che sembrava "non rispondere"**: `KanbanBoard.tsx` teneva la card aperta nella
+  sheet come oggetto snapshot (`selectedCard`, impostato al click) invece di ricavarla ad ogni
+  render dalla lista viva di React Query — dopo una mutation (`aggiornaSottofase`) il valore
+  visualizzato restava congelato a prima del cambio. Corretto tenendo solo `selectedCardId` e
+  derivando la card da `cards?.find(...)`.
+- **Default automatico sottofase**: `PipelineDetailSheet.tsx` ora imposta la prima sottofase della
+  fase corrente non appena la sheet si apre su un immobile che non ne ha ancora una (invece di
+  lasciare la pill vuota in attesa di un click manuale) — chiama `aggiornaSottofase`, che con il
+  fix sopra genera anche la checklist nello stesso momento. Chiuso così anche il caso "immobile in
+  Acquisizione con pill non selezionata non mostra la checklist", segnalato dall'utente.
+- **Checkbox documento vincolato al file caricato**: il checkbox "Fatto" di un documento è ora
+  disabilitato finché il documento non ha un `drive_file_id` — prima si poteva segnare "Fatto"
+  senza aver mai caricato nulla (osservato dall'utente via screenshot). Si può comunque togliere
+  la spunta a un documento già "Fatto" senza file da prima di questo fix (dato pre-esistente non
+  toccato).
+- **Icona carica/visualizza file unificata**: un solo pulsante nella checklist (graffetta se
+  manca il file, spunta verde se presente) al posto di due pulsanti separati — **ha rimosso la
+  possibilità di sostituire un file già caricato**, non ancora reintrodotta (vedi
+  `DECISIONI.md`).
+
+Verifica eseguita: solo `npx tsc --noEmit -p .` (pulito dopo ogni modifica) — nessun tool di
+automazione browser disponibile in questa sessione per un collaudo end-to-end in UI.
+
+### Foto immobili — restano su Supabase Storage (investigato, non implementato)
+
+Valutato uno spostamento delle foto immobili (`copertina_url`/`immagini_urls`) da Supabase
+Storage a Google Drive, sullo stesso modello già usato per i documenti (§3.2 sopra). **Decisione:
+non procedere** — vedi `DECISIONI.md` per il ragionamento (rischio di hotlinking da un sito
+pubblico) e i numeri verificati in produzione: 101 immobili (88 attivi), bucket Storage
+`immobili` a 278,8 MB su 1.699 file. Nessun codice toccato.
 
 ## Cosa funziona
 
@@ -322,10 +798,45 @@ sanitario. RLS restringe lettura/scrittura alle tabelle CRM ad `authenticated`.
 7. ~~Risolvere gli 83 errori `no-explicit-any` residui (concentrati in `Leads.tsx`).~~ **FATTO
    2026-08-20**: vedi debito tecnico sopra — `npx eslint .` → 0 errori. Prossimo push dovrebbe
    rendere verde la CI (da confermare osservando il run effettivo).
-8. `docs/RUNBOOK.md` e `docs/DECISIONI.md` (rimandati da questa sessione).
+8. ~~`docs/RUNBOOK.md` e `docs/DECISIONI.md`...~~ **FATTO 2026-08-21**: entrambi creati e
+   popolati — `RUNBOOK.md` con l'ambiente locale, il ciclo di lavoro, la checklist pre-PR e le
+   migration/deploy; `DECISIONI.md` con una voce "stato ereditato al 2026-08-20" più il log
+   puntuale delle decisioni non ovvie da lì in avanti (staging→Docker, migration archiviate,
+   colonna morta droppata, regressione RLS del 2026-08-20, sottofase manuale, ruoli
+   schema-only, flag urgente).
 9. Cartella `supabase/migrations-proposte/` per modifiche a schema/RLS scritte da agenti ma non
    ancora validate da un umano.
 10. ~~Ambiente locale Docker/Supabase...~~ **FATTO 2026-08-20**: vedi punto 3 e debito tecnico
     sopra.
 11. ~~Decidere come risolvere il gap RLS su `lead_notes`/`profili_agenti`/`appuntamenti`...~~
     **FATTO 2026-08-20**: vedi punto 8 sopra.
+12. §3.6 della `specifica-progetto-iti-bo-v1.md`: alert stagnazione/documento mancante **FATTO
+    2026-08-21** (vedi sezione dedicata sopra). Resta aperto solo il matching acquirente/immobile,
+    la seconda automazione prevista dallo stesso paragrafo, non ancora affrontata.
+13. Enforcement effettivo dei ruoli (Admin/Agente/Segreteria) introdotti il 2026-08-21: oggi solo
+    schema/dati, nessuna RLS li usa. Da valutare come lavorazione futura separata (include anche
+    il controllo accessi documenti per ruolo rimandato dal §3.5).
+14. Decidere quando e come mergiare `nuovo-Gestionale` su `main` — tutto il lavoro property-centrico
+    (schema, Drive, pipeline/Kanban, ruoli) è oggi solo su questo branch, mai in produzione.
+15. Rimuovere il bucket Storage locale `immobile-documenti`, orfano da quando la gestione
+    documenti è passata a Google Drive. **Spiegato come farlo 2026-08-21**: va tolto a mano da
+    Supabase Studio → Storage (bloccato da un trigger `protect_buckets_delete` per DELETE via
+    SQL/migration) — non ancora eseguito.
+16. ~~Guida al cambio cartella Google Drive (test → reale)~~ **FATTO 2026-08-21**:
+    `docs/riferimento/cambio_cartella_drive.md`, richiamata da `google-apps-script/README.md`.
+17. Flag `urgente` sulle task: **FATTO 2026-08-21** (vedi sezione dedicata sopra).
+18. §3.6/alert (manuali + stagnazione + documento mancante): **FATTO 2026-08-21** (vedi sezione
+    dedicata sopra e punto 12). Resta il matching acquirente/immobile, non affrontato in questo
+    giro.
+19. Hardening `OpenHouseBooking.tsx` in `ITI2.0` (repo sibling, fuori da questo repository):
+    nessun rate-limit/regex email lato client a differenza di `ContactForm.tsx`, errori
+    silenziosi in console invece che tramite `logger.error`/Sentry, dipendenze con
+    vulnerabilità note (`react-router-dom`, `ws` via `@supabase/realtime-js`) — segnalato
+    2026-08-21, da pianificare come lavoro separato su quel repository.
+20. **Committare i 3 file modificati dal follow-up bugfix alert/Kanban del 2026-08-21** (vedi
+    sezione dedicata sopra) — `src/hooks/useImmobiliPipeline.ts`,
+    `src/components/properties/kanban/KanbanBoard.tsx`,
+    `src/components/properties/kanban/PipelineDetailSheet.tsx` sono ancora solo in working tree.
+21. Decidere se reintrodurre un modo per sostituire un file già caricato nella checklist
+    documenti (capacità persa unificando i pulsanti carica/visualizza il 2026-08-21, vedi
+    `DECISIONI.md`) — nessuna richiesta esplicita dell'utente finora.

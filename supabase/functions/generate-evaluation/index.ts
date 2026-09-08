@@ -108,13 +108,30 @@ function buildPrompt(params: {
   let omiBlock = `[MODALITÀ ANALISI DI MERCATO GENERALE — DATI OMI NON DISPONIBILI]
 Nessun dato OMI ufficiale è disponibile per questa zona. NON inventare codici di zona OMI (es. "BG-C1", "BG-R2") né range di prezzo specifici. Basa la stima esclusivamente sulle tendenze generali del comune di ${params.citta} e sulle caratteristiche dell'immobile.`;
   if (params.zona_omi) {
+    // nearest_zona_omi ha un fallback puramente spaziale (ignora il comune) per
+    // gestire le frazioni (es. "Redona" sotto "Bergamo"). Quando quel fallback
+    // scatta su un comune realmente diverso da quello dell'immobile (es. comune
+    // limitrofo senza dati OMI propri), il nome del comune restituito NON è
+    // quello dell'immobile: va segnalato esplicitamente all'AI per evitare che
+    // lo citi come se fosse la località dell'immobile (visto in produzione:
+    // immobile a "Cavernago", testo generato citava "Castelli Calepio").
+    const comuneOmiNorm = params.zona_omi.comune.trim().toLowerCase();
+    const comuneImmobileNorm = params.citta.trim().toLowerCase();
+    const comuneDiverso = comuneOmiNorm !== comuneImmobileNorm
+      && !comuneOmiNorm.includes(comuneImmobileNorm)
+      && !comuneImmobileNorm.includes(comuneOmiNorm);
+
     omiBlock = `Dati OMI ufficiali (Agenzia delle Entrate):
 - Codice zona: ${params.zona_omi.codice_zona}
 - Fascia: ${params.zona_omi.fascia}
 - Zona descrizione: ${params.zona_omi.zona}
-- Comune: ${params.zona_omi.comune} (${params.zona_omi.provincia})
+- Comune della zona OMI di riferimento: ${params.zona_omi.comune} (${params.zona_omi.provincia})
 - Range prezzi/mq: €${params.zona_omi.prezzo_mq_min} – €${params.zona_omi.prezzo_mq_max} (medio: €${params.zona_omi.prezzo_mq_medio}/mq)
 IMPORTANTE: Cita esplicitamente il codice zona OMI "${params.zona_omi.codice_zona}" nella motivazione e nella descrizione_zona.`;
+
+    if (comuneDiverso) {
+      omiBlock += `\nATTENZIONE — COMUNE DIVERSO DA QUELLO DELL'IMMOBILE: l'immobile si trova nel comune di "${params.citta}" (vedi indirizzo sopra), che non ha una propria zona OMI registrata. La zona OMI riportata sopra appartiene amministrativamente al comune limitrofo di "${params.zona_omi.comune}" ed è usata SOLO come riferimento di prezzo/mq per vicinanza geografica. NON scrivere MAI, in nessun campo di testo, che l'immobile si trova a "${params.zona_omi.comune}": l'immobile è e resta a "${params.citta}". Puoi citare "${params.zona_omi.comune}" solo per spiegare la provenienza del dato OMI usato come riferimento (es. "si è fatto riferimento alla zona OMI limitrofa di ${params.zona_omi.comune}, comune più vicino con dati OMI disponibili").`;
+    }
   }
 
   let comparabiliBlock = `[ZERO TRANSAZIONI COMPARABILI DISPONIBILI]
@@ -521,7 +538,8 @@ REGOLE ASSOLUTE — POLITICA "VERITÀ O SILENZIO":
 6. Se i comparabili sono presenti, DEVI citare almeno uno specifico nella motivazione.
 7. Se i dati OMI sono presenti, DEVI citare il codice zona sia nella motivazione che nella descrizione_zona.
 8. Non usare markdown. Rispondi solo con il JSON.
-9. L'array "fattori" NON deve mai contenere oggetti con delta_percentuale = 0.`;
+9. L'array "fattori" NON deve mai contenere oggetti con delta_percentuale = 0.
+10. COMUNE DELL'IMMOBILE SEMPRE CORRETTO: il comune dove si trova l'immobile è ESCLUSIVAMENTE quello indicato nel blocco "Immobile da valutare" (campo Indirizzo). Se il blocco dati OMI segnala "ATTENZIONE — COMUNE DIVERSO DA QUELLO DELL'IMMOBILE", il comune della zona OMI è SOLO un riferimento di prezzo limitrofo: non scrivere mai, in motivazione_ai o descrizione_zona, che l'immobile si trova in quel comune.`;
 
     const userPrompt = buildPrompt({
       indirizzo, citta, superficie_mq, tipologia, stato_conservativo,

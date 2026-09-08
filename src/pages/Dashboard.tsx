@@ -1,18 +1,21 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { supabase } from '@/lib/supabase';
 import {
-  Users, Calendar, ListTodo, Plus, X, Check, CheckCircle2, ArrowRight,
+  Users, Calendar, ListTodo, Plus, X, Check, CheckCircle2, ArrowRight, AlertTriangle,
+  BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import TaskModal from '@/components/TaskModal';
-import ProfileSettingsSheet from '@/components/ProfileSettingsSheet';
-import { showSuccess, showError } from '@/utils/toast';
+import EventFormModal, { type AgentProfile as EventAgentProfile } from '@/components/agenda/EventFormModal';
+import { useAlerts } from '@/hooks/useAlerts';
+import { showError } from '@/utils/toast';
 
 interface AgentProfile {
   id: string;
@@ -38,23 +41,15 @@ interface PendingTask {
   nota: string | null;
   data: string;
   ora: string | null;
+  urgente: boolean;
   leads?: { nome: string; cognome: string } | null;
 }
 
-interface RecentLead {
-  id: string;
-  nome: string;
-  cognome: string;
-  stato: string;
-  created_at: string;
-}
-
-const STATO_LEAD_COLORS: Record<string, string> = {
-  'Nuovo': 'bg-blue-50 text-blue-700',
-  'In Trattativa': 'bg-amber-50 text-amber-700',
-  'Visita Fissata': 'bg-purple-50 text-purple-700',
-  'Chiuso': 'bg-emerald-50 text-emerald-700',
-};
+const ORIZZONTI_TASK = [
+  { value: 'oggi', label: 'Oggi', giorni: 0 },
+  { value: '5', label: '5 giorni', giorni: 5 },
+  { value: '10', label: '10 giorni', giorni: 10 },
+] as const;
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -64,11 +59,15 @@ const Dashboard = () => {
   const [stats, setStats] = useState({ activeLeads: 0, todayAppointments: 0, pendingTasks: 0 });
   const [todayAppointments, setTodayAppointments] = useState<TodayAppointment[]>([]);
   const [pendingTasks, setPendingTasks] = useState<PendingTask[]>([]);
-  const [recentLeads, setRecentLeads] = useState<RecentLead[]>([]);
+  const [taskHorizon, setTaskHorizon] = useState<typeof ORIZZONTI_TASK[number]['value']>('oggi');
   const [fabOpen, setFabOpen] = useState(false);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [profileSheetOpen, setProfileSheetOpen] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [agents, setAgents] = useState<EventAgentProfile[]>([]);
+  const [properties, setProperties] = useState<{ id: string; titolo: string; copertina_url: string | null }[]>([]);
+
+  const { manuali: alertManuali, automatici: alertAutomatici, isLoading: alertsLoading } = useAlerts();
 
   useEffect(() => {
     let aborted = false;
@@ -76,7 +75,7 @@ const Dashboard = () => {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user || aborted) { setLoading(false); return; }
 
-      setUserId(user.id);
+      setCurrentUserId(user.id);
 
       const { data: prof, error: profError } = await supabase
         .from('profili_agenti')
@@ -91,6 +90,7 @@ const Dashboard = () => {
       setIsAdmin(admin);
 
       const today = format(new Date(), 'yyyy-MM-dd');
+      const horizon10 = format(addDays(new Date(), 10), 'yyyy-MM-dd');
 
       // Build queries (conditional filters before Promise.all)
       const activeLeadsQuery = supabase
@@ -110,19 +110,14 @@ const Dashboard = () => {
         .eq('stato', 'Da fare');
       if (!admin) pendingTasksCountQuery = pendingTasksCountQuery.eq('agente_id', user.id);
 
-      const recentLeadsQuery = supabase
-        .from('leads')
-        .select('id, nome, cognome, stato, created_at')
-        .order('created_at', { ascending: false })
-        .limit(5);
-
       const [
         { count: activeLeadsCount, error: activeLeadsError },
         { count: todayAppCount, error: todayAppCountError },
         { count: pendingTasksCount, error: pendingTasksCountError },
         { data: appsData, error: appsError },
         { data: tasksData, error: tasksError },
-        { data: leadsData, error: leadsError },
+        { data: agentsData, error: agentsError },
+        { data: propsData, error: propsError },
       ] = await Promise.all([
         activeLeadsQuery,
         todayAppCountQuery,
@@ -135,16 +130,19 @@ const Dashboard = () => {
           .order('ora_inizio', { ascending: true }),
         supabase
           .from('tasks')
-          .select('id, titolo, nota, data, ora, stato, leads(nome, cognome)')
-          .eq('stato', 'Da fare')
+          .select('id, titolo, nota, data, ora, stato, urgente, leads(nome, cognome)')
+          .neq('stato', 'Completata')
           .eq('agente_id', user.id)
+          .lte('data', horizon10)
+          .order('urgente', { ascending: false })
           .order('data', { ascending: true })
-          .limit(5),
-        recentLeadsQuery,
+          .limit(30),
+        supabase.from('profili_agenti').select('id, nome_completo, colore_calendario'),
+        supabase.from('immobili').select('id, titolo, copertina_url').neq('stato', 'Venduto').order('titolo'),
       ]);
 
       if (aborted) return;
-      if (activeLeadsError || todayAppCountError || pendingTasksCountError || appsError || tasksError || leadsError) {
+      if (activeLeadsError || todayAppCountError || pendingTasksCountError || appsError || tasksError || agentsError || propsError) {
         showError('Errore nel caricamento dei dati della dashboard');
       }
       setStats({
@@ -154,25 +152,66 @@ const Dashboard = () => {
       });
       setTodayAppointments((appsData as unknown as TodayAppointment[]) ?? []);
       setPendingTasks((tasksData as unknown as PendingTask[]) ?? []);
-      setRecentLeads((leadsData as unknown as RecentLead[]) ?? []);
+      setAgents((agentsData as EventAgentProfile[]) ?? []);
+      setProperties(propsData ?? []);
       setLoading(false);
     };
     fetchAll();
     return () => { aborted = true; };
   }, []);
 
+  const displayedTasks = useMemo(() => {
+    const giorni = ORIZZONTI_TASK.find(o => o.value === taskHorizon)?.giorni ?? 0;
+    const limite = format(addDays(new Date(), giorni), 'yyyy-MM-dd');
+    return pendingTasks.filter(t => t.data <= limite);
+  }, [pendingTasks, taskHorizon]);
+
   const toggleTaskComplete = async (task: PendingTask) => {
     setPendingTasks(prev => prev.filter(t => t.id !== task.id));
     await supabase.from('tasks').update({ stato: 'Completata' }).eq('id', task.id);
   };
 
+  const refetchTodayAppointments = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const { data } = await supabase
+      .from('appuntamenti')
+      .select('id, tipologia, ora_inizio, ora_fine, note, leads(nome, cognome), immobili(titolo)')
+      .eq('data', today)
+      .eq('agente_id', user.id)
+      .order('ora_inizio', { ascending: true });
+    setTodayAppointments((data as unknown as TodayAppointment[]) ?? []);
+  };
+
+  const alertTotale = alertManuali.length + alertAutomatici.length;
+  // Preview compatta: solo il conteggio di ciò che manca per immobile, per
+  // arrivare in fretta alla pagina /alert dove c'è il dettaglio. Aggreghiamo
+  // per immobile così una scheda con 5 doc mancanti conta 1 sola card qui.
+  const alertPerImmobile = (() => {
+    const map = new Map<string, { immobileId: string; titolo: string; indirizzo: string; count: number }>();
+    for (const a of alertAutomatici.filter((x) => x.entita === 'immobile')) {
+      const existing = map.get(a.entitaId);
+      if (existing) existing.count += 1;
+      else map.set(a.entitaId, { immobileId: a.entitaId, titolo: a.titolo, indirizzo: a.indirizzo, count: 1 });
+    }
+    for (const m of alertManuali) {
+      const key = m.immobile_id;
+      const existing = map.get(key);
+      if (existing) existing.count += 1;
+      else if (m.immobile) map.set(key, {
+        immobileId: m.immobile_id,
+        titolo: m.immobile.titolo,
+        indirizzo: `${m.immobile.indirizzo}, ${m.immobile.citta}`,
+        count: 1,
+      });
+    }
+    return [...map.values()].slice(0, 5);
+  })();
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Buongiorno' : hour < 18 ? 'Buon pomeriggio' : 'Buonasera';
   const firstName = profile?.nome_completo?.split(' ')[0] ?? '';
-  const initials = profile?.nome_completo
-    ? profile.nome_completo.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
-    : '?';
-  const avatarColor = profile?.colore_calendario ?? '#94b0ab';
   const todayLabel = format(new Date(), "EEEE d MMMM yyyy", { locale: it });
 
   const statsCards = [
@@ -213,28 +252,6 @@ const Dashboard = () => {
             </h1>
           )}
         </div>
-        {!loading && profile && (
-          <button
-            type="button"
-            onClick={() => setProfileSheetOpen(true)}
-            className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0 select-none cursor-pointer hover:ring-4 hover:ring-[#94b0ab]/30 transition-all overflow-hidden"
-            style={{ backgroundColor: profile.avatar_url ? 'transparent' : avatarColor }}
-            title="Modifica profilo"
-          >
-            {profile.avatar_url ? (
-              <img
-                src={profile.avatar_url}
-                alt={profile.nome_completo ?? ''}
-                className="w-full h-full object-cover"
-                onError={e => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              initials
-            )}
-          </button>
-        )}
       </div>
 
       {/* Stats Cards */}
@@ -259,9 +276,19 @@ const Dashboard = () => {
 
         {/* Appuntamenti di oggi */}
         <div className="bg-white rounded-[2rem] shadow-sm p-6 flex flex-col">
-          <div className="flex items-center gap-2 mb-5">
-            <Calendar className="w-5 h-5 text-[#94b0ab]" />
-            <h2 className="text-base font-bold text-gray-900">Appuntamenti di oggi</h2>
+          <div className="flex items-center justify-between gap-2 mb-5">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-[#94b0ab]" />
+              <h2 className="text-base font-bold text-gray-900">Appuntamenti di oggi</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEventModalOpen(true)}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors shrink-0"
+              title="Nuovo appuntamento"
+            >
+              <Plus size={16} />
+            </button>
           </div>
           <div className="flex-1">
             {loading ? (
@@ -305,33 +332,61 @@ const Dashboard = () => {
           </button>
         </div>
 
-        {/* Task in sospeso */}
+        {/* Task in scadenza */}
         <div className="bg-white rounded-[2rem] shadow-sm p-6 flex flex-col">
-          <div className="flex items-center gap-2 mb-5">
-            <ListTodo className="w-5 h-5 text-[#94b0ab]" />
-            <h2 className="text-base font-bold text-gray-900">Task in sospeso</h2>
+          <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+            <div className="flex items-center gap-2">
+              <ListTodo className="w-5 h-5 text-[#94b0ab]" />
+              <h2 className="text-base font-bold text-gray-900">Task in scadenza</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTaskModalOpen(true)}
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[#94b0ab] hover:bg-[#94b0ab]/10 transition-colors shrink-0"
+              title="Nuova task"
+            >
+              <Plus size={16} />
+            </button>
           </div>
+          <Tabs value={taskHorizon} onValueChange={(v) => setTaskHorizon(v as typeof taskHorizon)} className="mb-4">
+            <TabsList className="rounded-full p-1 bg-muted/50 border border-gray-100 h-auto">
+              {ORIZZONTI_TASK.map(o => (
+                <TabsTrigger key={o.value} value={o.value} className="rounded-full px-3 py-1 text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">
+                  {o.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
           <div className="flex-1">
             {loading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-50 rounded-xl animate-pulse" />)}
               </div>
-            ) : pendingTasks.length === 0 ? (
+            ) : displayedTasks.length === 0 ? (
               <div className="py-8 flex flex-col items-center gap-2 text-center">
                 <CheckCircle2 className="w-8 h-8 text-gray-200" />
-                <p className="text-sm text-gray-400">Nessuna task in sospeso</p>
+                <p className="text-sm text-gray-400">Nessuna task in scadenza</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingTasks.map(task => {
+                {displayedTasks.map(task => {
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
                   const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}` : null;
                   return (
-                    <div key={task.id} className="flex items-center gap-3">
+                    <div
+                      key={task.id}
+                      className={cn(
+                        'flex items-center gap-3',
+                        task.urgente && 'bg-red-50/70 -mx-2 px-2 py-1.5 rounded-xl',
+                      )}
+                    >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">
-                          {task.titolo || leadName || 'Task'}
-                        </p>
+                        <div className="flex items-center gap-1.5">
+                          {task.urgente && <AlertTriangle size={12} className="text-red-600 shrink-0" />}
+                          <p className="text-sm font-semibold text-gray-900 truncate">
+                            {task.titolo || leadName || 'Task'}
+                          </p>
+                        </div>
                         {!isToday && (
                           <p className="text-xs text-gray-400">
                             {format(new Date(task.data), 'd MMM', { locale: it })}
@@ -361,51 +416,57 @@ const Dashboard = () => {
           </button>
         </div>
 
-        {/* Ultimi Lead */}
+        {/* Alert */}
         <div className="bg-white rounded-[2rem] shadow-sm p-6 flex flex-col">
           <div className="flex items-center gap-2 mb-5">
-            <Users className="w-5 h-5 text-[#94b0ab]" />
-            <h2 className="text-base font-bold text-gray-900">Ultimi Lead</h2>
+            <AlertTriangle className="w-5 h-5 text-[#94b0ab]" />
+            <h2 className="text-base font-bold text-gray-900">Alert</h2>
+            {alertTotale > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+                {alertTotale}
+              </span>
+            )}
           </div>
           <div className="flex-1">
-            {loading ? (
+            {alertsLoading ? (
               <div className="space-y-3">
                 {[1, 2, 3].map(i => <div key={i} className="h-10 bg-gray-50 rounded-xl animate-pulse" />)}
               </div>
-            ) : recentLeads.length === 0 ? (
+            ) : alertPerImmobile.length === 0 ? (
               <div className="py-8 flex flex-col items-center gap-2 text-center">
-                <Users className="w-8 h-8 text-gray-200" />
-                <p className="text-sm text-gray-400">Nessun lead recente</p>
+                <BellOff className="w-8 h-8 text-gray-200" />
+                <p className="text-sm text-gray-400">Nessun alert attivo</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {recentLeads.map(lead => (
-                  <div key={lead.id} className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">
-                        {lead.nome} {lead.cognome}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {formatDistanceToNow(new Date(lead.created_at), { addSuffix: true, locale: it })}
-                      </p>
+              <div className="space-y-2">
+                {alertPerImmobile.map(item => (
+                  <button
+                    key={item.immobileId}
+                    type="button"
+                    onClick={() => navigate('/gestione', { state: { openImmobileId: item.immobileId, gestioneTab: 'in-vendita' } })}
+                    className="w-full text-left flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 hover:border-[#94b0ab]/40 hover:bg-[#94b0ab]/5 transition-colors group"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-[#94b0ab]/10 flex items-center justify-center shrink-0">
+                      <AlertTriangle size={14} className="text-[#94b0ab]" />
                     </div>
-                    <span className={cn(
-                      'text-[10px] font-bold px-2 py-1 rounded-full shrink-0',
-                      STATO_LEAD_COLORS[lead.stato] ?? 'bg-gray-50 text-gray-500'
-                    )}>
-                      {lead.stato}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{item.titolo}</p>
+                      <p className="text-xs text-gray-400 truncate">{item.indirizzo}</p>
+                    </div>
+                    <span className="text-[0.65rem] font-bold text-red-600 bg-red-50 rounded-full px-2 py-0.5 shrink-0">
+                      {item.count}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
           </div>
           <button
             type="button"
-            onClick={() => navigate('/leads')}
+            onClick={() => navigate('/alert')}
             className="mt-5 flex items-center gap-1 text-xs font-bold text-[#94b0ab] hover:underline self-start"
           >
-            Vedi tutti i lead <ArrowRight size={12} />
+            Vedi tutti gli alert <ArrowRight size={12} />
           </button>
         </div>
 
@@ -427,7 +488,7 @@ const Dashboard = () => {
             </button>
             <button
               type="button"
-              onClick={() => { showSuccess('Coming soon'); setFabOpen(false); }}
+              onClick={() => { setEventModalOpen(true); setFabOpen(false); }}
               className="relative z-10 flex items-center gap-2 bg-white text-gray-800 text-sm font-semibold px-4 py-3 rounded-2xl shadow-lg border border-gray-100 whitespace-nowrap"
             >
               📅 Nuovo Evento
@@ -449,15 +510,15 @@ const Dashboard = () => {
         onSaved={() => setTaskModalOpen(false)}
       />
 
-      {profile && userId && (
-        <ProfileSettingsSheet
-          open={profileSheetOpen}
-          onClose={() => setProfileSheetOpen(false)}
-          profile={profile}
-          userId={userId}
-          onSaved={updated => setProfile(updated)}
-        />
-      )}
+      <EventFormModal
+        open={eventModalOpen}
+        onClose={() => setEventModalOpen(false)}
+        onSaved={() => { setEventModalOpen(false); refetchTodayAppointments(); }}
+        defaultAgentId={currentUserId ?? undefined}
+        defaultDate={format(new Date(), 'yyyy-MM-dd')}
+        agents={agents}
+        properties={properties}
+      />
     </AdminLayout>
   );
 };
