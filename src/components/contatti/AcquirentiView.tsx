@@ -16,6 +16,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from '@/components/ui/sheet';
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle,
@@ -1180,15 +1183,15 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
         </div>
       )}
 
-      <Dialog open={!!selectedAcquirente} onOpenChange={(open) => { if (!open) { setSelectedAcquirente(null); setZoneInput(''); } }}>
-        <DialogContent className="w-full sm:max-w-4xl h-[85vh] p-0 overflow-hidden flex flex-col gap-0 border-none shadow-2xl">
+      <Sheet open={!!selectedAcquirente} onOpenChange={(open) => { if (!open) { setSelectedAcquirente(null); setZoneInput(''); } }}>
+        <SheetContent side="right" className="w-full sm:max-w-3xl h-full p-0 overflow-hidden flex flex-col gap-0">
           {selectedAcquirente && (
             <form onSubmit={handleSaveDetails} className="flex flex-col min-h-0 flex-1">
 
               {(() => {
                 const isCreate = !selectedAcquirente.id;
                 return (
-                  <DialogHeader className="px-7 pt-5 pb-4 border-b bg-white shrink-0">
+                  <SheetHeader className="px-7 pt-5 pb-4 border-b bg-white shrink-0 text-left space-y-0">
                     <div className="flex items-center gap-4">
                       <div className={cn(
                         "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
@@ -1198,9 +1201,9 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <DialogTitle className="text-xl font-bold text-gray-900 leading-none">
+                          <SheetTitle className="text-xl font-bold text-gray-900 leading-none">
                             {isCreate ? 'Nuovo Acquirente' : `${selectedAcquirente.nome} ${selectedAcquirente.cognome}`}
-                          </DialogTitle>
+                          </SheetTitle>
                           {!isCreate && (
                             <Popover>
                               <PopoverTrigger asChild>
@@ -1234,16 +1237,16 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                             </Popover>
                           )}
                         </div>
-                        <DialogDescription className="text-xs text-gray-400 font-medium mt-1 flex items-center gap-2">
+                        <SheetDescription className="text-xs text-gray-400 font-medium mt-1 flex items-center gap-2">
                           {isCreate
                             ? 'Compila il profilo e salva per creare il contatto.'
                             : <>Contatto acquisito il {safeFormat(selectedAcquirente.created_at, 'PPP', { locale: it })}</>
                           }
                           {isLoadingDetail && <span className="inline-block w-3 h-3 rounded-full border-2 border-[#94b0ab]/40 border-t-[#94b0ab] animate-spin" />}
-                        </DialogDescription>
+                        </SheetDescription>
                       </div>
                     </div>
-                  </DialogHeader>
+                  </SheetHeader>
                 );
               })()}
 
@@ -1938,8 +1941,8 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
 
             </form>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <TaskModal
         open={isTaskModalOpen}
