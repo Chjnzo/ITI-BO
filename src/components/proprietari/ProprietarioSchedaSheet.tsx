@@ -19,6 +19,7 @@ import { Flame, CalendarClock, FileText, StickyNote, ExternalLink, Plus, Calcula
 import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
 import ValuationWizard from '@/components/valutazioni/ValuationWizard';
+import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 
 interface AgenteOption {
   id: string;
@@ -516,12 +517,15 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
                     </div>
                     <div className="space-y-1.5">
                       <Label className="text-xs font-bold text-gray-500">Tipologia</Label>
-                      <Input value={form.tipologia_immobile} onChange={(e) => setForm(f => ({ ...f, tipologia_immobile: e.target.value }))} className="rounded-xl" placeholder="Es. Trilocale" />
+                      <Select value={form.tipologia_immobile} onValueChange={(v) => setForm(f => ({ ...f, tipologia_immobile: v }))}>
+                        <SelectTrigger className="rounded-xl"><SelectValue placeholder="Seleziona..." /></SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {TIPOLOGIE_IMMOBILE.map((t) => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-gray-500">Zona</Label>
-                    <Input value={form.zona_venditore} onChange={(e) => setForm(f => ({ ...f, zona_venditore: e.target.value }))} className="rounded-xl" placeholder="Es. Centro" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
