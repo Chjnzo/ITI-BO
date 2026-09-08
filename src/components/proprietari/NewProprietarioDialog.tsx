@@ -56,9 +56,11 @@ const emptyForm: FormState = {
 const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDialogProps) => {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [step, setStep] = useState<1 | 2>(1);
 
   const handleClose = () => {
     setForm(emptyForm);
+    setStep(1);
     onClose();
   };
 
@@ -104,165 +106,205 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
     onError: (err) => showError(err instanceof Error ? err.message : 'Creazione non riuscita.'),
   });
 
+  const goNext = () => setStep(2);
+  const goBack = () => setStep(1);
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="w-full sm:max-w-lg border-none shadow-2xl">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-extrabold">Nuovo Proprietario</DialogTitle>
+      <DialogContent className="w-full sm:max-w-lg max-h-[85vh] p-0 border-none shadow-2xl flex flex-col overflow-hidden">
+        <DialogHeader className="px-6 pt-6 pb-3 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${step === 1 ? 'bg-[#94b0ab]/10 text-[#94b0ab] border-[#94b0ab]/30' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+              1 · Anagrafica
+            </span>
+            <span className="h-px bg-gray-200 flex-1" />
+            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${step === 2 ? 'bg-[#94b0ab]/10 text-[#94b0ab] border-[#94b0ab]/30' : 'bg-gray-50 text-gray-400 border-gray-200'}`}>
+              2 · Immobile
+            </span>
+          </div>
+          <DialogTitle className="text-xl font-extrabold">
+            {step === 1 ? 'Nuovo Proprietario' : 'Info immobile'}
+          </DialogTitle>
           <DialogDescription className="font-medium">
-            Solo anagrafica. La pratica si avvia dalla lista quando lo marchi "caldo".
+            {step === 1
+              ? 'Anagrafica del contatto. Nome obbligatorio, resto facoltativo.'
+              : 'Facoltativo. Puoi già registrare dettagli dell\'immobile che il proprietario vuole vendere.'}
           </DialogDescription>
         </DialogHeader>
 
         <form
-          className="space-y-4"
-          onSubmit={(e) => { e.preventDefault(); creaProprietario.mutate(); }}
+          className="flex flex-col flex-1 min-h-0"
+          onSubmit={(e) => { e.preventDefault(); if (step === 2) creaProprietario.mutate(); }}
         >
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="np-nome" className="text-xs font-bold text-gray-500">Nome *</Label>
-              <Input
-                id="np-nome"
-                value={form.nome}
-                onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
-                required
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-cognome" className="text-xs font-bold text-gray-500">Cognome</Label>
-              <Input
-                id="np-cognome"
-                value={form.cognome}
-                onChange={(e) => setForm((f) => ({ ...f, cognome: e.target.value }))}
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="np-email" className="text-xs font-bold text-gray-500">Email</Label>
-              <Input
-                id="np-email"
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-telefono" className="text-xs font-bold text-gray-500">Telefono</Label>
-              <Input
-                id="np-telefono"
-                value={form.telefono}
-                onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))}
-                className="rounded-xl"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="np-professione" className="text-xs font-bold text-gray-500">Professione</Label>
-            <Input
-              id="np-professione"
-              value={form.professione}
-              onChange={(e) => setForm((f) => ({ ...f, professione: e.target.value }))}
-              className="rounded-xl"
-            />
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            {step === 1 && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-nome" className="text-xs font-bold text-gray-500">Nome *</Label>
+                    <Input
+                      id="np-nome"
+                      value={form.nome}
+                      onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+                      required
+                      autoFocus
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-cognome" className="text-xs font-bold text-gray-500">Cognome</Label>
+                    <Input
+                      id="np-cognome"
+                      value={form.cognome}
+                      onChange={(e) => setForm((f) => ({ ...f, cognome: e.target.value }))}
+                      className="rounded-xl"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-email" className="text-xs font-bold text-gray-500">Email</Label>
+                    <Input
+                      id="np-email"
+                      type="email"
+                      value={form.email}
+                      onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-telefono" className="text-xs font-bold text-gray-500">Telefono</Label>
+                    <Input
+                      id="np-telefono"
+                      value={form.telefono}
+                      onChange={(e) => setForm((f) => ({ ...f, telefono: e.target.value }))}
+                      className="rounded-xl"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="np-professione" className="text-xs font-bold text-gray-500">Professione</Label>
+                  <Input
+                    id="np-professione"
+                    value={form.professione}
+                    onChange={(e) => setForm((f) => ({ ...f, professione: e.target.value }))}
+                    className="rounded-xl"
+                  />
+                </div>
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="np-via" className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
+                  <Input
+                    id="np-via"
+                    value={form.via_immobile}
+                    onChange={(e) => setForm((f) => ({ ...f, via_immobile: e.target.value }))}
+                    placeholder="Es. Via Roma 10"
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-citta-immob" className="text-xs font-bold text-gray-500">Città</Label>
+                    <Input
+                      id="np-citta-immob"
+                      value={form.citta_immobile}
+                      onChange={(e) => setForm((f) => ({ ...f, citta_immobile: e.target.value }))}
+                      placeholder="Es. Bergamo"
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-tipologia" className="text-xs font-bold text-gray-500">Tipologia</Label>
+                    <Input
+                      id="np-tipologia"
+                      value={form.tipologia_immobile}
+                      onChange={(e) => setForm((f) => ({ ...f, tipologia_immobile: e.target.value }))}
+                      placeholder="Es. Trilocale"
+                      className="rounded-xl"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="np-zona" className="text-xs font-bold text-gray-500">Zona</Label>
+                  <Input
+                    id="np-zona"
+                    value={form.zona_venditore}
+                    onChange={(e) => setForm((f) => ({ ...f, zona_venditore: e.target.value }))}
+                    placeholder="Es. Centro"
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="np-motivazione" className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
+                  <Textarea
+                    id="np-motivazione"
+                    value={form.motivazione_vendita}
+                    onChange={(e) => setForm((f) => ({ ...f, motivazione_vendita: e.target.value }))}
+                    placeholder="Es. Trasferimento lavoro"
+                    className="rounded-xl min-h-[3rem]"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-scadenza" className="text-xs font-bold text-gray-500">Scadenza esclusiva</Label>
+                    <Input
+                      id="np-scadenza"
+                      type="date"
+                      value={form.scadenza_esclusiva}
+                      onChange={(e) => setForm((f) => ({ ...f, scadenza_esclusiva: e.target.value }))}
+                      className="rounded-xl"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="np-val" className="text-xs font-bold text-gray-500">Valutazione stimata (€)</Label>
+                    <Input
+                      id="np-val"
+                      type="number"
+                      inputMode="numeric"
+                      value={form.valutazione_stimata}
+                      onChange={(e) => setForm((f) => ({ ...f, valutazione_stimata: e.target.value }))}
+                      placeholder="Es. 250000"
+                      className="rounded-xl"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4 space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">
-              Info immobile da vendere <span className="normal-case font-medium text-gray-300">(facoltativo)</span>
-            </h4>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-via" className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
-              <Input
-                id="np-via"
-                value={form.via_immobile}
-                onChange={(e) => setForm((f) => ({ ...f, via_immobile: e.target.value }))}
-                placeholder="Es. Via Roma 10"
-                className="rounded-xl"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="np-citta-immob" className="text-xs font-bold text-gray-500">Città</Label>
-                <Input
-                  id="np-citta-immob"
-                  value={form.citta_immobile}
-                  onChange={(e) => setForm((f) => ({ ...f, citta_immobile: e.target.value }))}
-                  placeholder="Es. Bergamo"
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="np-tipologia" className="text-xs font-bold text-gray-500">Tipologia</Label>
-                <Input
-                  id="np-tipologia"
-                  value={form.tipologia_immobile}
-                  onChange={(e) => setForm((f) => ({ ...f, tipologia_immobile: e.target.value }))}
-                  placeholder="Es. Trilocale"
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-zona" className="text-xs font-bold text-gray-500">Zona</Label>
-              <Input
-                id="np-zona"
-                value={form.zona_venditore}
-                onChange={(e) => setForm((f) => ({ ...f, zona_venditore: e.target.value }))}
-                placeholder="Es. Centro"
-                className="rounded-xl"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="np-motivazione" className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
-              <Textarea
-                id="np-motivazione"
-                value={form.motivazione_vendita}
-                onChange={(e) => setForm((f) => ({ ...f, motivazione_vendita: e.target.value }))}
-                placeholder="Es. Trasferimento lavoro"
-                className="rounded-xl min-h-[3rem]"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="np-scadenza" className="text-xs font-bold text-gray-500">Scadenza esclusiva</Label>
-                <Input
-                  id="np-scadenza"
-                  type="date"
-                  value={form.scadenza_esclusiva}
-                  onChange={(e) => setForm((f) => ({ ...f, scadenza_esclusiva: e.target.value }))}
-                  className="rounded-xl"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="np-val" className="text-xs font-bold text-gray-500">Valutazione stimata (€)</Label>
-                <Input
-                  id="np-val"
-                  type="number"
-                  inputMode="numeric"
-                  value={form.valutazione_stimata}
-                  onChange={(e) => setForm((f) => ({ ...f, valutazione_stimata: e.target.value }))}
-                  placeholder="Es. 250000"
-                  className="rounded-xl"
-                />
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={handleClose} className="rounded-xl font-bold border-gray-200">
-              Annulla
-            </Button>
-            <Button
-              type="submit"
-              disabled={creaProprietario.isPending || !form.nome.trim()}
-              className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold"
-            >
-              Crea
-            </Button>
+          <DialogFooter className="gap-2 px-6 py-4 border-t border-gray-100 shrink-0 sm:justify-between">
+            {step === 1 ? (
+              <>
+                <Button type="button" variant="outline" onClick={handleClose} className="rounded-xl font-bold border-gray-200">
+                  Annulla
+                </Button>
+                <Button
+                  type="button"
+                  onClick={goNext}
+                  disabled={!form.nome.trim()}
+                  className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold"
+                >
+                  Avanti
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" variant="outline" onClick={goBack} className="rounded-xl font-bold border-gray-200">
+                  Indietro
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={creaProprietario.isPending || !form.nome.trim()}
+                  className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold"
+                >
+                  Crea proprietario
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>
