@@ -7,8 +7,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ProprietariView from '@/components/contatti/ProprietariView';
 import AcquirentiView from '@/components/contatti/AcquirentiView';
 import CollaboratoriView from '@/components/contatti/CollaboratoriView';
+import ContattiGlobalSearch, { type ContattoTipo } from '@/components/contatti/ContattiGlobalSearch';
 
-type ContattiTab = 'proprietari' | 'acquirenti' | 'collaboratori';
+type ContattiTab = ContattoTipo;
 
 const Contatti = () => {
   const location = useLocation();
@@ -16,6 +17,11 @@ const Contatti = () => {
   const [tab, setTab] = useState<ContattiTab>(
     ((location.state as { contattiTab?: ContattiTab } | null)?.contattiTab as ContattiTab | undefined) ?? 'proprietari'
   );
+  // Id contatto da aprire (impostato dalla search globale) — resettato subito
+  // dopo l'apertura in modo che ri-aprire lo stesso contatto funzioni.
+  const [openProprietarioId, setOpenProprietarioId] = useState<string | null>(null);
+  const [openAcquirenteId, setOpenAcquirenteId] = useState<string | null>(null);
+  const [openCollaboratoreId, setOpenCollaboratoreId] = useState<string | null>(null);
 
   // se navighiamo su /contatti da un'altra rotta con un nuovo `contattiTab`
   // nel state, il componente non rimonta: seguiamo il cambio di state a runtime.
@@ -24,11 +30,19 @@ const Contatti = () => {
     if (requestedTab) setTab(requestedTab);
   }, [location.state]);
 
+  const handleSearchSelect = (tipo: ContattoTipo, id: string) => {
+    setTab(tipo);
+    if (tipo === 'proprietari') setOpenProprietarioId(id);
+    if (tipo === 'acquirenti') setOpenAcquirenteId(id);
+    if (tipo === 'collaboratori') setOpenCollaboratoreId(id);
+  };
+
   return (
     <AdminLayout fullHeight>
       <div className="flex flex-col flex-1 overflow-hidden min-h-0">
-        <div className="mb-6 shrink-0">
+        <div className="mb-4 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Contatti</h1>
+          <ContattiGlobalSearch onSelect={handleSearchSelect} />
         </div>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as ContattiTab)} className="flex flex-col flex-1 min-h-0">
@@ -39,13 +53,13 @@ const Contatti = () => {
           </TabsList>
 
           <TabsContent value="proprietari" className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-            <ProprietariView />
+            <ProprietariView openContattoId={openProprietarioId} onContattoOpened={() => setOpenProprietarioId(null)} />
           </TabsContent>
           <TabsContent value="acquirenti" className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-            <AcquirentiView deepLinkLeadId={deepLinkLeadId} />
+            <AcquirentiView deepLinkLeadId={deepLinkLeadId} openContattoId={openAcquirenteId} onContattoOpened={() => setOpenAcquirenteId(null)} />
           </TabsContent>
           <TabsContent value="collaboratori" className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-            <CollaboratoriView />
+            <CollaboratoriView openContattoId={openCollaboratoreId} onContattoOpened={() => setOpenCollaboratoreId(null)} />
           </TabsContent>
         </Tabs>
       </div>

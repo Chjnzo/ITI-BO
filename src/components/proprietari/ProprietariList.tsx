@@ -53,6 +53,11 @@ interface ProprietariListProps {
   // Slot per pulsanti (es. "Nuovo Proprietario") che devono comparire sulla
   // stessa riga di filtri/search, per uniformità con Acquirenti/Collaboratori.
   headerActions?: ReactNode;
+  // Impostato dalla search globale in Contatti.tsx: apre la scheda del
+  // proprietario indicato. Il callback onContattoOpened viene chiamato subito
+  // dopo per resettare lo stato lato parent (permette ri-aprire lo stesso id).
+  openContattoId?: string | null;
+  onContattoOpened?: () => void;
 }
 
 const ultimaPratica = (pratiche: ProprietarioPraticaRow[]): ProprietarioPraticaRow | null => {
@@ -60,7 +65,7 @@ const ultimaPratica = (pratiche: ProprietarioPraticaRow[]): ProprietarioPraticaR
   return [...pratiche].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
 };
 
-const ProprietariList = ({ refreshSignal, headerActions }: ProprietariListProps) => {
+const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onContattoOpened }: ProprietariListProps) => {
   const queryClient = useQueryClient();
   const [proprietari, setProprietari] = useState<ProprietarioRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +102,13 @@ const ProprietariList = ({ refreshSignal, headerActions }: ProprietariListProps)
     fetchProprietari(controller.signal);
     return () => controller.abort();
   }, [fetchProprietari, refreshSignal]);
+
+  useEffect(() => {
+    if (openContattoId) {
+      setSchedaId(openContattoId);
+      onContattoOpened?.();
+    }
+  }, [openContattoId, onContattoOpened]);
 
   useEffect(() => {
     supabase

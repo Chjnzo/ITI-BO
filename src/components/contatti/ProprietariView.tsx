@@ -10,7 +10,12 @@ import NewProprietarioDialog from '@/components/proprietari/NewProprietarioDialo
 // iniettato come headerActions in modo che stia sulla stessa riga dei filtri
 // (Solo caldi, filtro agente, search) — coerente con Acquirenti/Collaboratori
 // che hanno anch'essi il bottone "Nuovo" nella riga controlli.
-const ProprietariView = () => {
+interface ProprietariViewProps {
+  openContattoId?: string | null;
+  onContattoOpened?: () => void;
+}
+
+const ProprietariView = ({ openContattoId, onContattoOpened }: ProprietariViewProps = {}) => {
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
 
@@ -18,6 +23,8 @@ const ProprietariView = () => {
     <div className="flex flex-col flex-1 min-h-0">
       <ProprietariList
         refreshSignal={refreshSignal}
+        openContattoId={openContattoId}
+        onContattoOpened={onContattoOpened}
         headerActions={
           <Button
             onClick={() => setIsNewOpen(true)}

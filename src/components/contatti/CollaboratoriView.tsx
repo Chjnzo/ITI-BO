@@ -51,7 +51,14 @@ const CollaboratoreValidationSchema = z.object({
   { message: 'Inserisci almeno il nome o il cognome' },
 );
 
-const CollaboratoriView = () => {
+interface CollaboratoriViewProps {
+  /** Impostato dalla search globale in Contatti.tsx per aprire direttamente la
+   * scheda del collaboratore indicato. */
+  openContattoId?: string | null;
+  onContattoOpened?: () => void;
+}
+
+const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriViewProps = {}) => {
   const [collaboratori, setCollaboratori] = useState<CollaboratoreRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -84,6 +91,36 @@ const CollaboratoriView = () => {
     fetchCollaboratori(controller.signal);
     return () => controller.abort();
   }, [fetchCollaboratori]);
+
+  // Deep-link dalla search globale in Contatti.tsx: apre la scheda del
+  // collaboratore indicato caricando la riga completa dal DB. Inline invece
+  // di richiamare openEditModal per evitare cicli sulle deps del useCallback.
+  useEffect(() => {
+    if (!openContattoId) return;
+    let aborted = false;
+    supabase
+      .from('collaboratori')
+      .select('id, nome, cognome, email, telefono, professione, note_interne')
+      .eq('id', openContattoId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (aborted) return;
+        if (data) {
+          const c = data as CollaboratoreRecord;
+          lastSavedRef.current = JSON.stringify({
+            nome: c.nome ?? '',
+            cognome: c.cognome ?? '',
+            email: c.email ?? '',
+            telefono: c.telefono ?? '',
+            professione: c.professione ?? '',
+            note_interne: c.note_interne ?? '',
+          });
+          setSelected(c);
+        }
+        onContattoOpened?.();
+      });
+    return () => { aborted = true; };
+  }, [openContattoId, onContattoOpened]);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
