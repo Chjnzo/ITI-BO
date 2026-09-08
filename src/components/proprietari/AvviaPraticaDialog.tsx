@@ -18,6 +18,9 @@ export interface AvviaPraticaTarget {
   id: string;
   nome: string;
   cognome: string | null;
+  via_immobile?: string | null;
+  citta_immobile?: string | null;
+  tipologia_immobile?: string | null;
 }
 
 interface AvviaPraticaDialogProps {
@@ -39,9 +42,9 @@ const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDi
 
   useEffect(() => {
     if (proprietario) {
-      setVia('');
-      setTipologia('');
-      setCitta('');
+      setVia(proprietario.via_immobile ?? '');
+      setTipologia(proprietario.tipologia_immobile ?? '');
+      setCitta(proprietario.citta_immobile ?? '');
     }
   }, [proprietario]);
 

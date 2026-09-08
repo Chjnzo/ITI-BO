@@ -34,6 +34,9 @@ interface ProprietarioRow {
   professione: string | null;
   is_deleted: boolean;
   caldo: boolean;
+  via_immobile: string | null;
+  citta_immobile: string | null;
+  tipologia_immobile: string | null;
   contatti: { agente_id: string | null; created_at: string } | null;
   proprietari_pratiche: ProprietarioPraticaRow[];
 }
@@ -74,6 +77,7 @@ const ProprietariList = ({ refreshSignal, headerActions }: ProprietariListProps)
       .from('proprietari')
       .select(`
         id, nome, cognome, email, telefono, professione, is_deleted, caldo,
+        via_immobile, citta_immobile, tipologia_immobile,
         contatti(agente_id, created_at),
         proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
       `)

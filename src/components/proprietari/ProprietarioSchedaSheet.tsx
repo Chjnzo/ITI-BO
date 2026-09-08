@@ -34,6 +34,13 @@ interface ProprietarioDetail {
   professione: string | null;
   note_interne: string | null;
   caldo: boolean;
+  via_immobile: string | null;
+  citta_immobile: string | null;
+  tipologia_immobile: string | null;
+  zona_venditore: string | null;
+  motivazione_vendita: string | null;
+  scadenza_esclusiva: string | null;
+  valutazione_stimata: number | null;
   contatti: { agente_id: string | null; drive_folder_url: string | null } | null;
 }
 
@@ -72,7 +79,12 @@ const formatMoney = (n: number | null) => n != null ? new Intl.NumberFormat('it-
 const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioSchedaSheetProps) => {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState('anagrafica');
-  const [form, setForm] = useState({ nome: '', cognome: '', email: '', telefono: '', professione: '', note_interne: '' });
+  const [form, setForm] = useState({
+    nome: '', cognome: '', email: '', telefono: '', professione: '', note_interne: '',
+    via_immobile: '', citta_immobile: '', tipologia_immobile: '',
+    zona_venditore: '', motivazione_vendita: '',
+    scadenza_esclusiva: '', valutazione_stimata: '',
+  });
   const [agenti, setAgenti] = useState<AgenteOption[]>([]);
   const [agenteId, setAgenteId] = useState<string>('');
   const [driveUrl, setDriveUrl] = useState('');
@@ -88,7 +100,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
     queryFn: async () => {
       const { data, error } = await supabase
         .from('proprietari')
-        .select('id, nome, cognome, email, telefono, professione, note_interne, caldo, contatti(agente_id, drive_folder_url)')
+        .select('id, nome, cognome, email, telefono, professione, note_interne, caldo, via_immobile, citta_immobile, tipologia_immobile, zona_venditore, motivazione_vendita, scadenza_esclusiva, valutazione_stimata, contatti(agente_id, drive_folder_url)')
         .eq('id', proprietarioId!)
         .single();
       if (error) throw error;
@@ -106,6 +118,13 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
         telefono: proprietario.telefono ?? '',
         professione: proprietario.professione ?? '',
         note_interne: proprietario.note_interne ?? '',
+        via_immobile: proprietario.via_immobile ?? '',
+        citta_immobile: proprietario.citta_immobile ?? '',
+        tipologia_immobile: proprietario.tipologia_immobile ?? '',
+        zona_venditore: proprietario.zona_venditore ?? '',
+        motivazione_vendita: proprietario.motivazione_vendita ?? '',
+        scadenza_esclusiva: proprietario.scadenza_esclusiva ?? '',
+        valutazione_stimata: proprietario.valutazione_stimata != null ? String(proprietario.valutazione_stimata) : '',
       });
       setAgenteId(proprietario.contatti?.agente_id ?? '');
       setDriveUrl(proprietario.contatti?.drive_folder_url ?? '');
@@ -139,6 +158,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
   const salvaAnagrafica = useMutation({
     mutationFn: async () => {
       if (!proprietarioId) return;
+      const valStimataNum = form.valutazione_stimata.trim() ? Number(form.valutazione_stimata) : null;
       const { error } = await supabase
         .from('proprietari')
         .update({
@@ -148,6 +168,13 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
           telefono: form.telefono.trim() || null,
           professione: form.professione.trim() || null,
           note_interne: form.note_interne.trim() || null,
+          via_immobile: form.via_immobile.trim() || null,
+          citta_immobile: form.citta_immobile.trim() || null,
+          tipologia_immobile: form.tipologia_immobile.trim() || null,
+          zona_venditore: form.zona_venditore.trim() || null,
+          motivazione_vendita: form.motivazione_vendita.trim() || null,
+          scadenza_esclusiva: form.scadenza_esclusiva || null,
+          valutazione_stimata: Number.isFinite(valStimataNum!) ? valStimataNum : null,
         })
         .eq('id', proprietarioId);
       if (error) throw error;
@@ -409,6 +436,47 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-gray-500">Note interne</Label>
                   <Textarea value={form.note_interne} onChange={(e) => setForm(f => ({ ...f, note_interne: e.target.value }))} className="rounded-xl min-h-[5rem]" />
+                </div>
+
+                <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4 space-y-3">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                    Info immobile da vendere
+                  </h4>
+                  <p className="text-xs text-gray-400">
+                    Puoi già registrare i dati dell'immobile appena prendi il contatto, anche prima di attivare la pratica.
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
+                    <Input value={form.via_immobile} onChange={(e) => setForm(f => ({ ...f, via_immobile: e.target.value }))} className="rounded-xl" placeholder="Es. Via Roma 10" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-gray-500">Città</Label>
+                      <Input value={form.citta_immobile} onChange={(e) => setForm(f => ({ ...f, citta_immobile: e.target.value }))} className="rounded-xl" placeholder="Es. Bergamo" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-gray-500">Tipologia</Label>
+                      <Input value={form.tipologia_immobile} onChange={(e) => setForm(f => ({ ...f, tipologia_immobile: e.target.value }))} className="rounded-xl" placeholder="Es. Trilocale" />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-gray-500">Zona</Label>
+                    <Input value={form.zona_venditore} onChange={(e) => setForm(f => ({ ...f, zona_venditore: e.target.value }))} className="rounded-xl" placeholder="Es. Centro" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
+                    <Textarea value={form.motivazione_vendita} onChange={(e) => setForm(f => ({ ...f, motivazione_vendita: e.target.value }))} className="rounded-xl min-h-[3rem]" placeholder="Es. Trasferimento lavoro" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-gray-500">Scadenza esclusiva</Label>
+                      <Input type="date" value={form.scadenza_esclusiva} onChange={(e) => setForm(f => ({ ...f, scadenza_esclusiva: e.target.value }))} className="rounded-xl" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold text-gray-500">Valutazione stimata (€)</Label>
+                      <Input type="number" inputMode="numeric" value={form.valutazione_stimata} onChange={(e) => setForm(f => ({ ...f, valutazione_stimata: e.target.value }))} className="rounded-xl" placeholder="Es. 250000" />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4 space-y-2">
