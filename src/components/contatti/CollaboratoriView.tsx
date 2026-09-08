@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { z } from 'zod';
@@ -105,8 +105,24 @@ const CollaboratoriView = () => {
     });
   }, [collaboratori, searchQuery]);
 
-  const openCreateModal = () => setSelected({ nome: '', cognome: '', email: '', telefono: '', professione: '' });
-  const openEditModal = (c: CollaboratoreRecord) => setSelected(c);
+  const lastSavedRef = useRef<string | null>(null);
+
+  const openCreateModal = () => {
+    lastSavedRef.current = null; // create mode: no autosave
+    setSelected({ nome: '', cognome: '', email: '', telefono: '', professione: '' });
+  };
+  const openEditModal = (c: CollaboratoreRecord) => {
+    // Snapshot iniziale per l'autosave: evita di ri-scrivere subito dopo l'apertura.
+    lastSavedRef.current = JSON.stringify({
+      nome: c.nome ?? '',
+      cognome: c.cognome ?? '',
+      email: c.email ?? '',
+      telefono: c.telefono ?? '',
+      professione: c.professione ?? '',
+      note_interne: c.note_interne ?? '',
+    });
+    setSelected(c);
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +195,38 @@ const CollaboratoriView = () => {
 
     setIsSaving(false);
   };
+
+  // Autosave debounced 800ms in edit mode (solo su record già esistente).
+  // In create mode (selected.id undefined) resta l'invio esplicito via handleSave.
+  useEffect(() => {
+    if (!selected?.id) return;
+    const serialized = JSON.stringify({
+      nome: selected.nome ?? '',
+      cognome: selected.cognome ?? '',
+      email: selected.email ?? '',
+      telefono: selected.telefono ?? '',
+      professione: selected.professione ?? '',
+      note_interne: selected.note_interne ?? '',
+    });
+    if (serialized === lastSavedRef.current) return;
+    if (!(selected.nome?.trim() || selected.cognome?.trim())) return;
+    const timer = setTimeout(async () => {
+      const payload = {
+        nome: selected.nome.trim(),
+        cognome: selected.cognome?.trim() || null,
+        email: selected.email || null,
+        telefono: selected.telefono || null,
+        professione: selected.professione || null,
+        note_interne: selected.note_interne || null,
+      };
+      const { error } = await supabase.from('collaboratori').update(payload).eq('id', selected.id);
+      if (!error) {
+        lastSavedRef.current = serialized;
+        setCollaboratori((prev) => prev.map((x) => x.id === selected.id ? { ...x, ...payload } : x));
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [selected]);
 
   const handleDelete = async () => {
     if (!toDelete) return;
