@@ -26,6 +26,31 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, errorInfo);
+
+    // Deploy chunk-mismatch: dopo un release Vite genera nuovi hash sui file
+    // in dist/assets/*, ma la tab già aperta ha in memoria il vecchio
+    // index.html che punta ai chunk vecchi. Alla prima navigazione lazy,
+    // fetch() fallisce con "Failed to fetch dynamically imported module" (o
+    // "Importing a module script failed" su Safari). Recovery automatica:
+    // hard reload una volta sola (marker in sessionStorage) per prendere il
+    // nuovo index.html senza mostrare la schermata rossa all'utente.
+    const msg = error?.message ?? '';
+    const isChunkError =
+      /Failed to fetch dynamically imported module/i.test(msg) ||
+      /Importing a module script failed/i.test(msg) ||
+      /Loading chunk .* failed/i.test(msg);
+    if (isChunkError) {
+      const RELOAD_KEY = '__iti_chunk_reload_at';
+      const last = Number(sessionStorage.getItem(RELOAD_KEY) ?? '0');
+      const now = Date.now();
+      // Evita loop: se abbiamo già ricaricato negli ultimi 10s mostra l'errore.
+      if (now - last > 10_000) {
+        sessionStorage.setItem(RELOAD_KEY, String(now));
+        window.location.reload();
+        return;
+      }
+    }
+
     Sentry.captureException(error, { contexts: { react: errorInfo as unknown as Record<string, unknown> } });
   }
 
