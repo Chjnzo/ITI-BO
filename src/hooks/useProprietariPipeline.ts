@@ -185,4 +185,17 @@ const creaImmobileDaPratica = async (praticaId: string) => {
   // (fallback 'Acquisizione' nell'hook, checklist vuota).
   await upsertFasePipeline(immobile.id, 'In Vendita');
   await generaChecklistPerFase(immobile.id, 'In Vendita');
+
+  // Cartella Drive per i documenti dell'immobile: creata proattivamente
+  // all'ingresso in gestione così l'agente può già linkarci file dal primo
+  // istante. Best-effort: se l'Edge Function fallisce (es. Drive down o script
+  // properties non configurate) NON blocchiamo la creazione dell'immobile,
+  // Apps Script farà comunque il lookup lazy al primo upload di documento.
+  try {
+    await supabase.functions.invoke('drive-documenti', {
+      body: { action: 'createFolder', immobileId: immobile.id },
+    });
+  } catch (_) {
+    // volutamente ignorato
+  }
 };

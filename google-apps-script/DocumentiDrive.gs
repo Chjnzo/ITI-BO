@@ -16,15 +16,14 @@
  *                    sottocartelle per immobile (creare una cartella dedicata,
  *                    es. "ITI-BO Documenti Immobili", e incollarne l'id qui)
  *
- * Struttura cartelle (decisa 2026-08-20, da riconfermare comunque col team —
- * vedi specifica-progetto-iti-bo-v1.md §6):
+ * Struttura cartelle (2026-09-08):
  *   ROOT_FOLDER_ID
- *     └── {immobileId} - {titolo}                       (una cartella per immobile, tutte le fasi insieme)
- *           └── {documento} - {indirizzo}.ext            (nome file standardizzato, es. "APE - Via Colle Aperto 12.pdf")
- *
- * Ogni documento della checklist ha un nome univoco per immobile (vincolo DB
- * immobile_documenti_immobile_id_documento_key), quindi un'unica cartella per
- * immobile senza sottocartelle per fase non crea collisioni di nome.
+ *     └── {titolo}                                        (una cartella per immobile,
+ *                                                          creata proattivamente
+ *                                                          all'ingresso in gestione;
+ *                                                          nome = solo titolo, no UUID)
+ *           └── {documento} - {indirizzo}.ext             (nome file standardizzato,
+ *                                                          es. "APE - Via Colle Aperto 12.pdf")
  *
  * Deploy: Distribuisci → Nuova implementazione → Tipo "Applicazione web".
  *   - Esegui come: Me (proprietario dello script)
@@ -34,7 +33,7 @@
  *     via link)
  */
 
-const FASI_VALIDE = ['Acquisizione', 'In Vendita', 'Venduto', 'Archivio'];
+const FASI_VALIDE = ['In Vendita', 'Venduto'];
 
 function doPost(e) {
   let payload;
@@ -50,6 +49,8 @@ function doPost(e) {
 
   try {
     switch (payload.action) {
+      case 'createFolder':
+        return risposta_(azioneCreateFolder_(payload));
       case 'upload':
         return risposta_(azioneUpload_(payload));
       case 'getDownload':
@@ -72,12 +73,91 @@ function doGet(e) {
 
 // --- Azioni ---------------------------------------------------------------
 
+/**
+ * Crea (o riusa se già esiste per lo stesso immobileId) la cartella Drive
+ * dell'immobile e ritorna id + URL "human friendly" (webViewLink) per essere
+ * mostrato in UI.
+ *
+ * Idempotente:
+ * 1) Se `existingFolderId` è passato ed è ancora valido, ritorna quello.
+ * 2) Altrimenti se esiste già una cartella con lo stesso nome sotto ROOT, la
+ *    riusa (retro-compatibilità coi vecchi nomi `{immobileId} - {titolo}`).
+ * 3) Altrimenti crea la cartella nuova col nome `{titolo}` (nessun UUID).
+ */
+function azioneCreateFolder_(payload) {
+  const { immobileTitolo, existingFolderId } = payload;
+  validaCampiObbligatori_({ immobileTitolo });
+
+  if (existingFolderId) {
+    try {
+      const cartella = DriveApp.getFolderById(existingFolderId);
+      return {
+        ok: true,
+        folderId: cartella.getId(),
+        folderUrl: cartella.getUrl(),
+        riutilizzata: true,
+      };
+    } catch (_ignored) {
+      // Fall through: id passato ma cartella non più valida (cestinata,
+      // rimossa a mano). Creiamo una nuova cartella.
+    }
+  }
+
+  const root = DriveApp.getFolderById(
+    PropertiesService.getScriptProperties().getProperty('ROOT_FOLDER_ID'),
+  );
+  const nome = sanitizzaNome_(immobileTitolo);
+  const cartella = trovaOCreaSottocartella_(root, nome);
+
+  return {
+    ok: true,
+    folderId: cartella.getId(),
+    folderUrl: cartella.getUrl(),
+    riutilizzata: false,
+  };
+}
+
 function azioneUpload_(payload) {
-  const { immobileId, immobileTitolo, immobileIndirizzo, fase, documento, fileName, mimeType, fileBase64 } = payload;
-  validaCampiObbligatori_({ immobileId, immobileTitolo, immobileIndirizzo, fase, documento, fileName, mimeType, fileBase64 });
+  const { immobileId, immobileTitolo, immobileIndirizzo, driveFolderId, fase, documento, fileName, mimeType, fileBase64 } = payload;
+  validaCampiObbligatori_({ immobileTitolo, immobileIndirizzo, fase, documento, fileName, mimeType, fileBase64 });
   validaFase_(fase);
 
-  const cartellaImmobile = trovaOCreaCartellaImmobile_(immobileId, immobileTitolo);
+  // Preferenza a driveFolderId (l'id della cartella già creata all'ingresso in
+  // gestione): salta il lookup per nome. Fallback: cerca/crea per nome per
+  // immobili storici che non hanno ancora la cartella.
+  let cartellaImmobile;
+  if (driveFolderId) {
+    try {
+      cartellaImmobile = DriveApp.getFolderById(driveFolderId);
+    } catch (_ignored) {
+      cartellaImmobile = null;
+    }
+  }
+  if (!cartellaImmobile) {
+    const root = DriveApp.getFolderById(
+      PropertiesService.getScriptProperties().getProperty('ROOT_FOLDER_ID'),
+    );
+    // Retro-compat: primo tentativo col nuovo nome (solo titolo), secondo
+    // tentativo col vecchio nome `{immobileId} - {titolo}`.
+    cartellaImmobile = trovaOCreaSottocartella_(root, sanitizzaNome_(immobileTitolo));
+    if (immobileId) {
+      const legacyName = sanitizzaNome_(`${immobileId} - ${immobileTitolo}`);
+      const legacy = root.getFoldersByName(legacyName);
+      // Se la cartella legacy esiste e non è la stessa nuova, migra i file
+      // dentro la nuova e cestina la legacy (best-effort, non blocca l'upload).
+      if (legacy.hasNext()) {
+        const legacyFolder = legacy.next();
+        if (legacyFolder.getId() !== cartellaImmobile.getId()) {
+          const legacyFiles = legacyFolder.getFiles();
+          while (legacyFiles.hasNext()) {
+            const f = legacyFiles.next();
+            f.moveTo(cartellaImmobile);
+          }
+          legacyFolder.setTrashed(true);
+        }
+      }
+    }
+  }
 
   // Sostituzione: se esiste già un file per lo stesso "documento" (a prescindere
   // dall'indirizzo con cui era stato nominato in precedenza, che potrebbe essere
@@ -101,6 +181,8 @@ function azioneUpload_(payload) {
     ok: true,
     fileId: file.getId(),
     fileName: file.getName(),
+    folderId: cartellaImmobile.getId(),
+    folderUrl: cartellaImmobile.getUrl(),
   };
 }
 
@@ -120,14 +202,6 @@ function azioneGetDownload_(payload) {
 }
 
 // --- Helper -----------------------------------------------------------------
-
-function trovaOCreaCartellaImmobile_(immobileId, immobileTitolo) {
-  const root = DriveApp.getFolderById(
-    PropertiesService.getScriptProperties().getProperty('ROOT_FOLDER_ID'),
-  );
-  const nomeCartellaImmobile = sanitizzaNome_(`${immobileId} - ${immobileTitolo}`);
-  return trovaOCreaSottocartella_(root, nomeCartellaImmobile);
-}
 
 function trovaOCreaSottocartella_(cartellaGenitore, nome) {
   const esistenti = cartellaGenitore.getFoldersByName(nome);

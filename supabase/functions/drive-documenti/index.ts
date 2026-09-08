@@ -11,7 +11,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const FASI_VALIDE = ["In Vendita", "Venduto", "Archivio"];
+const FASI_VALIDE = ["In Vendita", "Venduto"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -61,6 +61,51 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
+    if (body.action === "createFolder") {
+      // Chiamata dal frontend all'ingresso in gestione (creaImmobileDaPratica /
+      // PropertyWizard) per creare proattivamente la cartella Drive
+      // dell'immobile. Idempotente: se drive_folder_id è già settato lo
+      // riutilizza; altrimenti crea nuova cartella e la persiste su immobili.
+      const { immobileId } = body;
+      if (!immobileId) return json({ success: false, error: "Campo obbligatorio mancante: immobileId" }, 400);
+
+      const { data: immobile, error: immobileError } = await supabase
+        .from("immobili")
+        .select("id, titolo, drive_folder_id")
+        .eq("id", immobileId)
+        .single();
+      if (immobileError || !immobile) {
+        return json({ success: false, error: `Immobile non trovato: ${immobileId}` }, 404);
+      }
+
+      const driveResult = await callAppsScript({
+        action: "createFolder",
+        immobileTitolo: immobile.titolo,
+        existingFolderId: immobile.drive_folder_id ?? undefined,
+      });
+
+      if (!driveResult.ok) {
+        return json({ success: false, error: driveResult.error ?? "Errore Apps Script sconosciuto." }, 502);
+      }
+
+      const { error: updateError } = await supabase
+        .from("immobili")
+        .update({
+          drive_folder_id: driveResult.folderId,
+          drive_folder_url: driveResult.folderUrl,
+        })
+        .eq("id", immobileId);
+      if (updateError) {
+        return json({ success: false, error: `Cartella creata ma persist DB fallita: ${updateError.message}` }, 500);
+      }
+
+      return json({
+        success: true,
+        folderId: driveResult.folderId,
+        folderUrl: driveResult.folderUrl,
+      });
+    }
+
     if (body.action === "upload") {
       const { documentoId, immobileId, immobileTitolo, immobileIndirizzo, fase, documento, fileName, mimeType, fileBase64 } = body;
       for (const [chiave, valore] of Object.entries({ documentoId, immobileId, immobileTitolo, immobileIndirizzo, fase, documento, fileName, mimeType, fileBase64 })) {
@@ -70,11 +115,22 @@ Deno.serve(async (req) => {
         return json({ success: false, error: `Fase non valida: ${fase}` }, 400);
       }
 
+      // Passiamo l'eventuale drive_folder_id dell'immobile allo Apps Script:
+      // evita il lookup per nome dentro Drive quando la cartella è già stata
+      // creata proattivamente. Best-effort: se il fetch fallisce, l'Apps
+      // Script cadrà comunque sul lookup per nome.
+      const { data: immobileForFolder } = await supabase
+        .from("immobili")
+        .select("drive_folder_id, drive_folder_url")
+        .eq("id", immobileId)
+        .maybeSingle();
+
       const driveResult = await callAppsScript({
         action: "upload",
         immobileId,
         immobileTitolo,
         immobileIndirizzo,
+        driveFolderId: immobileForFolder?.drive_folder_id ?? undefined,
         fase,
         documento,
         fileName,
@@ -92,6 +148,20 @@ Deno.serve(async (req) => {
         .eq("id", documentoId);
       if (updateError) {
         return json({ success: false, error: `File caricato su Drive ma aggiornamento DB fallito: ${updateError.message}` }, 500);
+      }
+
+      // Retro-compat: se questo era il primissimo upload per un immobile
+      // legacy, Apps Script ha creato la cartella lazily e ci ha restituito
+      // folderId/folderUrl. Persistiamoli su immobili così i prossimi upload
+      // non ripartono da capo e la UI può mostrare il link.
+      if (driveResult.folderId && !immobileForFolder?.drive_folder_id) {
+        await supabase
+          .from("immobili")
+          .update({
+            drive_folder_id: driveResult.folderId,
+            drive_folder_url: driveResult.folderUrl,
+          })
+          .eq("id", immobileId);
       }
 
       return json({ success: true, fileId: driveResult.fileId, fileName: driveResult.fileName });

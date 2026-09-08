@@ -43,7 +43,18 @@ export const upsertFasePipeline = async (immobileId: string, fase: FasePipeline)
 // A new immobile has no immobile_pipeline_stato row yet: without this, its
 // Kanban card sits in 'In Vendita' (the hook's default fallback) with an
 // empty, uncreated checklist until the first manual drag-and-drop move.
+// Chiama anche l'Edge Function drive-documenti/createFolder così l'immobile
+// nasce già con la cartella Drive dedicata, senza aspettare il primo upload.
+// Best-effort: eventuali errori vengono ignorati (lo Apps Script farà lazy
+// fallback su lookup per nome al primo upload).
 export const creaPipelineIniziale = async (immobileId: string) => {
   await upsertFasePipeline(immobileId, 'In Vendita');
   await generaChecklistPerFase(immobileId, 'In Vendita');
+  try {
+    await supabase.functions.invoke('drive-documenti', {
+      body: { action: 'createFolder', immobileId },
+    });
+  } catch (_) {
+    // volutamente ignorato
+  }
 };

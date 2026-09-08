@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Paperclip, Check, Loader2, AlertTriangle, Plus, ArrowRight, KeyRound, Pencil } from 'lucide-react';
+import { Paperclip, Check, Loader2, AlertTriangle, Plus, ArrowRight, KeyRound, Pencil, Folder } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
@@ -242,6 +242,16 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               </Badge>
               {card.proprietario_nome && (
                 <Badge variant="outline" className="font-semibold">Proprietario: {card.proprietario_nome}</Badge>
+              )}
+              {card.drive_folder_url && (
+                <a
+                  href={card.drive_folder_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#94b0ab] hover:text-[#7a948f] px-2.5 py-1 rounded-full border border-[#94b0ab]/40"
+                >
+                  <Folder size={12} /> Cartella Drive
+                </a>
               )}
             </div>
 
