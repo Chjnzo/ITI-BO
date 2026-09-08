@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
@@ -109,9 +109,14 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
     enabled: !!proprietarioId,
   });
 
+  // Serializzato dell'ultimo stato realmente salvato: usato dall'autosave per
+  // evitare di ri-scrivere quando il form viene reidratato dal server (setForm
+  // qui sotto crea un nuovo oggetto anche se il contenuto è identico).
+  const lastSavedRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (proprietario) {
-      setForm({
+      const nextForm = {
         nome: proprietario.nome ?? '',
         cognome: proprietario.cognome ?? '',
         email: proprietario.email ?? '',
@@ -125,7 +130,9 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
         motivazione_vendita: proprietario.motivazione_vendita ?? '',
         scadenza_esclusiva: proprietario.scadenza_esclusiva ?? '',
         valutazione_stimata: proprietario.valutazione_stimata != null ? String(proprietario.valutazione_stimata) : '',
-      });
+      };
+      setForm(nextForm);
+      lastSavedRef.current = JSON.stringify(nextForm);
       setAgenteId(proprietario.contatti?.agente_id ?? '');
       setDriveUrl(proprietario.contatti?.drive_folder_url ?? '');
     }
@@ -155,33 +162,60 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
     queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
   }, [queryClient, proprietarioId]);
 
+  const buildPayload = useCallback(() => {
+    const valStimataNum = form.valutazione_stimata.trim() ? Number(form.valutazione_stimata) : null;
+    return {
+      nome: form.nome.trim(),
+      cognome: form.cognome.trim() || null,
+      email: form.email.trim() || null,
+      telefono: form.telefono.trim() || null,
+      professione: form.professione.trim() || null,
+      note_interne: form.note_interne.trim() || null,
+      via_immobile: form.via_immobile.trim() || null,
+      citta_immobile: form.citta_immobile.trim() || null,
+      tipologia_immobile: form.tipologia_immobile.trim() || null,
+      zona_venditore: form.zona_venditore.trim() || null,
+      motivazione_vendita: form.motivazione_vendita.trim() || null,
+      scadenza_esclusiva: form.scadenza_esclusiva || null,
+      valutazione_stimata: Number.isFinite(valStimataNum!) ? valStimataNum : null,
+    };
+  }, [form]);
+
   const salvaAnagrafica = useMutation({
     mutationFn: async () => {
       if (!proprietarioId) return;
-      const valStimataNum = form.valutazione_stimata.trim() ? Number(form.valutazione_stimata) : null;
       const { error } = await supabase
         .from('proprietari')
-        .update({
-          nome: form.nome.trim(),
-          cognome: form.cognome.trim() || null,
-          email: form.email.trim() || null,
-          telefono: form.telefono.trim() || null,
-          professione: form.professione.trim() || null,
-          note_interne: form.note_interne.trim() || null,
-          via_immobile: form.via_immobile.trim() || null,
-          citta_immobile: form.citta_immobile.trim() || null,
-          tipologia_immobile: form.tipologia_immobile.trim() || null,
-          zona_venditore: form.zona_venditore.trim() || null,
-          motivazione_vendita: form.motivazione_vendita.trim() || null,
-          scadenza_esclusiva: form.scadenza_esclusiva || null,
-          valutazione_stimata: Number.isFinite(valStimataNum!) ? valStimataNum : null,
-        })
+        .update(buildPayload())
         .eq('id', proprietarioId);
       if (error) throw error;
+      lastSavedRef.current = JSON.stringify(form);
     },
     onSuccess: () => { showSuccess('Salvato.'); invalidateDetail(); },
     onError: () => showError('Salvataggio non riuscito.'),
   });
+
+  // Autosave debounced: quando l'utente edita un campo, aspetta 800ms di
+  // inattività e persiste in silenzio (senza toast). Il tasto "Salva" resta
+  // come feedback esplicito ma non è più necessario. Salta se il form è
+  // uguale all'ultimo stato salvato (evita loop dopo il refetch di react-query
+  // che sostituirebbe il ref) e se il nome (required) è vuoto.
+  useEffect(() => {
+    if (!proprietarioId || !form.nome.trim()) return;
+    const serialized = JSON.stringify(form);
+    if (serialized === lastSavedRef.current) return;
+    const timer = setTimeout(async () => {
+      const { error } = await supabase
+        .from('proprietari')
+        .update(buildPayload())
+        .eq('id', proprietarioId);
+      if (!error) {
+        lastSavedRef.current = serialized;
+        invalidateDetail();
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [form, proprietarioId, buildPayload, invalidateDetail]);
 
   const toggleCaldo = useMutation({
     mutationFn: async () => {
