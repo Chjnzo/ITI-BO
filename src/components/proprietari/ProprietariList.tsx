@@ -219,7 +219,7 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
               <thead>
                 <tr className="bg-gray-50/50 border-b border-gray-100">
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Proprietario</th>
-                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Professione</th>
+                  <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Via immobile</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400">Pratica</th>
                   <th className="px-8 py-5 text-xs font-bold uppercase tracking-widest text-gray-400 text-right">Azioni</th>
                 </tr>
@@ -258,8 +258,15 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
                         </div>
                       </td>
                       <td className="px-8 py-5 min-w-0">
-                        {p.professione
-                          ? <span className="text-xs text-gray-500 truncate block">{p.professione}</span>
+                        {p.via_immobile
+                          ? (
+                            <div className="min-w-0">
+                              <span className="text-xs text-gray-600 truncate block">{p.via_immobile}</span>
+                              {p.citta_immobile && (
+                                <span className="text-[10px] text-gray-400 truncate block">{p.citta_immobile}</span>
+                              )}
+                            </div>
+                          )
                           : <span className="text-xs text-gray-200">—</span>}
                       </td>
                       <td className="px-8 py-5 min-w-0">
