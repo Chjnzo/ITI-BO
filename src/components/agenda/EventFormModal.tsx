@@ -200,6 +200,11 @@ const EventFormModal = ({
   const [leadDetail, setLeadDetail] = useState<LeadDetail | null>(null);
   const [isLoadingLeadDetail, setIsLoadingLeadDetail] = useState(false);
   const [relatedAppuntamenti, setRelatedAppuntamenti] = useState<RelatedAppuntamento[]>([]);
+  // Dettagli del contatto collegato via contatto_id (post-pivot): risolti da
+  // contatti + proprietari/acquirenti/collaboratori. Serve per mostrare
+  // nome+telefono in edit mode quando il modal è aperto da calendario e
+  // defaultContattoName non è disponibile.
+  const [contattoDetail, setContattoDetail] = useState<{ nome: string; cognome: string | null; telefono: string | null; tipo: 'proprietari' | 'acquirenti' | 'collaboratori' } | null>(null);
 
   const autosavedIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,7 +244,34 @@ const EventFormModal = ({
       setNote('');
       setIndirizzo('');
     }
+    setContattoDetail(null);
   }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
+
+  // Se l'appuntamento è collegato via contatto_id (nuovo flow), risolviamo
+  // nome/telefono dalla giusta tabella figlia: proprietari, acquirenti,
+  // collaboratori (ognuna 1:1 con contatti tramite id). Fallback silenzioso se
+  // il contatto è stato cancellato.
+  useEffect(() => {
+    const contattoId = event?.contatto_id ?? defaultContattoId ?? null;
+    if (!open || !contattoId) { setContattoDetail(null); return; }
+    let aborted = false;
+    (async () => {
+      for (const tipo of ['proprietari', 'acquirenti', 'collaboratori'] as const) {
+        const { data } = await supabase
+          .from(tipo)
+          .select('nome, cognome, telefono')
+          .eq('id', contattoId)
+          .maybeSingle();
+        if (aborted) return;
+        if (data) {
+          setContattoDetail({ ...(data as { nome: string; cognome: string | null; telefono: string | null }), tipo });
+          return;
+        }
+      }
+      setContattoDetail(null);
+    })();
+    return () => { aborted = true; };
+  }, [open, event?.contatto_id, defaultContattoId]);
 
   // Autosave anche in edit mode (debounced 800ms): patch silenzioso su
   // appuntamenti quando l'utente modifica i campi di un evento esistente.
@@ -722,8 +754,40 @@ const EventFormModal = ({
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Contatto collegato</Label>
             {isContattoLinked ? (
-              <div className="h-12 flex items-center px-4 rounded-xl border border-gray-100 bg-gray-100 text-sm text-gray-700 font-medium">
-                {defaultContattoName || 'Contatto selezionato'}
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <User size={14} className="text-[#94b0ab] shrink-0" />
+                  <span className="truncate">
+                    {contattoDetail
+                      ? `${contattoDetail.nome} ${contattoDetail.cognome ?? ''}`.trim()
+                      : (defaultContattoName || 'Contatto selezionato')}
+                  </span>
+                  {contattoDetail?.tipo && (
+                    <span className={`ml-auto text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border ${
+                      contattoDetail.tipo === 'proprietari' ? 'bg-red-50 text-red-700 border-red-200'
+                      : contattoDetail.tipo === 'acquirenti' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {contattoDetail.tipo === 'proprietari' ? 'Prop' : contattoDetail.tipo === 'acquirenti' ? 'Acq' : 'Coll'}
+                    </span>
+                  )}
+                </div>
+                {contattoDetail?.telefono && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <Phone size={12} className="text-gray-400 shrink-0" />
+                    <span className="font-mono">{contattoDetail.telefono}</span>
+                    <a
+                      href={getWhatsAppUrl(contattoDetail.telefono)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="ml-auto flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white rounded-lg px-2 py-1 text-[10px] font-bold shrink-0"
+                    >
+                      <MessageCircle size={11} />
+                      WhatsApp
+                    </a>
+                  </div>
+                )}
               </div>
             ) : (
               <Combobox

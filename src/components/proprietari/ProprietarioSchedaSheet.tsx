@@ -69,6 +69,16 @@ interface NoteRow {
   created_at: string;
 }
 
+interface EventoRow {
+  id: string;
+  tipologia: string;
+  data: string;
+  ora_inizio: string | null;
+  ora_fine: string | null;
+  note: string | null;
+  indirizzo_appuntamento: string | null;
+}
+
 interface ProprietarioSchedaSheetProps {
   proprietarioId: string | null;
   onClose: () => void;
@@ -330,6 +340,21 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
     enabled: !!proprietarioId && tab === 'note',
   });
 
+  const { data: eventi } = useQuery<EventoRow[]>({
+    queryKey: ['proprietario-eventi', proprietarioId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('appuntamenti')
+        .select('id, tipologia, data, ora_inizio, ora_fine, note, indirizzo_appuntamento')
+        .eq('contatto_id', proprietarioId!)
+        .order('data', { ascending: false })
+        .order('ora_inizio', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!proprietarioId && tab === 'eventi',
+  });
+
   const aggiungiNota = useMutation({
     mutationFn: async () => {
       if (!proprietarioId || !newNoteText.trim()) return;
@@ -424,9 +449,10 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
             </div>
 
             <Tabs value={tab} onValueChange={setTab} className="mt-6">
-              <TabsList className="grid w-full grid-cols-4 rounded-full p-1 bg-muted/50 border border-gray-100">
+              <TabsList className="grid w-full grid-cols-5 rounded-full p-1 bg-muted/50 border border-gray-100">
                 <TabsTrigger value="anagrafica" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Info</TabsTrigger>
-                <TabsTrigger value="valutazioni" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Valutazioni</TabsTrigger>
+                <TabsTrigger value="valutazioni" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Valut.</TabsTrigger>
+                <TabsTrigger value="eventi" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Eventi</TabsTrigger>
                 <TabsTrigger value="task" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Task</TabsTrigger>
                 <TabsTrigger value="note" className="rounded-full text-xs font-semibold data-[state=active]:bg-[#94b0ab] data-[state=active]:text-white">Note</TabsTrigger>
               </TabsList>
@@ -575,6 +601,31 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
                         {(v.stima_min || v.stima_max) && (
                           <p className="text-xs text-gray-400 mt-0.5">
                             {formatMoney(v.stima_min)} – {formatMoney(v.stima_max)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="eventi" className="mt-4 space-y-3">
+                {(eventi ?? []).length === 0 ? (
+                  <p className="text-sm text-gray-300 italic">Nessun appuntamento collegato.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {eventi!.map((e) => (
+                      <div key={e.id} className="rounded-xl border border-gray-100 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <span className="text-sm font-semibold text-gray-700 truncate">{e.tipologia}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] shrink-0">
+                            {format(parseISO(e.data), 'd MMM yyyy', { locale: it })}
+                            {e.ora_inizio && ` · ${e.ora_inizio.slice(0, 5)}`}
+                          </span>
+                        </div>
+                        {(e.indirizzo_appuntamento || e.note) && (
+                          <p className="text-xs text-gray-400 mt-0.5 truncate">
+                            {e.indirizzo_appuntamento ?? e.note}
                           </p>
                         )}
                       </div>
