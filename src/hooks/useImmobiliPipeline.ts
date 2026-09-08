@@ -95,30 +95,32 @@ export const useImmobiliPipeline = () => {
 
       if (error) throw error;
 
-      return ((data ?? []) as unknown as RawImmobileRow[]).map((row) => {
-        // Immobili creati prima dell'introduzione della pipeline (o dal Wizard,
-        // che non crea ancora la riga) non hanno immobile_pipeline_stato: li
-        // trattiamo come 'In Vendita' finché non vengono spostati.
-        const fase = row.pipeline?.fase ?? 'In Vendita';
-        // Il progresso in Kanban riguarda solo i documenti della fase corrente.
-        const documentiFaseCorrente = (row.documenti ?? []).filter((d) => d.fase === fase);
-        const sottofase = derivaSottofase(fase, documentiFaseCorrente, row.data_atto);
-        return {
-          id: row.id,
-          titolo: row.titolo,
-          prezzo: row.prezzo ?? undefined,
-          citta: row.citta,
-          indirizzo: row.indirizzo,
-          copertina_url: row.copertina_url ?? undefined,
-          proprietario_nome: row.proprietario ? `${row.proprietario.nome} ${row.proprietario.cognome}` : null,
-          fase,
-          sottofase,
-          docTotali: documentiFaseCorrente.length,
-          docCompletati: documentiFaseCorrente.filter((d) => d.stato === 'Fatto').length,
-          data_preliminare: row.data_preliminare,
-          data_atto: row.data_atto,
-        };
-      });
+      return ((data ?? []) as unknown as RawImmobileRow[])
+        // Gli immobili legacy pre-pivot non hanno immobile_pipeline_stato e
+        // restano fuori dal Kanban: i nuovi immobili creati da PropertyWizard
+        // (creaPipelineIniziale) hanno sempre la riga, quindi solo lo storico
+        // pre-golive rimane invisibile qui — resta comunque in /immobili.
+        .filter((row) => row.pipeline?.fase != null)
+        .map((row) => {
+          const fase = row.pipeline!.fase;
+          const documentiFaseCorrente = (row.documenti ?? []).filter((d) => d.fase === fase);
+          const sottofase = derivaSottofase(fase, documentiFaseCorrente, row.data_atto);
+          return {
+            id: row.id,
+            titolo: row.titolo,
+            prezzo: row.prezzo ?? undefined,
+            citta: row.citta,
+            indirizzo: row.indirizzo,
+            copertina_url: row.copertina_url ?? undefined,
+            proprietario_nome: row.proprietario ? `${row.proprietario.nome} ${row.proprietario.cognome}` : null,
+            fase,
+            sottofase,
+            docTotali: documentiFaseCorrente.length,
+            docCompletati: documentiFaseCorrente.filter((d) => d.stato === 'Fatto').length,
+            data_preliminare: row.data_preliminare,
+            data_atto: row.data_atto,
+          };
+        });
     },
     staleTime: 30_000,
   });
