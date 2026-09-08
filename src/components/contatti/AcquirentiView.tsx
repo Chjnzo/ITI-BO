@@ -141,9 +141,14 @@ interface AcquirentiViewProps {
   /** Old leads.id passed via router state from Tasks.tsx — translated to the new
    * acquirenti.id through contatti.lead_id_origine before opening the dialog. */
   deepLinkLeadId?: string | null;
+  /** Impostato dalla search globale in Contatti.tsx per aprire direttamente
+   * la scheda dell'acquirente indicato. Il callback onContattoOpened resetta
+   * lo stato lato parent così l'ID può essere ri-usato. */
+  openContattoId?: string | null;
+  onContattoOpened?: () => void;
 }
 
-const AcquirentiView = ({ deepLinkLeadId }: AcquirentiViewProps) => {
+const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: AcquirentiViewProps) => {
   const pendingDeepLinkRef = useRef<string | null>(deepLinkLeadId ?? null);
   const [acquirenti, setAcquirenti] = useState<AcquirenteRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -329,6 +334,15 @@ const AcquirentiView = ({ deepLinkLeadId }: AcquirentiViewProps) => {
     setSelectedAcquirente(acquirente);
     if (acquirente.id) fetchAcquirenteDetail(acquirente.id);
   }, [fetchAcquirenteDetail]);
+
+  // Deep-link dalla search globale in Contatti.tsx: apre direttamente la
+  // scheda dell'acquirente indicato caricando i dettagli via id.
+  useEffect(() => {
+    if (openContattoId) {
+      fetchAcquirenteDetail(openContattoId);
+      onContattoOpened?.();
+    }
+  }, [openContattoId, fetchAcquirenteDetail, onContattoOpened]);
 
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
