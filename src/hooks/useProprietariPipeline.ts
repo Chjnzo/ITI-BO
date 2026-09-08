@@ -145,7 +145,7 @@ export const useProprietariPipeline = () => {
 const creaImmobileDaPratica = async (praticaId: string) => {
   const { data: pratica, error: praticaError } = await supabase
     .from('proprietari_pratiche')
-    .select('id, via, tipologia, citta, immobile_id, valutazione_stimata, motivazione_vendita, scadenza_esclusiva')
+    .select('id, proprietario_id, via, tipologia, citta, immobile_id, valutazione_stimata, motivazione_vendita, scadenza_esclusiva')
     .eq('id', praticaId)
     .single();
   if (praticaError) throw praticaError;
@@ -154,6 +154,8 @@ const creaImmobileDaPratica = async (praticaId: string) => {
   const baseSlug = (pratica.via || 'immobile').toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
   const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
 
+  // proprietario_id ora punta a contatti(id) — pratica.proprietario_id è già
+  // l'id del contatto (proprietari.id = contatti.id 1:1 per design del pivot).
   const { data: immobile, error: immobileError } = await supabase
     .from('immobili')
     .insert({
@@ -164,6 +166,7 @@ const creaImmobileDaPratica = async (praticaId: string) => {
       prezzo: pratica.valutazione_stimata,
       motivazione_vendita: pratica.motivazione_vendita,
       scadenza_esclusiva: pratica.scadenza_esclusiva,
+      proprietario_id: pratica.proprietario_id,
       stato: 'Bozza',
       slug,
     })

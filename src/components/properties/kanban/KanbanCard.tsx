@@ -1,4 +1,5 @@
-import { Home, User } from 'lucide-react';
+import { Home, User, Pencil } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import type { PipelineCard } from '@/hooks/useImmobiliPipeline';
@@ -18,11 +19,31 @@ const formatPrice = (price?: number) => {
 };
 
 const KanbanCard = ({ card, onOpen }: KanbanCardProps) => {
+  const navigate = useNavigate();
+
+  // Tasto rapido "completa scheda immobile": porta a /immobili aprendo
+  // direttamente PropertyWizard sull'immobile della card, senza passare dalla
+  // sheet dettaglio kanban. Utile in sottofase "Preparazione" quando c'è ancora
+  // molto da inserire (foto/prezzo/descrizione).
+  const openWizard = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigate('/immobili', { state: { openWizardForId: card.id } });
+  };
+
   return (
     <div
       onClick={() => onOpen(card)}
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer select-none transition-shadow hover:shadow-md"
+      className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer select-none transition-shadow hover:shadow-md relative group"
     >
+      <button
+        type="button"
+        onClick={openWizard}
+        title="Completa scheda immobile"
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg bg-gray-50 hover:bg-[#94b0ab] hover:text-white text-gray-400 border border-gray-100"
+      >
+        <Pencil size={12} />
+      </button>
+
       <div className="flex items-start gap-3">
         <div className="w-11 h-11 rounded-xl overflow-hidden bg-gray-100 border border-gray-100 shrink-0 flex items-center justify-center text-gray-300">
           {card.copertina_url ? (
