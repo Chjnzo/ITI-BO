@@ -68,6 +68,22 @@ const Properties = () => {
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [propertyToDelete, setPropertyToDelete] = useState<Property | null>(null);
 
+  // Auto-apri PropertyWizard sull'immobile richiesto (dal tasto matita nella
+  // KanbanCard immobili, o da altre integrazioni). Legge la riga completa da
+  // DB e reimposta il nav-state per evitare riaperture al re-render.
+  const openWizardForId = (location.state as { openWizardForId?: string } | null)?.openWizardForId;
+  useEffect(() => {
+    if (!openWizardForId) return;
+    (async () => {
+      const { data } = await supabase.from('immobili').select('*').eq('id', openWizardForId).maybeSingle();
+      if (data) {
+        setEditingProperty(data as Property);
+        setIsWizardOpen(true);
+      }
+      navigate(location.pathname, { replace: true, state: {} });
+    })();
+  }, [openWizardForId, navigate, location.pathname]);
+
   const [ohProperty, setOhProperty] = useState<Property | null>(null);
   const [unitaProperty, setUnitaProperty] = useState<Property | null>(null);
   const [evidenzaOpen, setEvidenzaOpen] = useState(false);

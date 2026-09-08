@@ -40,7 +40,9 @@ interface RawImmobileRow {
   copertina_url: string | null;
   data_preliminare: string | null;
   data_atto: string | null;
-  proprietario: { id: string; nome: string; cognome: string } | null;
+  // FK proprietario_id ora punta a contatti(id). proprietari 1:1 con contatti
+  // via id condiviso, quindi nesting: contatti → proprietari(nome, cognome).
+  proprietario_contatto: { proprietari: { nome: string; cognome: string | null } | null } | null;
   pipeline: { fase: FasePipeline } | null;
   documenti: { stato: 'Da fare' | 'Fatto'; fase: FasePipeline; sottofase: Sottofase | null }[] | null;
 }
@@ -86,7 +88,7 @@ export const useImmobiliPipeline = () => {
         .select(`
           id, titolo, prezzo, citta, indirizzo, copertina_url,
           data_preliminare, data_atto,
-          proprietario:leads!immobili_proprietario_id_fkey(id, nome, cognome),
+          proprietario_contatto:contatti!immobili_proprietario_id_fkey(proprietari(nome, cognome)),
           pipeline:immobile_pipeline_stato(fase),
           documenti:immobile_documenti(stato, fase, sottofase)
         `)
@@ -112,7 +114,9 @@ export const useImmobiliPipeline = () => {
             citta: row.citta,
             indirizzo: row.indirizzo,
             copertina_url: row.copertina_url ?? undefined,
-            proprietario_nome: row.proprietario ? `${row.proprietario.nome} ${row.proprietario.cognome}` : null,
+            proprietario_nome: row.proprietario_contatto?.proprietari
+              ? `${row.proprietario_contatto.proprietari.nome} ${row.proprietario_contatto.proprietari.cognome ?? ''}`.trim()
+              : null,
             fase,
             sottofase,
             docTotali: documentiFaseCorrente.length,
