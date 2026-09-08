@@ -171,12 +171,13 @@ export const useAlerts = () => {
     );
 
     for (const immobile of immobiliBase.data) {
-      // Immobili senza riga immobile_pipeline_stato (mai spostati, o creati
-      // prima della pipeline) sono trattati come 'In Vendita', coerente col
-      // fallback già usato in useImmobiliPipeline — ma senza updated_at non
-      // c'è modo di calcolare la stagnazione, quindi restano esclusi da
-      // quell'alert (non da quello documenti).
-      const fase = immobile.pipeline?.fase ?? 'In Vendita';
+      // Immobili legacy pre-pivot senza immobile_pipeline_stato NON entrano
+      // negli alert: non sono gestiti col nuovo sistema, li ignoriamo del
+      // tutto (coerente col filtro applicato in useImmobiliPipeline che li
+      // esclude dal Kanban). I nuovi immobili creati da PropertyWizard o da
+      // creaImmobileDaPratica hanno sempre la riga pipeline.
+      if (!immobile.pipeline?.fase) continue;
+      const fase = immobile.pipeline.fase;
       const regola = regolaImmobile.get(fase);
 
       if (regola && immobile.pipeline?.updated_at) {
@@ -207,7 +208,11 @@ export const useAlerts = () => {
     }, {});
 
     for (const immobile of immobiliBase.data) {
-      const fase = immobile.pipeline?.fase ?? 'In Vendita';
+      // Stesso filtro di sopra: legacy senza pipeline_stato non genera alert
+      // documento_mancante — la checklist è vuota per design (non gestito col
+      // nuovo sistema) e non ha senso avvisare.
+      if (!immobile.pipeline?.fase) continue;
+      const fase = immobile.pipeline.fase;
 
       // Confronto per presenza di riga (non per stato 'Fatto'/'Da fare', già
       // visibile nella checklist del Kanban): segnala documenti previsti dal
@@ -295,7 +300,10 @@ export const useAlerts = () => {
   const documentiIncompleti: DocumentiIncompletiImmobile[] = [];
   if (immobiliBase.data) {
     for (const immobile of immobiliBase.data) {
-      const fase = immobile.pipeline?.fase ?? 'In Vendita';
+      // Stesso filtro degli alert: legacy senza pipeline_stato non entrano
+      // nel report "documenti incompleti".
+      if (!immobile.pipeline?.fase) continue;
+      const fase = immobile.pipeline.fase;
       const daFare = (immobile.documenti ?? [])
         .filter((d) => d.fase === fase && d.stato === 'Da fare')
         .map((d) => d.documento);

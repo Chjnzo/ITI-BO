@@ -108,8 +108,21 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
     onError: (err) => showError(err instanceof Error ? err.message : 'Creazione non riuscita.'),
   });
 
-  const goNext = () => setStep(2);
-  const goBack = () => setStep(1);
+  // goNext/goBack sono onClick di <Button type="button">, quindi in teoria
+  // non dovrebbero mai far triggerare un submit del form o un close della
+  // dialog. preventDefault + stopPropagation come rete di sicurezza contro
+  // event delegation strane o quirks del browser che portavano l'utente
+  // fuori dal modale al click su Avanti (bug 2026-09-08).
+  const goNext = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setStep(2);
+  };
+  const goBack = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setStep(1);
+  };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
@@ -149,7 +162,6 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
                       value={form.nome}
                       onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
                       required
-                      autoFocus
                       className="rounded-xl"
                     />
                   </div>
