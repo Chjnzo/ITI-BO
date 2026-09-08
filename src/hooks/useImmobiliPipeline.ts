@@ -19,6 +19,7 @@ export interface PipelineCard {
   citta: string;
   indirizzo: string;
   copertina_url?: string;
+  drive_folder_url: string | null;
   proprietario_nome: string | null;
   fase: FasePipeline;
   // Sottofase corrente derivata dai documenti + date: primo gruppo (in ordine)
@@ -40,6 +41,7 @@ interface RawImmobileRow {
   copertina_url: string | null;
   data_preliminare: string | null;
   data_atto: string | null;
+  drive_folder_url: string | null;
   // FK proprietario_id ora punta a contatti(id). proprietari 1:1 con contatti
   // via id condiviso, quindi nesting: contatti → proprietari(nome, cognome).
   proprietario_contatto: { proprietari: { nome: string; cognome: string | null } | null } | null;
@@ -87,7 +89,7 @@ export const useImmobiliPipeline = () => {
         .from('immobili')
         .select(`
           id, titolo, prezzo, citta, indirizzo, copertina_url,
-          data_preliminare, data_atto,
+          data_preliminare, data_atto, drive_folder_url,
           proprietario_contatto:contatti!immobili_proprietario_id_fkey(proprietari(nome, cognome)),
           pipeline:immobile_pipeline_stato(fase),
           documenti:immobile_documenti(stato, fase, sottofase)
@@ -114,6 +116,7 @@ export const useImmobiliPipeline = () => {
             citta: row.citta,
             indirizzo: row.indirizzo,
             copertina_url: row.copertina_url ?? undefined,
+            drive_folder_url: row.drive_folder_url,
             proprietario_nome: row.proprietario_contatto?.proprietari
               ? `${row.proprietario_contatto.proprietari.nome} ${row.proprietario_contatto.proprietari.cognome ?? ''}`.trim()
               : null,
