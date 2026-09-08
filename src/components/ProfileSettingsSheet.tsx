@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { showSuccess, showError } from '@/utils/toast';
 import {
@@ -37,12 +37,41 @@ const ProfileSettingsSheet = ({ open, onClose, profile, userId, onSaved }: Props
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url ?? '');
   const [saving, setSaving] = useState(false);
 
+  // Snapshot dell'ultimo stato realmente persistito: serve all'autosave per
+  // evitare loop dopo l'idratazione da props.
+  const lastSavedRef = useRef<string | null>(null);
+
   // Sync form when profile changes (e.g. on first load)
   useEffect(() => {
-    setNome(profile.nome_completo ?? '');
-    setColore(profile.colore_calendario ?? '#94b0ab');
-    setAvatarUrl(profile.avatar_url ?? '');
+    const nextNome = profile.nome_completo ?? '';
+    const nextColore = profile.colore_calendario ?? '#94b0ab';
+    const nextAvatar = profile.avatar_url ?? '';
+    setNome(nextNome);
+    setColore(nextColore);
+    setAvatarUrl(nextAvatar);
+    lastSavedRef.current = JSON.stringify({ nome: nextNome, colore: nextColore, avatarUrl: nextAvatar });
   }, [profile]);
+
+  // Autosave debounced 800ms: nome/colore/avatar_url persistono senza click.
+  // Il tasto "Salva modifiche" resta come feedback esplicito e chiude il sheet.
+  useEffect(() => {
+    if (!userId) return;
+    const serialized = JSON.stringify({ nome, colore, avatarUrl });
+    if (serialized === lastSavedRef.current) return;
+    const timer = setTimeout(async () => {
+      const payload = {
+        nome_completo: nome.trim() || null,
+        colore_calendario: colore,
+        avatar_url: avatarUrl.trim() || null,
+      };
+      const { error } = await supabase.from('profili_agenti').update(payload).eq('id', userId);
+      if (!error) {
+        lastSavedRef.current = serialized;
+        onSaved({ id: userId, ...payload });
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [nome, colore, avatarUrl, userId, onSaved]);
 
   const initials = nome
     ? nome.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
