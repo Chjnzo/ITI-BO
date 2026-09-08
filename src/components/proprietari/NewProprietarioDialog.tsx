@@ -8,6 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 
@@ -23,6 +24,13 @@ interface FormState {
   email: string;
   telefono: string;
   professione: string;
+  via_immobile: string;
+  citta_immobile: string;
+  tipologia_immobile: string;
+  zona_venditore: string;
+  motivazione_vendita: string;
+  scadenza_esclusiva: string;
+  valutazione_stimata: string;
 }
 
 const emptyForm: FormState = {
@@ -31,6 +39,13 @@ const emptyForm: FormState = {
   email: '',
   telefono: '',
   professione: '',
+  via_immobile: '',
+  citta_immobile: '',
+  tipologia_immobile: '',
+  zona_venditore: '',
+  motivazione_vendita: '',
+  scadenza_esclusiva: '',
+  valutazione_stimata: '',
 };
 
 // Crea solo l'anagrafica del proprietario. La pratica non viene generata qui:
@@ -58,6 +73,7 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
         throw new Error(contattoError?.message ?? 'Creazione contatto non riuscita.');
       }
 
+      const valStimataNum = form.valutazione_stimata.trim() ? Number(form.valutazione_stimata) : null;
       const { error: proprietarioError } = await supabase
         .from('proprietari')
         .insert({
@@ -67,6 +83,13 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
           email: form.email.trim() || null,
           telefono: form.telefono.trim() || null,
           professione: form.professione.trim() || null,
+          via_immobile: form.via_immobile.trim() || null,
+          citta_immobile: form.citta_immobile.trim() || null,
+          tipologia_immobile: form.tipologia_immobile.trim() || null,
+          zona_venditore: form.zona_venditore.trim() || null,
+          motivazione_vendita: form.motivazione_vendita.trim() || null,
+          scadenza_esclusiva: form.scadenza_esclusiva || null,
+          valutazione_stimata: Number.isFinite(valStimataNum!) ? valStimataNum : null,
         });
       if (proprietarioError) {
         throw new Error(proprietarioError.message);
@@ -145,6 +168,88 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
               onChange={(e) => setForm((f) => ({ ...f, professione: e.target.value }))}
               className="rounded-xl"
             />
+          </div>
+
+          <div className="rounded-2xl border border-gray-100 bg-gray-50/50 p-4 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              Info immobile da vendere <span className="normal-case font-medium text-gray-300">(facoltativo)</span>
+            </h4>
+            <div className="space-y-1.5">
+              <Label htmlFor="np-via" className="text-xs font-bold text-gray-500">Via / Indirizzo</Label>
+              <Input
+                id="np-via"
+                value={form.via_immobile}
+                onChange={(e) => setForm((f) => ({ ...f, via_immobile: e.target.value }))}
+                placeholder="Es. Via Roma 10"
+                className="rounded-xl"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="np-citta-immob" className="text-xs font-bold text-gray-500">Città</Label>
+                <Input
+                  id="np-citta-immob"
+                  value={form.citta_immobile}
+                  onChange={(e) => setForm((f) => ({ ...f, citta_immobile: e.target.value }))}
+                  placeholder="Es. Bergamo"
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="np-tipologia" className="text-xs font-bold text-gray-500">Tipologia</Label>
+                <Input
+                  id="np-tipologia"
+                  value={form.tipologia_immobile}
+                  onChange={(e) => setForm((f) => ({ ...f, tipologia_immobile: e.target.value }))}
+                  placeholder="Es. Trilocale"
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="np-zona" className="text-xs font-bold text-gray-500">Zona</Label>
+              <Input
+                id="np-zona"
+                value={form.zona_venditore}
+                onChange={(e) => setForm((f) => ({ ...f, zona_venditore: e.target.value }))}
+                placeholder="Es. Centro"
+                className="rounded-xl"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="np-motivazione" className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
+              <Textarea
+                id="np-motivazione"
+                value={form.motivazione_vendita}
+                onChange={(e) => setForm((f) => ({ ...f, motivazione_vendita: e.target.value }))}
+                placeholder="Es. Trasferimento lavoro"
+                className="rounded-xl min-h-[3rem]"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="np-scadenza" className="text-xs font-bold text-gray-500">Scadenza esclusiva</Label>
+                <Input
+                  id="np-scadenza"
+                  type="date"
+                  value={form.scadenza_esclusiva}
+                  onChange={(e) => setForm((f) => ({ ...f, scadenza_esclusiva: e.target.value }))}
+                  className="rounded-xl"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="np-val" className="text-xs font-bold text-gray-500">Valutazione stimata (€)</Label>
+                <Input
+                  id="np-val"
+                  type="number"
+                  inputMode="numeric"
+                  value={form.valutazione_stimata}
+                  onChange={(e) => setForm((f) => ({ ...f, valutazione_stimata: e.target.value }))}
+                  placeholder="Es. 250000"
+                  className="rounded-xl"
+                />
+              </div>
+            </div>
           </div>
 
           <DialogFooter className="gap-2 pt-2">
