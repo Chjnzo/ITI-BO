@@ -9,8 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
+import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 
 interface NewProprietarioDialogProps {
   open: boolean;
@@ -219,24 +221,17 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="np-tipologia" className="text-xs font-bold text-gray-500">Tipologia</Label>
-                    <Input
-                      id="np-tipologia"
-                      value={form.tipologia_immobile}
-                      onChange={(e) => setForm((f) => ({ ...f, tipologia_immobile: e.target.value }))}
-                      placeholder="Es. Trilocale"
-                      className="rounded-xl"
-                    />
+                    <Select value={form.tipologia_immobile} onValueChange={(v) => setForm((f) => ({ ...f, tipologia_immobile: v }))}>
+                      <SelectTrigger id="np-tipologia" className="rounded-xl">
+                        <SelectValue placeholder="Seleziona..." />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {TIPOLOGIE_IMMOBILE.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="np-zona" className="text-xs font-bold text-gray-500">Zona</Label>
-                  <Input
-                    id="np-zona"
-                    value={form.zona_venditore}
-                    onChange={(e) => setForm((f) => ({ ...f, zona_venditore: e.target.value }))}
-                    placeholder="Es. Centro"
-                    className="rounded-xl"
-                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="np-motivazione" className="text-xs font-bold text-gray-500">Motivazione vendita</Label>
