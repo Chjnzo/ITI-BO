@@ -336,13 +336,25 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   }, [fetchAcquirenteDetail]);
 
   // Deep-link dalla search globale in Contatti.tsx: apre direttamente la
-  // scheda dell'acquirente indicato caricando i dettagli via id.
+  // scheda dell'acquirente indicato. Non basta chiamare fetchAcquirenteDetail
+  // (che aggiorna solo il dialog GIÀ APERTO — vedi guardia
+  // `prev?.id === id`), servono prima le colonne minime per aprire il dialog
+  // via openAcquirenteDetail; poi fetchAcquirenteDetail idrata il resto.
   useEffect(() => {
-    if (openContattoId) {
-      fetchAcquirenteDetail(openContattoId);
-      onContattoOpened?.();
-    }
-  }, [openContattoId, fetchAcquirenteDetail, onContattoOpened]);
+    if (!openContattoId) return;
+    let aborted = false;
+    supabase
+      .from('acquirenti')
+      .select('id, nome, cognome, email, telefono, stato, budget')
+      .eq('id', openContattoId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (aborted) return;
+        if (data) openAcquirenteDetail(data as AcquirenteRecord);
+        onContattoOpened?.();
+      });
+    return () => { aborted = true; };
+  }, [openContattoId, openAcquirenteDetail, onContattoOpened]);
 
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
