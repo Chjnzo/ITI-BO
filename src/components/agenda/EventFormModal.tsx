@@ -241,6 +241,38 @@ const EventFormModal = ({
     }
   }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
 
+  // Autosave anche in edit mode (debounced 800ms): patch silenzioso su
+  // appuntamenti quando l'utente modifica i campi di un evento esistente.
+  // Il tasto "Salva modifiche" resta come feedback esplicito ma non è più
+  // richiesto per persistere.
+  const lastSavedEditRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isEdit || !open || !event?.id || !selectedDate || !agenteId) return;
+    const payload = {
+      agente_id: agenteId,
+      tipologia: tipologia || 'Altro',
+      lead_id: isContattoLinked ? null : (leadId || null),
+      contatto_id: event.contatto_id ?? null,
+      immobile_id: immobileId !== 'none' ? immobileId : null,
+      data: format(selectedDate, 'yyyy-MM-dd'),
+      ora_inizio: oraInizio || null,
+      ora_fine: oraFine || null,
+      note: note.trim() || null,
+      indirizzo_appuntamento: indirizzo.trim() || null,
+    };
+    const serialized = JSON.stringify(payload);
+    if (lastSavedEditRef.current === null) {
+      lastSavedEditRef.current = serialized;
+      return;
+    }
+    if (serialized === lastSavedEditRef.current) return;
+    const timer = setTimeout(async () => {
+      const { error } = await supabase.from('appuntamenti').update(payload).eq('id', event.id);
+      if (!error) lastSavedEditRef.current = serialized;
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [isEdit, open, event, selectedDate, agenteId, tipologia, isContattoLinked, leadId, immobileId, oraInizio, oraFine, note, indirizzo]);
+
   // Auto-save for new appointments (debounced 2.5s)
   useEffect(() => {
     if (isEdit || !open || !selectedDate || !agenteId) return;
