@@ -53,39 +53,37 @@ FROM nuovi_contatti_proprietari nc
 JOIN public.leads l ON l.id = nc.lead_id_origine;
 
 -- -----------------------------------------------------------------------------
--- 2) proprietari_pratiche: solo per leads Proprietario/Ibrido con un immobile_id
---    già collegato (senza immobile non c'è ancora via/tipologia da registrare
---    sulla pratica). Fase dedotta da immobile_pipeline_stato: se l'immobile è
---    ancora in 'Acquisizione' (o non ha ancora una riga di stato), la pratica
---    parte da 'Contatto'; se l'immobile è già oltre (In Vendita/Venduto/
---    Archivio), la presa in carico deve essere già avvenuta in passato, quindi
---    la pratica nasce direttamente 'Presa in carico' — stima onesta, non
---    ricostruibile con precisione dai dati vecchi.
+-- 2) proprietari_pratiche: DISABILITATO su richiesta esplicita (golive
+--    2026-09-08) — la Kanban Proprietari deve partire VUOTA, gli agenti la
+--    popoleranno loro stessi via il processo caldi/pratica. Non ricostruiamo
+--    pratiche storiche dai leads: solo contatti/proprietari/acquirenti di
+--    base vengono migrati (step 1 e 3). Il blocco originale è lasciato qui
+--    commentato per riferimento futuro, non eliminato.
 -- -----------------------------------------------------------------------------
-INSERT INTO public.proprietari_pratiche
-    (proprietario_id, via, tipologia, citta, fase, zona_venditore, motivazione_vendita, scadenza_esclusiva, valutazione_stimata, immobile_id)
-SELECT
-    p.id,
-    COALESCE(i.indirizzo, i.titolo, 'Indirizzo da definire'),
-    i.tipologia,
-    i.citta,
-    CASE WHEN ips.fase IS NULL OR ips.fase = 'Acquisizione' THEN 'Contatto' ELSE 'Presa in carico' END,
-    l.zona_venditore,
-    l.motivazione_vendita,
-    l.scadenza_esclusiva,
-    l.valutazione_stimata,
-    i.id
-FROM public.leads l
-JOIN public.contatti c ON c.lead_id_origine = l.id
-JOIN public.proprietari p ON p.id = c.id
-JOIN public.immobili i ON i.id = l.immobile_id
-LEFT JOIN public.immobile_pipeline_stato ips ON ips.immobile_id = i.id
-WHERE l.tipo_cliente IN ('Proprietario', 'Ibrido')
-  AND l.immobile_id IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1 FROM public.proprietari_pratiche pp
-      WHERE pp.proprietario_id = p.id AND pp.immobile_id = i.id
-  );
+-- INSERT INTO public.proprietari_pratiche
+--     (proprietario_id, via, tipologia, citta, fase, zona_venditore, motivazione_vendita, scadenza_esclusiva, valutazione_stimata, immobile_id)
+-- SELECT
+--     p.id,
+--     COALESCE(i.indirizzo, i.titolo, 'Indirizzo da definire'),
+--     i.tipologia,
+--     i.citta,
+--     CASE WHEN ips.fase IS NULL OR ips.fase = 'Acquisizione' THEN 'Contatto' ELSE 'Presa in carico' END,
+--     l.zona_venditore,
+--     l.motivazione_vendita,
+--     l.scadenza_esclusiva,
+--     l.valutazione_stimata,
+--     i.id
+-- FROM public.leads l
+-- JOIN public.contatti c ON c.lead_id_origine = l.id
+-- JOIN public.proprietari p ON p.id = c.id
+-- JOIN public.immobili i ON i.id = l.immobile_id
+-- LEFT JOIN public.immobile_pipeline_stato ips ON ips.immobile_id = i.id
+-- WHERE l.tipo_cliente IN ('Proprietario', 'Ibrido')
+--   AND l.immobile_id IS NOT NULL
+--   AND NOT EXISTS (
+--       SELECT 1 FROM public.proprietari_pratiche pp
+--       WHERE pp.proprietario_id = p.id AND pp.immobile_id = i.id
+--   );
 
 -- -----------------------------------------------------------------------------
 -- 3) Lato acquirente: contatti + acquirenti, per tipo_cliente Acquirente/Ibrido.
