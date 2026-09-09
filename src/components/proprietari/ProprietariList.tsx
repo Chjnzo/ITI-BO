@@ -78,21 +78,32 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
 
   const fetchProprietari = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    // Query da `contatti` (non da `proprietari`) perché `created_at` vive solo
+    // lì: un .order(foreignTable: 'contatti') applicato a `.from('proprietari')`
+    // non ordina le righe di primo livello (PostgREST lo applica solo dentro la
+    // relazione annidata), risultando in un ordine di fatto casuale/instabile.
     const { data, error } = await supabase
-      .from('proprietari')
+      .from('contatti')
       .select(`
-        id, nome, cognome, email, telefono, professione, is_deleted, caldo,
-        via_immobile, citta_immobile, tipologia_immobile,
-        contatti(agente_id, created_at),
-        proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
+        agente_id, created_at,
+        proprietari!inner(
+          id, nome, cognome, email, telefono, professione, is_deleted, caldo,
+          via_immobile, citta_immobile, tipologia_immobile,
+          proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
+        )
       `)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false, foreignTable: 'contatti' });
+      .eq('proprietari.is_deleted', false)
+      .order('created_at', { ascending: false });
     if (signal?.aborted) return;
     if (error) {
       showError('Errore nel caricamento proprietari.');
     } else {
-      setProprietari((data ?? []) as unknown as ProprietarioRow[]);
+      type Row = { agente_id: string | null; created_at: string; proprietari: Omit<ProprietarioRow, 'contatti'> };
+      const rows = ((data ?? []) as unknown as Row[]).map((row) => ({
+        ...row.proprietari,
+        contatti: { agente_id: row.agente_id, created_at: row.created_at },
+      }));
+      setProprietari(rows as unknown as ProprietarioRow[]);
     }
     setLoading(false);
   }, []);

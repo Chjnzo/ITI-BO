@@ -226,18 +226,25 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   const fetchAcquirenti = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
 
+    // Entrambe le query partono da `contatti` (non da `acquirenti`): `created_at`
+    // vive solo su `contatti` e .order(foreignTable) non ordina le righe di
+    // primo livello — vedi stesso fix in ProprietariList.tsx/CollaboratoriView.tsx.
+    // I filtri sulle colonne di `acquirenti` vanno quindi qualificati con il
+    // prefisso `acquirenti.` per restare "dentro" la relazione annidata.
     if (searchQuery.trim() || hasActiveFilters) {
       // Search mode: load all matches with full search fields, no pagination
       let query = supabase
-        .from('acquirenti')
+        .from('contatti')
         .select(`
-          id, nome, cognome, stato, budget, tipologia_ricerca, zone_ricercate,
-          note_interne, telefono, email,
-          contatti(created_at, agente_id),
-          acquirenti_immobili(immobili(titolo))
+          created_at, agente_id,
+          acquirenti!inner(
+            id, nome, cognome, stato, budget, tipologia_ricerca, zone_ricercate,
+            note_interne, telefono, email,
+            acquirenti_immobili(immobili(titolo))
+          )
         `)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false, foreignTable: 'contatti' });
+        .eq('acquirenti.is_deleted', false)
+        .order('created_at', { ascending: false });
 
       if (searchQuery.trim()) {
         const sq = searchQuery.trim();
@@ -251,13 +258,13 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
             `telefono.ilike.%${tokenPhone}%`,
             `note_interne.ilike.%${token}%`,
           ];
-          query = query.or(clauses.join(','));
+          query = query.or(clauses.join(','), { foreignTable: 'acquirenti' });
         }
       } else {
-        if (filterBudgetMin !== null) query = query.gte('budget', filterBudgetMin);
-        if (filterBudgetMax !== null) query = query.lte('budget', filterBudgetMax);
-        if (filterStato)              query = query.eq('stato', filterStato);
-        if (filterTipologia)          query = query.contains('tipologia_ricerca', [filterTipologia]);
+        if (filterBudgetMin !== null) query = query.gte('acquirenti.budget', filterBudgetMin);
+        if (filterBudgetMax !== null) query = query.lte('acquirenti.budget', filterBudgetMax);
+        if (filterStato)              query = query.eq('acquirenti.stato', filterStato);
+        if (filterTipologia)          query = query.contains('acquirenti.tipologia_ricerca', [filterTipologia]);
         query = query.limit(2000);
       }
 
@@ -266,7 +273,12 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        const sanitized = (data || []) as unknown as AcquirenteRecord[];
+        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id'> };
+        const sanitized = ((data || []) as unknown as Row[]).map((row) => ({
+          ...row.acquirenti,
+          created_at: row.created_at,
+          agente_id: row.agente_id,
+        })) as unknown as AcquirenteRecord[];
         setAcquirenti(sanitized);
         setTotalCount(sanitized.length);
       }
@@ -276,21 +288,29 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       const to = from + PAGE_SIZE - 1;
 
       const { data, count, error } = await supabase
-        .from('acquirenti')
+        .from('contatti')
         .select(`
-          id, nome, cognome, stato, telefono, email,
-          contatti(created_at, agente_id),
-          acquirenti_immobili(immobili(titolo))
+          created_at, agente_id,
+          acquirenti!inner(
+            id, nome, cognome, stato, telefono, email,
+            acquirenti_immobili(immobili(titolo))
+          )
         `, { count: 'exact' })
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false, foreignTable: 'contatti' })
+        .eq('acquirenti.is_deleted', false)
+        .order('created_at', { ascending: false })
         .range(from, to);
 
       if (signal?.aborted) return;
       if (error) {
         showError("Errore nel caricamento contatti");
       } else {
-        setAcquirenti((data || []) as unknown as AcquirenteRecord[]);
+        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id'> };
+        const rows = ((data || []) as unknown as Row[]).map((row) => ({
+          ...row.acquirenti,
+          created_at: row.created_at,
+          agente_id: row.agente_id,
+        })) as unknown as AcquirenteRecord[];
+        setAcquirenti(rows);
         setTotalCount(count ?? 0);
       }
     }

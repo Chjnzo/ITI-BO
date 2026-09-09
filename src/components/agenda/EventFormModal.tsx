@@ -187,6 +187,12 @@ const EventFormModal = ({
   const [leadId, setLeadId] = useState('');
   const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
   const [leadPhone, setLeadPhone] = useState<string | null>(null);
+  // Tipo/dati leggeri per ogni id restituito dalla ricerca contatti (chiave =
+  // id di contatti/proprietari/acquirenti/collaboratori, oppure 'leads' per un
+  // lead_id storico pre-pivot). Popolato da searchLeads e dall'effect che
+  // carica un evento esistente; consultato da handleLeadSelect/openLeadSheet
+  // per sapere su quale tabella interrogare senza rifare la ricerca.
+  const leadRecordsRef = useRef<Record<string, { tipo: 'proprietari' | 'acquirenti' | 'collaboratori' | 'leads'; via_immobile?: string | null; citta_immobile?: string | null }>>({});
   const [immobileId, setImmobileId] = useState('none');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [oraInizio, setOraInizio] = useState('');
@@ -222,6 +228,7 @@ const EventFormModal = ({
         ? [{ id: event.lead_id, label: `${event.leads.nome} ${event.leads.cognome}`, sublabel: event.leads.telefono ?? undefined }]
         : []);
       setLeadPhone(event.leads?.telefono ?? null);
+      if (event.lead_id) leadRecordsRef.current[event.lead_id] = { tipo: 'leads' };
       setImmobileId(event.immobile_id ?? 'none');
       setSelectedDate(parseISO(event.data));
       setOraInizio(event.ora_inizio?.slice(0, 5) ?? '');
@@ -273,6 +280,21 @@ const EventFormModal = ({
     return () => { aborted = true; };
   }, [open, event?.contatto_id, defaultContattoId]);
 
+  // Decide su quale colonna scrivere l'id selezionato nel combobox "Contatto
+  // collegato": `leads` (storico, pre-pivot) va su lead_id; proprietari/
+  // acquirenti/collaboratori (ricerca nuova, vedi searchLeads) vanno su
+  // contatto_id. Se il modal è stato aperto da una scheda contatto
+  // (isContattoLinked), il valore arriva da event/defaultContattoId, non dal
+  // combobox.
+  const getLeadContattoPayload = (): { lead_id: string | null; contatto_id: string | null } => {
+    if (isContattoLinked) {
+      return { lead_id: null, contatto_id: event?.contatto_id ?? defaultContattoId ?? null };
+    }
+    if (!leadId) return { lead_id: null, contatto_id: null };
+    const tipo = leadRecordsRef.current[leadId]?.tipo ?? 'leads';
+    return tipo === 'leads' ? { lead_id: leadId, contatto_id: null } : { lead_id: null, contatto_id: leadId };
+  };
+
   // Autosave anche in edit mode (debounced 800ms): patch silenzioso su
   // appuntamenti quando l'utente modifica i campi di un evento esistente.
   // Il tasto "Salva modifiche" resta come feedback esplicito ma non è più
@@ -283,8 +305,7 @@ const EventFormModal = ({
     const payload = {
       agente_id: agenteId,
       tipologia: tipologia || 'Altro',
-      lead_id: isContattoLinked ? null : (leadId || null),
-      contatto_id: event.contatto_id ?? null,
+      ...getLeadContattoPayload(),
       immobile_id: immobileId !== 'none' ? immobileId : null,
       data: format(selectedDate, 'yyyy-MM-dd'),
       ora_inizio: oraInizio || null,
@@ -303,6 +324,7 @@ const EventFormModal = ({
       if (!error) lastSavedEditRef.current = serialized;
     }, 800);
     return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, open, event, selectedDate, agenteId, tipologia, isContattoLinked, leadId, immobileId, oraInizio, oraFine, note, indirizzo]);
 
   // Auto-save for new appointments (debounced 2.5s)
@@ -315,8 +337,7 @@ const EventFormModal = ({
       const payload = {
         agente_id: agenteId,
         tipologia: tipologia || 'Altro',
-        lead_id: isContattoLinked ? null : (leadId || null),
-        contatto_id: defaultContattoId || null,
+        ...getLeadContattoPayload(),
         immobile_id: immobileId !== 'none' ? immobileId : null,
         data: format(selectedDate, 'yyyy-MM-dd'),
         ora_inizio: oraInizio || null,
@@ -429,15 +450,44 @@ const EventFormModal = ({
 
     const { buildLeadSearchClauses } = await import('@/utils/search');
     const clauses = buildLeadSearchClauses(trimmed);
-    let query = supabase.from('leads').select('id, nome, cognome, telefono');
-    for (const clause of clauses) query = query.or(clause);
-    const { data: rows } = await query.limit(8);
 
+    type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
+    type Row = { id: string; nome: string; cognome: string | null; telefono: string | null; via_immobile?: string | null; citta_immobile?: string | null };
+    const runQuery = async (table: ContattoTipo): Promise<{ tipo: ContattoTipo; row: Row }[]> => {
+      const cols = table === 'proprietari'
+        ? 'id, nome, cognome, telefono, via_immobile, citta_immobile'
+        : 'id, nome, cognome, telefono';
+      let query = supabase.from(table).select(cols).eq('is_deleted', false).limit(8);
+      for (const clause of clauses) query = query.or(clause);
+      const { data, error } = await query;
+      if (error || !data) return [];
+      return (data as unknown as Row[]).map((row) => ({ tipo: table, row }));
+    };
+
+    const [prop, acq, coll] = await Promise.all([
+      runQuery('proprietari'),
+      runQuery('acquirenti'),
+      runQuery('collaboratori'),
+    ]);
     if (controller.signal.aborted) return;
-    setLeadItems((rows ?? []).map(r => ({
-      id: r.id,
-      label: `${r.nome} ${r.cognome}`,
-      sublabel: r.telefono ?? undefined,
+
+    const all = [...prop, ...acq, ...coll];
+    for (const { tipo, row } of all) {
+      leadRecordsRef.current[row.id] = { tipo, via_immobile: row.via_immobile ?? null, citta_immobile: row.citta_immobile ?? null };
+    }
+    // Badge stessi colori/etichette (Pro/Acq/Col) della ricerca globale in
+    // Contatti — così l'utente riconosce a colpo d'occhio il tipo di contatto
+    // sia qui che nella barra generale.
+    const TIPO_BADGE: Record<ContattoTipo, { label: string; className: string }> = {
+      proprietari: { label: 'Pro', className: 'bg-red-50 text-red-700 border-red-200' },
+      acquirenti: { label: 'Acq', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+      collaboratori: { label: 'Col', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+    };
+    setLeadItems(all.map(({ tipo, row }) => ({
+      id: row.id,
+      label: `${row.nome} ${row.cognome ?? ''}`.trim(),
+      sublabel: row.telefono ?? undefined,
+      badge: TIPO_BADGE[tipo],
     })));
   };
 
@@ -445,12 +495,51 @@ const EventFormModal = ({
     if (!leadId) return;
     setLeadSheet(true);
     setIsLoadingLeadDetail(true);
-    const { data } = await supabase
-      .from('leads')
-      .select('id, nome, cognome, email, telefono, tipo_cliente, stato, stato_venditore, budget, via_immobile, zona_venditore, tipologia_ricerca, note_interne, assegnato_a')
-      .eq('id', leadId)
-      .single();
-    setLeadDetail(data ?? null);
+    const tipo = leadRecordsRef.current[leadId]?.tipo ?? 'leads';
+
+    if (tipo === 'leads') {
+      const { data } = await supabase
+        .from('leads')
+        .select('id, nome, cognome, email, telefono, tipo_cliente, stato, stato_venditore, budget, via_immobile, zona_venditore, tipologia_ricerca, note_interne, assegnato_a')
+        .eq('id', leadId)
+        .single();
+      setLeadDetail(data ?? null);
+      setIsLoadingLeadDetail(false);
+      return;
+    }
+
+    const TIPO_CLIENTE_LABEL: Record<'proprietari' | 'acquirenti' | 'collaboratori', string> = {
+      proprietari: 'Proprietario', acquirenti: 'Acquirente', collaboratori: 'Collaboratore',
+    };
+    const cols = tipo === 'proprietari'
+      ? 'id, nome, cognome, email, telefono, via_immobile, citta_immobile'
+      : tipo === 'acquirenti'
+      ? 'id, nome, cognome, email, telefono, budget, tipologia_ricerca, note_interne, stato'
+      : 'id, nome, cognome, email, telefono, note_interne';
+    const { data } = await supabase.from(tipo).select(cols).eq('id', leadId).single();
+    if (data) {
+      const d = data as unknown as {
+        id: string; nome: string; cognome: string | null; email?: string | null; telefono?: string | null;
+        via_immobile?: string | null; citta_immobile?: string | null; budget?: number | null;
+        tipologia_ricerca?: string[] | null; note_interne?: string | null; stato?: string | null;
+      };
+      setLeadDetail({
+        id: d.id,
+        nome: d.nome,
+        cognome: d.cognome ?? '',
+        email: d.email,
+        telefono: d.telefono,
+        tipo_cliente: TIPO_CLIENTE_LABEL[tipo],
+        stato: d.stato,
+        via_immobile: d.via_immobile,
+        zona_venditore: d.citta_immobile,
+        budget: d.budget,
+        tipologia_ricerca: d.tipologia_ricerca,
+        note_interne: d.note_interne,
+      });
+    } else {
+      setLeadDetail(null);
+    }
     setIsLoadingLeadDetail(false);
   };
 
@@ -462,17 +551,10 @@ const EventFormModal = ({
 
     // Auto-suggest address only if field is currently empty
     if (indirizzo.trim()) return;
-    const [{ data: leadData }, { data: valData }] = await Promise.all([
-      supabase.from('leads').select('immobile_id, immobili(indirizzo, citta)').eq('id', id).single(),
-      supabase.from('valutazioni').select('indirizzo, citta').eq('lead_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
-    ]);
-    const immobileAddr = (leadData as { immobili?: { indirizzo?: string; citta?: string } | null } | null)?.immobili;
-    const valAddr = valData as { indirizzo?: string; citta?: string } | null;
-    const suggested =
-      valAddr?.indirizzo ? `${valAddr.indirizzo}${valAddr.citta ? ', ' + valAddr.citta : ''}` :
-      immobileAddr?.indirizzo ? `${immobileAddr.indirizzo}${immobileAddr.citta ? ', ' + immobileAddr.citta : ''}` :
-      '';
-    if (suggested) setIndirizzo(suggested);
+    const record = leadRecordsRef.current[id];
+    if (record?.tipo === 'proprietari' && record.via_immobile) {
+      setIndirizzo(`${record.via_immobile}${record.citta_immobile ? ', ' + record.citta_immobile : ''}`);
+    }
   };
 
   // Fissare un appuntamento di tipologia "Rivalutazione" su un proprietario fa
@@ -517,8 +599,7 @@ const EventFormModal = ({
     const payload = {
       agente_id: agenteId,
       tipologia: tipologia || 'Altro',
-      lead_id: isContattoLinked ? null : (leadId || null),
-      contatto_id: isContattoLinked ? (event?.contatto_id ?? defaultContattoId ?? null) : null,
+      ...getLeadContattoPayload(),
       immobile_id: immobileId !== 'none' ? immobileId : null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
       ora_inizio: oraInizio || null,
@@ -667,7 +748,7 @@ const EventFormModal = ({
                 </div>
               )}
               {/* Tipologia ricerca */}
-              {leadDetail.tipologia_ricerca?.length > 0 && (
+              {leadDetail.tipologia_ricerca && leadDetail.tipologia_ricerca.length > 0 && (
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">Cerca</p>
                   <div className="flex flex-wrap gap-1.5">
@@ -795,9 +876,9 @@ const EventFormModal = ({
                 value={leadId}
                 onSelect={handleLeadSelect}
                 onSearch={searchLeads}
-                placeholder="Cerca lead per nome o telefono..."
+                placeholder="Cerca contatto per nome o telefono..."
                 searchPlaceholder="Nome, cognome o telefono..."
-                emptyMessage="Nessun lead trovato."
+                emptyMessage="Nessun contatto trovato."
               />
             )}
             {/* Phone + WhatsApp + Scheda lead */}

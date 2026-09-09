@@ -68,19 +68,20 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
 
   const fetchCollaboratori = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    // Query da `contatti` (non da `collaboratori`): `created_at` vive solo su
+    // `contatti` e .order(foreignTable) non ordina le righe di primo livello,
+    // vedi stesso fix in ProprietariList.tsx.
     const { data, error } = await supabase
-      .from('collaboratori')
-      .select('id, nome, cognome, email, telefono, professione, note_interne, contatti(created_at)')
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false, foreignTable: 'contatti' });
+      .from('contatti')
+      .select('created_at, collaboratori!inner(id, nome, cognome, email, telefono, professione, note_interne)')
+      .eq('collaboratori.is_deleted', false)
+      .order('created_at', { ascending: false });
     if (signal?.aborted) return;
     if (error) {
       showError('Errore nel caricamento collaboratori');
     } else {
-      const rows = (data || []).map((r) => {
-        const row = r as unknown as CollaboratoreRecord & { contatti?: { created_at?: string } };
-        return { ...row, created_at: row.contatti?.created_at };
-      });
+      type Row = { created_at: string; collaboratori: Omit<CollaboratoreRecord, 'created_at'> };
+      const rows = ((data || []) as unknown as Row[]).map((r) => ({ ...r.collaboratori, created_at: r.created_at }));
       setCollaboratori(rows);
     }
     setLoading(false);
