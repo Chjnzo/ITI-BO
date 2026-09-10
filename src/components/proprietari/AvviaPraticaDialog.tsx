@@ -61,6 +61,17 @@ const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDi
           fase: 'Incontro/Sopralluogo',
         });
       if (error) throw error;
+
+      // Crea (o riusa) la cartella Drive del contatto — best effort, se
+      // Apps Script fallisce non blocchiamo la pratica: Apps Script farà
+      // lazy lookup al primo upload dalla checklist Presa in carico.
+      try {
+        await supabase.functions.invoke('drive-documenti', {
+          body: { action: 'createFolder', entita: 'contatto', contattoId: proprietario.id },
+        });
+      } catch (_) {
+        // volutamente ignorato
+      }
     },
     onSuccess: () => {
       showSuccess('Pratica avviata.');

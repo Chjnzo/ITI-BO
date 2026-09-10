@@ -1,12 +1,16 @@
+import { useDraggable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import { Home, User, Pencil } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 import type { PipelineCard } from '@/hooks/useImmobiliPipeline';
 
 interface KanbanCardProps {
   card: PipelineCard;
   onOpen: (card: PipelineCard) => void;
+  dragging?: boolean;
 }
 
 const formatPrice = (price?: number) => {
@@ -18,13 +22,17 @@ const formatPrice = (price?: number) => {
   }).format(price);
 };
 
-const KanbanCard = ({ card, onOpen }: KanbanCardProps) => {
+const KanbanCard = ({ card, onOpen, dragging }: KanbanCardProps) => {
   const navigate = useNavigate();
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: card.id,
+    data: card,
+  });
 
-  // Tasto rapido "completa scheda immobile": porta a /immobili aprendo
-  // direttamente PropertyWizard sull'immobile della card, senza passare dalla
-  // sheet dettaglio kanban. Utile in sottofase "Preparazione" quando c'è ancora
-  // molto da inserire (foto/prezzo/descrizione).
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
+
   const openWizard = (e: React.MouseEvent) => {
     e.stopPropagation();
     navigate('/immobili', { state: { openWizardForId: card.id } });
@@ -32,8 +40,15 @@ const KanbanCard = ({ card, onOpen }: KanbanCardProps) => {
 
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
       onClick={() => onOpen(card)}
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-pointer select-none transition-shadow hover:shadow-md relative group"
+      className={cn(
+        'bg-white rounded-2xl border border-gray-100 shadow-sm p-4 cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md relative group',
+        (isDragging || dragging) && 'opacity-50',
+      )}
     >
       <button
         type="button"
@@ -61,6 +76,9 @@ const KanbanCard = ({ card, onOpen }: KanbanCardProps) => {
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.prezzo)}</span>
         <div className="flex items-center gap-1 min-w-0">
+          {card.pubblicato_sito && (
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[0.6rem] font-bold uppercase">Online</Badge>
+          )}
           {card.proprietario_nome && (
             <Badge variant="secondary" className="gap-1 font-semibold text-[0.65rem] max-w-[55%] truncate">
               <User size={11} className="shrink-0" />

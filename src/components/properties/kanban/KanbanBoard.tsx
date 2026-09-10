@@ -1,10 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useImmobiliPipeline, type PipelineCard } from '@/hooks/useImmobiliPipeline';
 import { SOTTOFASI_IN_VENDITA, SOTTOFASI_VENDUTO, type FasePipeline, type Sottofase } from '@/types';
 import KanbanColumn from './KanbanColumn';
+import KanbanCard from './KanbanCard';
 import PipelineDetailSheet from './PipelineDetailSheet';
 
 interface KanbanBoardProps {
@@ -14,29 +24,19 @@ interface KanbanBoardProps {
   // la fase richiesta: usato in /gestione dove le due fasi sono già pill
   // separati al livello superiore, così non abbiamo un doppio switcher.
   fissaFase?: FasePipeline;
-  // Search "controllata" dal padre: usata in /gestione per portare l'input di
-  // ricerca sulla stessa riga del pill switcher esterno (uniformità UI).
-  // Se assente, la board mostra la search interna come prima.
   externalSearch?: { value: string; onChange: (v: string) => void };
 }
 
 const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: KanbanBoardProps = {}) => {
-  const { data: cards, isLoading } = useImmobiliPipeline();
+  const { data: cards, isLoading, spostaSottofase } = useImmobiliPipeline();
   const [faseAttiva, setFaseAttiva] = useState<FasePipeline>(fissaFase ?? 'In Vendita');
   const [localSearch, setLocalSearch] = useState('');
   const searchQuery = externalSearch?.value ?? localSearch;
-  // Si tiene solo l'id, non l'oggetto card: la card selezionata va ricavata
-  // ad ogni render dalla lista aggiornata di React Query, altrimenti dopo una
-  // mutation la sheet resterebbe agganciata alla copia "congelata" e non
-  // rifletterebbe il nuovo valore.
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [activeCard, setActiveCard] = useState<PipelineCard | null>(null);
   const setSearchQuery = externalSearch?.onChange ?? setLocalSearch;
   const selectedCard = selectedCardId ? cards?.find((c) => c.id === selectedCardId) ?? null : null;
 
-  // Link diretto dalla pagina Alert: apre la scheda dell'immobile segnalato
-  // non appena le card sono caricate; anche cambiando la tab attiva su quella
-  // giusta perché altrimenti la card non sarebbe visibile in board (a meno
-  // che fissaFase non forzi già la fase dall'esterno).
   useEffect(() => {
     if (!autoOpenId || !cards) return;
     const match = cards.find((c) => c.id === autoOpenId);
@@ -48,12 +48,13 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: Ka
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenId, cards]);
 
-  // Se il parent cambia dinamicamente fissaFase (raro: normalmente è statica)
-  // ci allineiamo. Evita che la board resti su una fase "sbagliata" se il
-  // pill di /gestione cambia mentre la board è ancora montata.
   useEffect(() => {
     if (fissaFase) setFaseAttiva(fissaFase);
   }, [fissaFase]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   const cardsByFase = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -80,6 +81,23 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: Ka
     }
     return grouped;
   }, [cardsByFase, faseAttiva, sottofasi]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveCard(event.active.data.current as PipelineCard);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveCard(null);
+    if (!over) return;
+    const nuovaSottofase = over.id as Sottofase;
+    const card = active.data.current as PipelineCard;
+    if (!card || card.sottofase === nuovaSottofase) return;
+    // Sicurezza: la sottofase target deve appartenere alla fase corrente
+    // (non permettiamo trascinamenti cross-fase, quello è pass. auto/manuale).
+    if (!sottofasi.includes(nuovaSottofase)) return;
+    spostaSottofase({ immobileId: card.id, sottofase: nuovaSottofase });
+  };
 
   if (isLoading) {
     return (
@@ -122,16 +140,23 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: Ka
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex gap-4 overflow-x-auto pb-2">
-        {sottofasi.map((sottofase) => (
-          <KanbanColumn
-            key={sottofase}
-            sottofase={sottofase}
-            cards={cardsPerSottofase[sottofase] ?? []}
-            onOpen={(card) => setSelectedCardId(card.id)}
-          />
-        ))}
-      </div>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div className="flex-1 min-h-0 flex gap-4 overflow-x-auto pb-2">
+          {sottofasi.map((sottofase) => (
+            <KanbanColumn
+              key={sottofase}
+              sottofase={sottofase}
+              cards={cardsPerSottofase[sottofase] ?? []}
+              onOpen={(card) => setSelectedCardId(card.id)}
+              activeId={activeCard?.id ?? null}
+            />
+          ))}
+        </div>
+
+        <DragOverlay>
+          {activeCard && <KanbanCard card={activeCard} onOpen={() => {}} />}
+        </DragOverlay>
+      </DndContext>
 
       <PipelineDetailSheet
         card={selectedCard}

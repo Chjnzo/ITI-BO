@@ -123,6 +123,20 @@ export interface ImmobilePipelineStato {
   id: string;
   immobile_id: string;
   fase: FasePipeline;
+  sottofase: Sottofase;
+  updated_at: string;
+}
+
+export interface PipelineScadenza {
+  id: string;
+  immobile_id: string | null;
+  pratica_id: string | null;
+  fase: string;
+  sottofase: string | null;
+  descrizione: string | null;
+  scadenza: string;
+  completata: boolean;
+  created_at: string;
   updated_at: string;
 }
 
@@ -155,6 +169,7 @@ export interface ProprietarioPraticaDocumento {
   stato: 'Da fare' | 'Fatto';
   completato_at?: string | null;
   created_at: string;
+  drive_file_id?: string | null;
 }
 
 export interface ImmobileAlert {

@@ -11,8 +11,8 @@ interface KanbanCardProps {
   dragging?: boolean;
 }
 
-const formatPrice = (price?: number | null) => {
-  if (!price) return 'Da valutare';
+const formatPrice = (price?: number | null): string | null => {
+  if (!price) return null;
   return new Intl.NumberFormat('it-IT', {
     style: 'currency',
     currency: 'EUR',
@@ -55,7 +55,9 @@ const KanbanCard = ({ card, onOpen, dragging }: KanbanCardProps) => {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.valutazione_stimata)}</span>
+        {formatPrice(card.valutazione_stimata)
+          ? <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.valutazione_stimata)}</span>
+          : <span />}
         {card.proprietario_nome && (
           <Badge variant="secondary" className="gap-1 font-semibold text-[0.65rem] max-w-[65%] truncate">
             <User size={11} className="shrink-0" />

@@ -7,22 +7,33 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Paperclip, Check, Loader2, AlertTriangle, Plus, ArrowRight, KeyRound, Pencil, Folder } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Paperclip, Check, Loader2, AlertTriangle, Plus, KeyRound, Pencil, Folder,
+  Trash2, Globe, CalendarClock, X,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
-import {
-  useImmobiliPipeline,
-  controllaGateVenduto,
-  type PipelineCard,
-} from '@/hooks/useImmobiliPipeline';
+import { useImmobiliPipeline, type PipelineCard } from '@/hooks/useImmobiliPipeline';
 import { useAlerts } from '@/hooks/useAlerts';
 import {
-  SOTTOFASI_IN_VENDITA,
-  SOTTOFASI_VENDUTO,
-  type ImmobileDocumento,
-  type Sottofase,
+  SOTTOFASI_IN_VENDITA, SOTTOFASI_VENDUTO,
+  type ImmobileDocumento, type PipelineScadenza, type Sottofase,
 } from '@/types';
+
+// Estensioni/MIME ammessi per upload documenti. Include PDF e immagini
+// comuni (jpg/png/webp/heic). Nessun limite di size esplicito lato client:
+// Apps Script + Drive tollerano bene file da 20-30 MB, oltre serve gestione
+// asincrona che oggi non abbiamo.
+const ACCEPTED_MIME = [
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
+];
+const ACCEPT_ATTR = ACCEPTED_MIME.join(',');
 
 const fileToBase64 = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -32,9 +43,6 @@ const fileToBase64 = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-// Le Edge Function rispondono con status non-200 sugli errori applicativi
-// (400/404/502...): supabase-js in quel caso valorizza `error` invece di
-// `data`, col body JSON originale recuperabile solo da `error.context`.
 const extractEdgeError = async (error: unknown, fallback: string): Promise<string> => {
   try {
     const body = await (error as { context?: Response }).context?.json();
@@ -50,7 +58,6 @@ interface PipelineDetailSheetProps {
 
 const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
   const queryClient = useQueryClient();
-  const { spostaFase } = useImmobiliPipeline();
   const { manuali, creaAlert, risolviAlert } = useAlerts();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadDoc = useRef<ImmobileDocumento | null>(null);
@@ -59,15 +66,18 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
   const [dataPreliminare, setDataPreliminare] = useState('');
   const [dataAtto, setDataAtto] = useState('');
   const [isEditingDate, setIsEditingDate] = useState(false);
-  // Sottofasi completate che l'utente ha espanso manualmente: di default una
-  // sezione con checklist completa parte collassata (l'utente vuole poterla
-  // comunque riaprire), le sezioni non complete restano sempre aperte.
+  const [confermaElimina, setConfermaElimina] = useState(false);
+  // Nuova scadenza (composer inline)
+  const [nuovaScadenzaData, setNuovaScadenzaData] = useState('');
+  const [nuovaScadenzaDesc, setNuovaScadenzaDesc] = useState('');
 
   useEffect(() => {
     setNuovoAlert('');
     setDataPreliminare(card?.data_preliminare ?? '');
     setDataAtto(card?.data_atto ?? '');
     setIsEditingDate(false);
+    setNuovaScadenzaData('');
+    setNuovaScadenzaDesc('');
   }, [card?.id, card?.data_preliminare, card?.data_atto]);
 
   const alertImmobile = card ? manuali.filter((a) => a.immobile_id === card.id) : [];
@@ -94,6 +104,64 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     enabled: !!card,
   });
 
+  const { data: scadenze } = useQuery<PipelineScadenza[]>({
+    queryKey: ['pipeline-scadenze', 'immobile', card?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pipeline_scadenze')
+        .select('*')
+        .eq('immobile_id', card!.id)
+        .order('scadenza', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as PipelineScadenza[];
+    },
+    enabled: !!card,
+  });
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['immobile-documenti', card?.id] });
+    queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+  };
+
+  // Passaggio automatico In Vendita → Venduto: quando l'ultimo doc dell'ultima
+  // sottofase (In trattativa) diventa Fatto, sposta la card in Venduto/Vincolo.
+  const forsePassaAVenduto = async () => {
+    if (!card || card.fase !== 'In Vendita' || card.sottofase !== 'In trattativa') return;
+    const { data: fresche } = await supabase
+      .from('immobile_documenti')
+      .select('stato')
+      .eq('immobile_id', card.id)
+      .eq('fase', 'In Vendita')
+      .eq('sottofase', 'In trattativa');
+    const tutteFatte = (fresche ?? []).length > 0
+      && (fresche ?? []).every((d) => d.stato === 'Fatto');
+    if (!tutteFatte) return;
+
+    // Upsert nuova fase + genera checklist Venduto in un colpo (mutation di
+    // useImmobiliPipeline sarebbe overkill: qui basta il side-effect).
+    await supabase
+      .from('immobile_pipeline_stato')
+      .upsert(
+        { immobile_id: card.id, fase: 'Venduto', sottofase: 'Vincolo', updated_at: new Date().toISOString() },
+        { onConflict: 'immobile_id' },
+      );
+    const { data: catalogo } = await supabase
+      .from('documenti_catalogo')
+      .select('documento, sottofase')
+      .eq('fase', 'Venduto');
+    if (catalogo?.length) {
+      await supabase
+        .from('immobile_documenti')
+        .upsert(
+          catalogo.map((c) => ({ immobile_id: card.id, fase: 'Venduto', documento: c.documento, sottofase: c.sottofase })),
+          { onConflict: 'immobile_id,documento', ignoreDuplicates: true },
+        );
+    }
+    showSuccess('Trattativa completata: immobile spostato in "Venduto".');
+    queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+    onClose();
+  };
+
   const toggleDocumento = useMutation({
     mutationFn: async (doc: ImmobileDocumento) => {
       const nuovoStato = doc.stato === 'Fatto' ? 'Da fare' : 'Fatto';
@@ -106,16 +174,36 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
         .eq('id', doc.id);
       if (error) throw error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['immobile-documenti', card?.id] });
-      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+    onSuccess: async (_data, doc) => {
+      invalidateAll();
+      if (doc.stato === 'Da fare') {
+        // Il click ha appena marcato "Fatto" — controlla auto-passaggio.
+        await forsePassaAVenduto();
+      }
     },
     onError: () => showError('Aggiornamento documento non riuscito.'),
   });
 
+  // Se manca il drive_folder_id sull'immobile, provo a crearlo prima
+  // dell'upload — evita l'errore "Cartella Drive non trovata" che vede
+  // l'utente in fase Preparazione se l'immobile è stato creato prima che
+  // la creazione lazy della cartella fosse in vigore.
+  const ensureDriveFolder = async () => {
+    if (!card) return;
+    if (card.drive_folder_url) return;
+    try {
+      await supabase.functions.invoke('drive-documenti', {
+        body: { action: 'createFolder', immobileId: card.id },
+      });
+    } catch (_) {
+      // Best-effort: Apps Script farà comunque lookup lazy al primo upload.
+    }
+  };
+
   const uploadDocumento = useMutation({
     mutationFn: async ({ doc, file }: { doc: ImmobileDocumento; file: File }) => {
       if (!card) throw new Error('Nessun immobile selezionato.');
+      await ensureDriveFolder();
       const fileBase64 = await fileToBase64(file);
       const { data, error } = await supabase.functions.invoke('drive-documenti', {
         body: {
@@ -135,7 +223,9 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
       if (!data?.success) throw new Error(data?.error ?? 'Caricamento file non riuscito.');
     },
     onSuccess: () => {
+      showSuccess('File caricato su Drive.');
       queryClient.invalidateQueries({ queryKey: ['immobile-documenti', card?.id] });
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
     },
     onError: (err) => showError(err instanceof Error ? err.message : 'Caricamento file non riuscito.'),
     onSettled: () => setUploadingDocId(null),
@@ -145,10 +235,15 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     const doc = pendingUploadDoc.current;
-    if (file && doc) {
-      setUploadingDocId(doc.id);
-      uploadDocumento.mutate({ doc, file });
+    if (!file || !doc) return;
+    // Whitelist client-side: coerente con `accept` HTML ma esplicita per
+    // browser che non blocca (es. Safari con file arbitrari).
+    if (file.type && !ACCEPTED_MIME.includes(file.type)) {
+      showError('Formato non ammesso. Carica PDF o immagini (jpg/png/webp/heic).');
+      return;
     }
+    setUploadingDocId(doc.id);
+    uploadDocumento.mutate({ doc, file });
   };
 
   const handleUploadClick = (doc: ImmobileDocumento) => {
@@ -174,10 +269,10 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
-  // Raggruppa la checklist per sottofase (Burocratiche/Marketing/Appuntamenti
-  // per "In Vendita", Vincolo/Preliminare/Rogito/Archivio per "Venduto"): solo
-  // i documenti della fase corrente della card. Le sezioni vuote (es. Marketing
-  // se il catalogo non ha doc lì) restano visibili per riflettere la spec.
+  // Documenti raggruppati per sottofase, cumulativi entro la stessa sezione:
+  // quando la card avanza a una sottofase successiva, i doc delle sottofasi
+  // precedenti restano visibili (si "sommano") — solo il passaggio Venduto/
+  // In Vendita azzera visivamente cambiando fase.
   const { sezioniOrdinate, documentiPerSezione } = useMemo(() => {
     const sez: Sottofase[] =
       card?.fase === 'In Vendita' ? SOTTOFASI_IN_VENDITA : SOTTOFASI_VENDUTO;
@@ -211,19 +306,70 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     onError: () => showError('Impossibile aggiornare le date.'),
   });
 
-  // Per ora nessun gate di completezza: l'utente ha chiesto di poter spostare
-  // sempre gli immobili tra fasi, senza dover completare la checklist prima
-  // (utile in fase di test/prototipo). Il controllo classico rimane come
-  // helper in useImmobiliPipeline.controllaGateVenduto, così quando servirà
-  // riattivarlo basta reintrodurre la chiamata qui.
-  const passaAVenduto = () => {
-    if (!card) return;
-    spostaFase({ immobileId: card.id, fase: 'Venduto' });
-    onClose();
-  };
+  const eliminaImmobile = useMutation({
+    mutationFn: async () => {
+      if (!card) return;
+      // Soft-delete: stessa modalità di /immobili.
+      const { error } = await supabase
+        .from('immobili')
+        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+        .eq('id', card.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      showSuccess('Immobile eliminato.');
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+      setConfermaElimina(false);
+      onClose();
+    },
+    onError: () => showError('Eliminazione non riuscita.'),
+  });
 
-  const gateBloccante: string | null = null;
-  void controllaGateVenduto;
+  const togglePubblicazione = useMutation({
+    mutationFn: async () => {
+      if (!card) return;
+      const { error } = await supabase
+        .from('immobili')
+        .update({ pubblicato_sito: !card.pubblicato_sito })
+        .eq('id', card.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      showSuccess(card?.pubblicato_sito ? 'Rimosso dal sito.' : 'Pubblicato sul sito!');
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+    },
+    onError: () => showError('Aggiornamento pubblicazione non riuscito.'),
+  });
+
+  const aggiungiScadenza = useMutation({
+    mutationFn: async () => {
+      if (!card || !nuovaScadenzaData) return;
+      const { error } = await supabase
+        .from('pipeline_scadenze')
+        .insert({
+          immobile_id: card.id,
+          fase: card.fase,
+          sottofase: card.sottofase,
+          descrizione: nuovaScadenzaDesc.trim() || null,
+          scadenza: nuovaScadenzaData,
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setNuovaScadenzaData('');
+      setNuovaScadenzaDesc('');
+      queryClient.invalidateQueries({ queryKey: ['pipeline-scadenze', 'immobile', card?.id] });
+    },
+    onError: () => showError('Impossibile aggiungere la scadenza.'),
+  });
+
+  const eliminaScadenza = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('pipeline_scadenze').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pipeline-scadenze', 'immobile', card?.id] }),
+  });
 
   return (
     <Sheet open={!!card} onOpenChange={(open) => !open && onClose()}>
@@ -240,6 +386,11 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               <Badge variant="outline" className="font-semibold text-[#94b0ab] border-[#94b0ab]/40">
                 {card.sottofase}
               </Badge>
+              {card.pubblicato_sito && (
+                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 font-bold uppercase text-[0.65rem]">
+                  <Globe size={11} className="mr-1" /> Online
+                </Badge>
+              )}
               {card.proprietario_nome && (
                 <Badge variant="outline" className="font-semibold">Proprietario: {card.proprietario_nome}</Badge>
               )}
@@ -247,7 +398,7 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
                 <a
                   href={card.drive_folder_url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#94b0ab] hover:text-[#7a948f] px-2.5 py-1 rounded-full border border-[#94b0ab]/40"
                 >
                   <Folder size={12} /> Cartella Drive
@@ -258,9 +409,49 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
             <input
               ref={fileInputRef}
               type="file"
+              accept={ACCEPT_ATTR}
               className="hidden"
               onChange={handleFileInputChange}
             />
+
+            {/* Pubblicazione manuale al sito — visibile SOLO in sottofase
+                "Pubblicato" della sezione In Vendita, come da spec (l'utente
+                pubblica dopo che foto/materiale sono pronti). Nelle altre
+                sottofasi resta un badge di stato ma non l'azione. */}
+            {card.fase === 'In Vendita' && card.sottofase === 'Pubblicato' && (
+              <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                    <Globe size={14} className="text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-gray-800">
+                      {card.pubblicato_sito ? 'Immobile pubblicato' : 'Pronto per la pubblicazione'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {card.pubblicato_sito
+                        ? 'Visibile sul sito pubblico. Puoi ritirarlo se serve.'
+                        : 'Quando foto e materiale sono pronti, pubblica sul sito.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    type="button"
+                    onClick={() => togglePubblicazione.mutate()}
+                    disabled={togglePubblicazione.isPending}
+                    className={cn(
+                      'rounded-xl font-bold text-xs h-9',
+                      card.pubblicato_sito
+                        ? 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white',
+                    )}
+                  >
+                    {card.pubblicato_sito ? 'Rimuovi dal sito' : 'Pubblica sul sito'}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6">
               <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Alert</h4>
@@ -307,89 +498,156 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               </div>
             </div>
 
-            <div className="mt-6 rounded-2xl border border-gray-100 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">Date chiave</h4>
-                {!isEditingDate && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsEditingDate(true)}
-                    className="h-7 text-xs font-bold text-[#94b0ab] hover:bg-[#94b0ab]/10 rounded-lg px-2"
-                  >
-                    <Pencil size={12} className="mr-1" />
-                    Modifica
-                  </Button>
+            {/* Scadenze — sempre visibili, editabili in qualsiasi fase.
+                Storico per fase: ogni scadenza porta la fase/sottofase in cui
+                è stata creata così l'utente sa cosa riguardava. */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+                <CalendarClock size={12} /> Scadenze
+              </h4>
+              {(scadenze ?? []).length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {(scadenze ?? []).map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-gray-800">
+                            {new Date(s.scadenza).toLocaleDateString('it-IT')}
+                          </span>
+                          <Badge variant="outline" className="text-[0.6rem] font-semibold">
+                            {s.fase}{s.sottofase && ` · ${s.sottofase}`}
+                          </Badge>
+                        </div>
+                        {s.descrizione && (
+                          <p className="text-xs text-gray-500 mt-0.5 truncate">{s.descrizione}</p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-gray-400 hover:text-red-500"
+                        title="Rimuovi scadenza"
+                        onClick={() => eliminaScadenza.mutate(s.id)}
+                      >
+                        <X size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <Input
+                  type="date"
+                  value={nuovaScadenzaData}
+                  onChange={(e) => setNuovaScadenzaData(e.target.value)}
+                  className="rounded-xl h-10 w-40"
+                />
+                <Input
+                  placeholder="Descrizione (opzionale)..."
+                  value={nuovaScadenzaDesc}
+                  onChange={(e) => setNuovaScadenzaDesc(e.target.value)}
+                  className="rounded-xl h-10 flex-1"
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-10 w-10 shrink-0 rounded-xl bg-[#94b0ab] hover:bg-[#7a948f]"
+                  disabled={!nuovaScadenzaData || aggiungiScadenza.isPending}
+                  onClick={() => aggiungiScadenza.mutate()}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Date chiave — solo per la sezione Venduto (come da spec, prima
+                erano visibili sempre e confondevano l'utente in fase pratica). */}
+            {card.fase === 'Venduto' && (
+              <div className="mt-6 rounded-2xl border border-gray-100 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">Date chiave</h4>
+                  {!isEditingDate && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsEditingDate(true)}
+                      className="h-7 text-xs font-bold text-[#94b0ab] hover:bg-[#94b0ab]/10 rounded-lg px-2"
+                    >
+                      <Pencil size={12} className="mr-1" />
+                      Modifica
+                    </Button>
+                  )}
+                </div>
+
+                {isEditingDate ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="data-preliminare" className="text-xs font-bold text-gray-500">Data preliminare</Label>
+                      <Input
+                        id="data-preliminare"
+                        type="date"
+                        value={dataPreliminare}
+                        onChange={(e) => setDataPreliminare(e.target.value)}
+                        className="rounded-xl h-10"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="data-atto" className="text-xs font-bold text-gray-500">Data atto</Label>
+                      <Input
+                        id="data-atto"
+                        type="date"
+                        value={dataAtto}
+                        onChange={(e) => setDataAtto(e.target.value)}
+                        className="rounded-xl h-10"
+                      />
+                    </div>
+                    <div className="col-span-2 flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setDataPreliminare(card.data_preliminare ?? '');
+                          setDataAtto(card.data_atto ?? '');
+                          setIsEditingDate(false);
+                        }}
+                        className="rounded-xl font-bold border-gray-200"
+                      >
+                        Annulla
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => salvaDate.mutate()}
+                        disabled={salvaDate.isPending
+                          || (dataPreliminare === (card.data_preliminare ?? '')
+                            && dataAtto === (card.data_atto ?? ''))}
+                        className="rounded-xl font-bold bg-[#94b0ab] hover:bg-[#7a948f] text-white"
+                      >
+                        Salva date
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <dl className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-[0.65rem] font-bold uppercase tracking-wider text-gray-400">Preliminare</dt>
+                      <dd className="text-sm font-semibold text-gray-800 mt-0.5">
+                        {dataPreliminare ? new Date(dataPreliminare).toLocaleDateString('it-IT') : '—'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[0.65rem] font-bold uppercase tracking-wider text-gray-400">Atto</dt>
+                      <dd className="text-sm font-semibold text-gray-800 mt-0.5">
+                        {dataAtto ? new Date(dataAtto).toLocaleDateString('it-IT') : '—'}
+                      </dd>
+                    </div>
+                  </dl>
                 )}
               </div>
-
-              {isEditingDate ? (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="data-preliminare" className="text-xs font-bold text-gray-500">Data preliminare</Label>
-                    <Input
-                      id="data-preliminare"
-                      type="date"
-                      value={dataPreliminare}
-                      onChange={(e) => setDataPreliminare(e.target.value)}
-                      className="rounded-xl h-10"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="data-atto" className="text-xs font-bold text-gray-500">Data atto</Label>
-                    <Input
-                      id="data-atto"
-                      type="date"
-                      value={dataAtto}
-                      onChange={(e) => setDataAtto(e.target.value)}
-                      className="rounded-xl h-10"
-                    />
-                  </div>
-                  <div className="col-span-2 flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setDataPreliminare(card.data_preliminare ?? '');
-                        setDataAtto(card.data_atto ?? '');
-                        setIsEditingDate(false);
-                      }}
-                      className="rounded-xl font-bold border-gray-200"
-                    >
-                      Annulla
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => salvaDate.mutate()}
-                      disabled={salvaDate.isPending
-                        || (dataPreliminare === (card.data_preliminare ?? '')
-                          && dataAtto === (card.data_atto ?? ''))}
-                      className="rounded-xl font-bold bg-[#94b0ab] hover:bg-[#7a948f] text-white"
-                    >
-                      Salva date
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-[0.65rem] font-bold uppercase tracking-wider text-gray-400">Preliminare</dt>
-                    <dd className="text-sm font-semibold text-gray-800 mt-0.5">
-                      {dataPreliminare ? new Date(dataPreliminare).toLocaleDateString('it-IT') : '—'}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[0.65rem] font-bold uppercase tracking-wider text-gray-400">Atto</dt>
-                    <dd className="text-sm font-semibold text-gray-800 mt-0.5">
-                      {dataAtto ? new Date(dataAtto).toLocaleDateString('it-IT') : '—'}
-                    </dd>
-                  </div>
-                </dl>
-              )}
-            </div>
+            )}
 
             <div className="mt-6">
               <div className="flex items-center justify-between mb-3">
@@ -399,8 +657,7 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               </div>
 
               {/* Stepper compatto: mostra dove sono nel percorso della fase
-                  corrente, senza rivelare i documenti delle prossime sottofasi
-                  (li vedrò solo quando la card ci arriverà). */}
+                  corrente. */}
               <div className="flex items-center gap-1.5 mb-4 flex-wrap">
                 {sezioniOrdinate.map((sezione, idx) => {
                   const isCurrent = sezione === card.sottofase;
@@ -426,89 +683,111 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
 
               {isLoading ? (
                 <p className="text-sm text-gray-400 italic">Caricamento...</p>
-              ) : (documentiPerSezione[card.sottofase] ?? []).length === 0 ? (
-                <p className="text-sm text-gray-400 italic">Nessun documento da caricare per questa sottofase.</p>
               ) : (
-                <div className="space-y-2">
-                  {(documentiPerSezione[card.sottofase] ?? []).map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 hover:bg-gray-50 transition-colors"
-                    >
-                      <label
-                        className={cn(
-                          'flex items-center gap-3 flex-1 min-w-0',
-                          doc.stato === 'Fatto' || doc.drive_file_id ? 'cursor-pointer' : 'cursor-not-allowed',
-                        )}
-                        title={doc.stato !== 'Fatto' && !doc.drive_file_id ? 'Carica prima il file per poterlo segnare come fatto' : undefined}
-                      >
-                        <Checkbox
-                          checked={doc.stato === 'Fatto'}
-                          disabled={doc.stato !== 'Fatto' && !doc.drive_file_id}
-                          onCheckedChange={() => toggleDocumento.mutate(doc)}
-                        />
-                        <span className={cn(
-                          'text-sm font-medium truncate',
-                          doc.stato === 'Fatto' ? 'text-gray-400 line-through' : 'text-gray-700',
-                        )}>
-                          {doc.documento}
-                        </span>
-                      </label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className={cn('h-8 w-8 shrink-0', doc.drive_file_id && 'text-green-600 hover:text-green-700')}
-                        title={doc.drive_file_id ? 'Visualizza file caricato' : 'Carica file'}
-                        disabled={uploadingDocId === doc.id}
-                        onClick={() => (doc.drive_file_id ? handleViewFile(doc) : handleUploadClick(doc))}
-                      >
-                        {uploadingDocId === doc.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : doc.drive_file_id ? (
-                          <Check className="h-4 w-4" />
-                        ) : (
-                          <Paperclip className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {/* Doc della sottofase corrente + di quelle precedenti (i
+                      documenti si sommano entro la stessa sezione, come da
+                      spec). Sottofasi future non mostrate finché non ci si
+                      arriva col drag manuale. */}
+                  {sezioniOrdinate.slice(0, sezioniOrdinate.indexOf(card.sottofase) + 1).map((sezione) => {
+                    const docs = documentiPerSezione[sezione] ?? [];
+                    if (docs.length === 0) return null;
+                    return (
+                      <div key={sezione}>
+                        <p className="text-[0.65rem] font-bold uppercase tracking-widest text-gray-400 mb-1.5">
+                          {sezione}
+                        </p>
+                        <div className="space-y-2">
+                          {docs.map((doc) => (
+                            <div
+                              key={doc.id}
+                              className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                            >
+                              <label
+                                className={cn(
+                                  'flex items-center gap-3 flex-1 min-w-0',
+                                  doc.stato === 'Fatto' || doc.drive_file_id ? 'cursor-pointer' : 'cursor-not-allowed',
+                                )}
+                                title={doc.stato !== 'Fatto' && !doc.drive_file_id ? 'Carica prima il file per poterlo segnare come fatto' : undefined}
+                              >
+                                <Checkbox
+                                  checked={doc.stato === 'Fatto'}
+                                  disabled={doc.stato !== 'Fatto' && !doc.drive_file_id}
+                                  onCheckedChange={() => toggleDocumento.mutate(doc)}
+                                />
+                                <span className={cn(
+                                  'text-sm font-medium truncate',
+                                  doc.stato === 'Fatto' ? 'text-gray-400 line-through' : 'text-gray-700',
+                                )}>
+                                  {doc.documento}
+                                </span>
+                              </label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={cn('h-8 w-8 shrink-0', doc.drive_file_id && 'text-green-600 hover:text-green-700')}
+                                title={doc.drive_file_id ? 'Visualizza file caricato' : 'Carica file (PDF o immagini)'}
+                                disabled={uploadingDocId === doc.id}
+                                onClick={() => (doc.drive_file_id ? handleViewFile(doc) : handleUploadClick(doc))}
+                              >
+                                {uploadingDocId === doc.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : doc.drive_file_id ? (
+                                  <Check className="h-4 w-4" />
+                                ) : (
+                                  <Paperclip className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {(documentiPerSezione[card.sottofase] ?? []).length === 0 && (
+                    <p className="text-sm text-gray-400 italic">Nessun documento da caricare per questa sottofase.</p>
+                  )}
                 </div>
               )}
             </div>
 
-            {card.fase === 'In Vendita' && (
-              <div className="mt-6 rounded-2xl border border-gray-100 bg-gray-50/50 p-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-[#94b0ab]/10 flex items-center justify-center shrink-0">
-                    <KeyRound size={14} className="text-[#94b0ab]" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-800">Passa a "Venduto"</p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      Sposta l'immobile nella pipeline "Venduto" (Vincolo → Preliminare → Rogito → Archivio).
-                    </p>
-                    {gateBloccante && (
-                      <p className="text-xs text-amber-600 font-semibold mt-1.5 flex items-start gap-1.5">
-                        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                        <span>{gateBloccante}</span>
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    type="button"
-                    onClick={passaAVenduto}
-                    disabled={!!gateBloccante}
-                    className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold text-xs h-9"
+            {/* Elimina immobile (soft-delete): sempre disponibile, con
+                conferma esplicita perché toglie la card dalla pipeline e
+                dal sito pubblico. */}
+            <div className="mt-8 pt-6 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfermaElimina(true)}
+                className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold text-xs h-9 gap-1.5"
+              >
+                <Trash2 size={14} /> Elimina immobile
+              </Button>
+            </div>
+
+            <AlertDialog open={confermaElimina} onOpenChange={setConfermaElimina}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                    <KeyRound size={18} /> Elimina immobile
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    L'immobile <b>{card.titolo}</b> verrà rimosso dalla pipeline e dal sito pubblico.
+                    L'operazione è reversibile solo da amministratore DB.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annulla</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => { e.preventDefault(); eliminaImmobile.mutate(); }}
+                    className="bg-red-500 hover:bg-red-600 text-white"
                   >
-                    Sposta in Venduto
-                    <ArrowRight size={14} className="ml-1.5" />
-                  </Button>
-                </div>
-              </div>
-            )}
+                    Elimina
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </>
         )}
       </SheetContent>
