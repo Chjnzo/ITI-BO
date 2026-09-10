@@ -277,6 +277,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
         data: scadenzaData,
         titolo: scadenzaTesto.trim(),
         stato: 'Da fare',
+        origine: 'contatti',
       });
       if (taskError) throw taskError;
 
