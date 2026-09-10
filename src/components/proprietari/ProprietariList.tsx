@@ -3,14 +3,18 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { showError } from '@/utils/toast';
+import { showError, showSuccess } from '@/utils/toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Phone, Search, X, KeyRound, Flame } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Phone, Search, X, KeyRound, Flame, Trash2 } from 'lucide-react';
 import type { FaseProprietario } from '@/types';
 import { cn } from '@/lib/utils';
 import AvviaPraticaDialog from './AvviaPraticaDialog';
@@ -75,24 +79,36 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
   const [soloCaldi, setSoloCaldi] = useState(false);
   const [avviaPraticaTarget, setAvviaPraticaTarget] = useState<ProprietarioRow | null>(null);
   const [schedaId, setSchedaId] = useState<string | null>(null);
+  const [eliminaTarget, setEliminaTarget] = useState<ProprietarioRow | null>(null);
 
   const fetchProprietari = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
+    // Query da `contatti` (non da `proprietari`) perché `created_at` vive solo
+    // lì: un .order(foreignTable: 'contatti') applicato a `.from('proprietari')`
+    // non ordina le righe di primo livello (PostgREST lo applica solo dentro la
+    // relazione annidata), risultando in un ordine di fatto casuale/instabile.
     const { data, error } = await supabase
-      .from('proprietari')
+      .from('contatti')
       .select(`
-        id, nome, cognome, email, telefono, professione, is_deleted, caldo,
-        via_immobile, citta_immobile, tipologia_immobile,
-        contatti(agente_id, created_at),
-        proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
+        agente_id, created_at,
+        proprietari!inner(
+          id, nome, cognome, email, telefono, professione, is_deleted, caldo,
+          via_immobile, citta_immobile, tipologia_immobile,
+          proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
+        )
       `)
-      .eq('is_deleted', false)
-      .order('created_at', { ascending: false, foreignTable: 'contatti' });
+      .eq('proprietari.is_deleted', false)
+      .order('created_at', { ascending: false });
     if (signal?.aborted) return;
     if (error) {
       showError('Errore nel caricamento proprietari.');
     } else {
-      setProprietari((data ?? []) as unknown as ProprietarioRow[]);
+      type Row = { agente_id: string | null; created_at: string; proprietari: Omit<ProprietarioRow, 'contatti'> };
+      const rows = ((data ?? []) as unknown as Row[]).map((row) => ({
+        ...row.proprietari,
+        contatti: { agente_id: row.agente_id, created_at: row.created_at },
+      }));
+      setProprietari(rows as unknown as ProprietarioRow[]);
     }
     setLoading(false);
   }, []);
@@ -147,6 +163,24 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
   const refreshAll = () => {
     fetchProprietari();
     queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+  };
+
+  const eseguiElimina = async () => {
+    if (!eliminaTarget) return;
+    // Soft-delete: rispetta il pattern in vigore (immobili/acquirenti). La
+    // riga resta nel DB con is_deleted=true, così storia/valutazioni collegate
+    // restano navigabili da admin. Le query CRM filtrano is_deleted=false.
+    const { error } = await supabase
+      .from('proprietari')
+      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+      .eq('id', eliminaTarget.id);
+    if (error) {
+      showError('Eliminazione non riuscita.');
+    } else {
+      showSuccess('Proprietario eliminato.');
+      setEliminaTarget(null);
+      refreshAll();
+    }
   };
 
   return (
@@ -292,6 +326,15 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
                               Avvia pratica
                             </Button>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => { e.stopPropagation(); setEliminaTarget(p); }}
+                            title="Elimina proprietario"
+                            className="h-8 w-8 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -313,6 +356,27 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
         proprietarioId={schedaId}
         onClose={() => { setSchedaId(null); refreshAll(); }}
       />
+
+      <AlertDialog open={!!eliminaTarget} onOpenChange={(open) => !open && setEliminaTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">Elimina proprietario</AlertDialogTitle>
+            <AlertDialogDescription>
+              Il proprietario <b>{eliminaTarget?.nome} {eliminaTarget?.cognome ?? ''}</b> verrà
+              rimosso dagli elenchi CRM. Le sue valutazioni/pratiche restano nel DB per lo storico.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annulla</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); eseguiElimina(); }}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              Elimina
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

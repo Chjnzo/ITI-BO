@@ -9,6 +9,8 @@ export interface ComboboxItem {
   label: string;
   sublabel?: string;
   image?: string;
+  /** Optional inline badge shown to the left of the label (uses the classes as-is). */
+  badge?: { label: string; className?: string };
 }
 
 interface ComboboxProps {
@@ -175,6 +177,14 @@ export const Combobox = ({
                       alt=""
                       className="w-10 h-10 rounded-lg object-cover shrink-0 bg-gray-100"
                     />
+                  )}
+                  {item.badge && (
+                    <span className={cn(
+                      'text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border shrink-0',
+                      item.badge.className,
+                    )}>
+                      {item.badge.label}
+                    </span>
                   )}
                   <span className="flex flex-col min-w-0">
                     <span className="text-sm font-medium text-gray-800 truncate">{item.label}</span>

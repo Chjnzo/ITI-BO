@@ -30,6 +30,11 @@ interface TaskModalProps {
   /** Generic contatto (acquirente/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
   defaultContattoId?: string;
   defaultContattoName?: string;
+  /** Area applicativa che apre il modale — finisce su tasks.origine e determina
+   *  il badge/filtro sulla pagina Task. Default 'contatti': oggi tutti i punti
+   *  di creazione sono in Contatti/Dashboard/Tasks; passare 'gestione' quando
+   *  il modale verrà aperto dal kanban proprietari/immobili o dalle pratiche. */
+  origine?: 'contatti' | 'gestione';
 }
 
 const TASK_COLORS = [
@@ -40,7 +45,7 @@ const TASK_COLORS = [
   { id: 'violet', hex: '#8b5cf6', label: 'Viola' },
 ];
 
-const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName }: TaskModalProps) => {
+const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName, origine = 'contatti' }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
   const [telefono, setTelefono] = useState('');
   const [leadId, setLeadId] = useState('');
@@ -54,6 +59,10 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
   const [isSaving, setIsSaving] = useState(false);
   const [currentUserId, setCurrentUserId] = useState('');
   const [teamMembers, setTeamMembers] = useState<{ id: string; nome_completo: string | null }[]>([]);
+  // Tipo per ogni id restituito da searchLeads: proprietari/acquirenti/
+  // collaboratori (post-pivot) → salvato su contatto_id; 'leads' (legacy) →
+  // salvato su lead_id. Stesso pattern di EventFormModal.
+  const leadRecordsRef = React.useRef<Record<string, 'proprietari' | 'acquirenti' | 'collaboratori' | 'leads'>>({});
 
   useEffect(() => {
     if (!open) return;
@@ -98,15 +107,38 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
 
     const { buildLeadSearchClauses } = await import('@/utils/search');
     const clauses = buildLeadSearchClauses(trimmed);
-    let query = supabase.from('leads').select('id, nome, cognome, telefono');
-    for (const clause of clauses) query = query.or(clause);
-    const { data: rows } = await query.limit(8);
 
+    type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
+    type Row = { id: string; nome: string; cognome: string | null; telefono: string | null };
+    const runQuery = async (table: ContattoTipo): Promise<{ tipo: ContattoTipo; row: Row }[]> => {
+      let query = supabase.from(table).select('id, nome, cognome, telefono').eq('is_deleted', false).limit(8);
+      for (const clause of clauses) query = query.or(clause);
+      const { data, error } = await query;
+      if (error || !data) return [];
+      return (data as unknown as Row[]).map((row) => ({ tipo: table, row }));
+    };
+
+    const [prop, acq, coll] = await Promise.all([
+      runQuery('proprietari'),
+      runQuery('acquirenti'),
+      runQuery('collaboratori'),
+    ]);
     if (controller.signal.aborted) return;
-    setLeadItems((rows ?? []).map(r => ({
-      id: r.id,
-      label: `${r.nome} ${r.cognome}`,
-      sublabel: r.telefono ?? undefined,
+
+    const all = [...prop, ...acq, ...coll];
+    for (const { tipo, row } of all) {
+      leadRecordsRef.current[row.id] = tipo;
+    }
+    const TIPO_BADGE: Record<ContattoTipo, { label: string; className: string }> = {
+      proprietari: { label: 'Pro', className: 'bg-red-50 text-red-700 border-red-200' },
+      acquirenti: { label: 'Acq', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+      collaboratori: { label: 'Col', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+    };
+    setLeadItems(all.map(({ tipo, row }) => ({
+      id: row.id,
+      label: `${row.nome} ${row.cognome ?? ''}`.trim(),
+      sublabel: row.telefono ?? undefined,
+      badge: TIPO_BADGE[tipo],
     })));
   };
 
@@ -124,11 +156,23 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
       return;
     }
     setIsSaving(true);
+    // Route l'id selezionato su lead_id (legacy) o contatto_id (post-pivot)
+    // in base al tipo tracciato in leadRecordsRef; se isContattoLinked, il
+    // contatto arriva già da defaultContattoId.
+    let leadIdCol: string | null = null;
+    let contattoIdCol: string | null = null;
+    if (isContattoLinked) {
+      contattoIdCol = defaultContattoId ?? null;
+    } else if (leadId) {
+      const tipo = leadRecordsRef.current[leadId] ?? 'leads';
+      if (tipo === 'leads') leadIdCol = leadId;
+      else contattoIdCol = leadId;
+    }
     const { error } = await supabase.from('tasks').insert({
       titolo: titolo.trim(),
       telefono: telefono.trim() || null,
-      lead_id: isContattoLinked ? null : (leadId || null),
-      contatto_id: defaultContattoId || null,
+      lead_id: leadIdCol,
+      contatto_id: contattoIdCol,
       agente_id: agenteId || currentUserId,
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
@@ -136,6 +180,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
       stato: 'Da fare',
       colore: colore || null,
       urgente,
+      origine,
     });
     setIsSaving(false);
     if (error) {
@@ -255,9 +300,9 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
                   }
                 }}
                 onSearch={searchLeads}
-                placeholder="Cerca lead per nome o telefono... (opzionale)"
+                placeholder="Cerca contatto per nome o telefono... (opzionale)"
                 searchPlaceholder="Nome, cognome o telefono..."
-                emptyMessage="Nessun lead trovato."
+                emptyMessage="Nessun contatto trovato."
                 className="h-11"
               />
             )}

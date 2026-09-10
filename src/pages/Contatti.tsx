@@ -23,11 +23,18 @@ const Contatti = () => {
   const [openAcquirenteId, setOpenAcquirenteId] = useState<string | null>(null);
   const [openCollaboratoreId, setOpenCollaboratoreId] = useState<string | null>(null);
 
-  // se navighiamo su /contatti da un'altra rotta con un nuovo `contattiTab`
-  // nel state, il componente non rimonta: seguiamo il cambio di state a runtime.
+  // se navighiamo su /contatti da un'altra rotta con un nuovo `contattiTab` +
+  // `openLeadId` nello state (es. click "apri scheda" da una task nella
+  // pagina Task), instradiamo l'id nella tab giusta come farebbe la search
+  // globale. Il componente non rimonta cambiando route, quindi va gestito qui.
   useEffect(() => {
-    const requestedTab = (location.state as { contattiTab?: ContattiTab } | null)?.contattiTab;
-    if (requestedTab) setTab(requestedTab);
+    const state = location.state as { contattiTab?: ContattiTab; openLeadId?: string } | null;
+    if (state?.contattiTab) setTab(state.contattiTab);
+    if (state?.openLeadId && state?.contattiTab) {
+      if (state.contattiTab === 'proprietari') setOpenProprietarioId(state.openLeadId);
+      else if (state.contattiTab === 'acquirenti') setOpenAcquirenteId(state.openLeadId);
+      else if (state.contattiTab === 'collaboratori') setOpenCollaboratoreId(state.openLeadId);
+    }
   }, [location.state]);
 
   const handleSearchSelect = (tipo: ContattoTipo, id: string) => {

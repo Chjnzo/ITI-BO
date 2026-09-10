@@ -62,28 +62,40 @@ export const useProprietariPipeline = () => {
 
       if (error) throw error;
 
-      return ((data ?? []) as unknown as RawPraticaRow[]).map((row) => {
-        // Stesso criterio di useImmobiliPipeline: la checklist mostrata conta
-        // solo i documenti della fase corrente (Incontro/Sopralluogo e
-        // Rivalutazione non hanno documenti in catalogo, quindi restano 0/0).
-        const documentiFaseCorrente = (row.documenti ?? []).filter((d) => d.fase === row.fase);
-        return {
-          id: row.id,
-          proprietario_id: row.proprietario_id,
-          via: row.via,
-          tipologia: row.tipologia,
-          citta: row.citta,
-          fase: row.fase,
-          agente_id: row.proprietario?.contatti?.agente_id ?? null,
-          proprietario_nome: row.proprietario ? `${row.proprietario.nome} ${row.proprietario.cognome ?? ''}`.trim() : '',
-          proprietario_telefono: row.proprietario?.telefono ?? null,
-          valutazione_stimata: row.valutazione_stimata,
-          immobile_id: row.immobile_id,
-          updated_at: row.updated_at,
-          docTotali: documentiFaseCorrente.length,
-          docCompletati: documentiFaseCorrente.filter((d) => d.stato === 'Fatto').length,
-        };
-      });
+      return ((data ?? []) as unknown as RawPraticaRow[])
+        .map((row) => {
+          // Stesso criterio di useImmobiliPipeline: la checklist mostrata conta
+          // solo i documenti della fase corrente (Incontro/Sopralluogo e
+          // Rivalutazione non hanno documenti in catalogo, quindi restano 0/0).
+          const documentiFaseCorrente = (row.documenti ?? []).filter((d) => d.fase === row.fase);
+          return {
+            id: row.id,
+            proprietario_id: row.proprietario_id,
+            via: row.via,
+            tipologia: row.tipologia,
+            citta: row.citta,
+            fase: row.fase,
+            agente_id: row.proprietario?.contatti?.agente_id ?? null,
+            proprietario_nome: row.proprietario ? `${row.proprietario.nome} ${row.proprietario.cognome ?? ''}`.trim() : '',
+            proprietario_telefono: row.proprietario?.telefono ?? null,
+            valutazione_stimata: row.valutazione_stimata,
+            immobile_id: row.immobile_id,
+            updated_at: row.updated_at,
+            docTotali: documentiFaseCorrente.length,
+            docCompletati: documentiFaseCorrente.filter((d) => d.stato === 'Fatto').length,
+          };
+        })
+        // Passaggio automatico Proprietari → In Vendita: quando l'ultima fase
+        // della sezione Proprietari (Presa in carico) ha la checklist tutta
+        // completata (e la pratica ha già un immobile collegato, creato da
+        // spostaFase → creaImmobileDaPratica), la pratica sparisce dal kanban
+        // Proprietari. La card immobile resta visibile in In Vendita.
+        .filter((card) => !(
+          card.fase === 'Presa in carico'
+          && card.immobile_id
+          && card.docTotali > 0
+          && card.docCompletati === card.docTotali
+        ));
     },
     staleTime: 30_000,
   });
@@ -181,9 +193,9 @@ const creaImmobileDaPratica = async (praticaId: string) => {
   if (linkError) throw linkError;
 
   // Stesso motivo di creaPipelineIniziale in PropertyWizard: senza questa riga
-  // l'immobile arriverebbe in Kanban immobili senza immobile_pipeline_stato
-  // (fallback 'Acquisizione' nell'hook, checklist vuota).
-  await upsertFasePipeline(immobile.id, 'In Vendita');
+  // l'immobile arriverebbe in Kanban immobili senza immobile_pipeline_stato,
+  // checklist vuota. Entra sempre in In Vendita / Preparazione.
+  await upsertFasePipeline(immobile.id, 'In Vendita', 'Preparazione');
   await generaChecklistPerFase(immobile.id, 'In Vendita');
 
   // Cartella Drive per i documenti dell'immobile: creata proattivamente
