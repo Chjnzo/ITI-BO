@@ -27,6 +27,7 @@ interface CollaboratoreRecord {
   cognome?: string | null;
   email?: string | null;
   telefono?: string | null;
+  cellulare?: string | null;
   professione?: string | null;
   note_interne?: string | null;
   is_deleted?: boolean;
@@ -73,7 +74,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
     // vedi stesso fix in ProprietariList.tsx.
     const { data, error } = await supabase
       .from('contatti')
-      .select('created_at, collaboratori!inner(id, nome, cognome, email, telefono, professione, note_interne)')
+      .select('created_at, collaboratori!inner(id, nome, cognome, email, telefono, cellulare, professione, note_interne)')
       .eq('collaboratori.is_deleted', false)
       .order('created_at', { ascending: false });
     if (signal?.aborted) return;
@@ -101,7 +102,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
     let aborted = false;
     supabase
       .from('collaboratori')
-      .select('id, nome, cognome, email, telefono, professione, note_interne')
+      .select('id, nome, cognome, email, telefono, cellulare, professione, note_interne')
       .eq('id', openContattoId)
       .maybeSingle()
       .then(({ data }) => {
@@ -113,6 +114,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
             cognome: c.cognome ?? '',
             email: c.email ?? '',
             telefono: c.telefono ?? '',
+            cellulare: c.cellulare ?? '',
             professione: c.professione ?? '',
             note_interne: c.note_interne ?? '',
           });
@@ -147,7 +149,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
 
   const openCreateModal = () => {
     lastSavedRef.current = null; // create mode: no autosave
-    setSelected({ nome: '', cognome: '', email: '', telefono: '', professione: '' });
+    setSelected({ nome: '', cognome: '', email: '', telefono: '', cellulare: '', professione: '' });
   };
   const openEditModal = (c: CollaboratoreRecord) => {
     // Snapshot iniziale per l'autosave: evita di ri-scrivere subito dopo l'apertura.
@@ -156,6 +158,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
       cognome: c.cognome ?? '',
       email: c.email ?? '',
       telefono: c.telefono ?? '',
+      cellulare: c.cellulare ?? '',
       professione: c.professione ?? '',
       note_interne: c.note_interne ?? '',
     });
@@ -183,6 +186,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
       cognome: selected.cognome?.trim() || null,
       email: selected.email || null,
       telefono: selected.telefono || null,
+      cellulare: selected.cellulare || null,
       professione: selected.professione || null,
       note_interne: selected.note_interne || null,
     };
@@ -243,6 +247,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
       cognome: selected.cognome ?? '',
       email: selected.email ?? '',
       telefono: selected.telefono ?? '',
+      cellulare: selected.cellulare ?? '',
       professione: selected.professione ?? '',
       note_interne: selected.note_interne ?? '',
     });
@@ -254,6 +259,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
         cognome: selected.cognome?.trim() || null,
         email: selected.email || null,
         telefono: selected.telefono || null,
+        cellulare: selected.cellulare || null,
         professione: selected.professione || null,
         note_interne: selected.note_interne || null,
       };
@@ -454,10 +460,18 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5"><Phone size={11} /> Telefono</Label>
+                    <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5"><Phone size={11} /> Telefono fisso</Label>
                     <Input
                       value={selected.telefono || ''}
                       onChange={(e) => setSelected({ ...selected, telefono: e.target.value })}
+                      className="h-11 rounded-xl border-gray-200 bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold text-gray-500 flex items-center gap-1.5"><Phone size={11} /> Cellulare</Label>
+                    <Input
+                      value={selected.cellulare || ''}
+                      onChange={(e) => setSelected({ ...selected, cellulare: e.target.value })}
                       className="h-11 rounded-xl border-gray-200 bg-white"
                     />
                   </div>

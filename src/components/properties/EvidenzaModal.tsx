@@ -21,8 +21,8 @@ interface Immobile {
 
 const MAX_EVIDENZA = 3;
 
-const formatPrice = (p: number | null) =>
-  p ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(p) : 'Su richiesta';
+const formatPrice = (p: number | null): string =>
+  p ? new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(p) : 'Prezzo da impostare';
 
 interface EvidenzaModalProps {
   open: boolean;

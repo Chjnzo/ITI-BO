@@ -104,11 +104,14 @@ INSERT INTO public.immobili (id, titolo, prezzo, mq, locali, bagni, indirizzo, t
     ('00000000-0000-0000-0000-000000000604', 'Attico in Piazza Pontida',        410000, 120, '4', 2, 'Piazza Pontida 5',    'Attico',    'Venduto',     'attico-piazza-pontida',  'Bergamo', false, false, CURRENT_DATE - 60,        CURRENT_DATE - 5);
 
 -- Stato pipeline: 601 e 602 in 'In Vendita', 603 e 604 in 'Venduto'.
-INSERT INTO public.immobile_pipeline_stato (immobile_id, fase, updated_at) VALUES
-    ('00000000-0000-0000-0000-000000000601', 'In Vendita', now()),
-    ('00000000-0000-0000-0000-000000000602', 'In Vendita', now()),
-    ('00000000-0000-0000-0000-000000000603', 'Venduto',    now() - interval '20 days'),
-    ('00000000-0000-0000-0000-000000000604', 'Venduto',    now() - interval '60 days');
+-- La sottofase è obbligatoria per il CHECK constraint aggiunto dalla migration
+-- 20260910120000 (i valori validi dipendono dalla fase, il DEFAULT
+-- 'Preparazione' non è compatibile con Venduto).
+INSERT INTO public.immobile_pipeline_stato (immobile_id, fase, sottofase, updated_at) VALUES
+    ('00000000-0000-0000-0000-000000000601', 'In Vendita', 'Preparazione', now()),
+    ('00000000-0000-0000-0000-000000000602', 'In Vendita', 'Preparazione', now()),
+    ('00000000-0000-0000-0000-000000000603', 'Venduto',    'Preliminare',  now() - interval '20 days'),
+    ('00000000-0000-0000-0000-000000000604', 'Venduto',    'Rogito',       now() - interval '60 days');
 
 -- Checklist documenti: popoliamo tutte le righe dal catalogo per la fase
 -- pipeline corrente, replicando esattamente ciò che farebbe
@@ -147,10 +150,10 @@ FROM public.documenti_catalogo dc WHERE dc.fase = 'Venduto';
 
 -- Pratiche: 3 senza immobile (501, 502) e 4 con immobile collegato
 -- (503→601, 505→602, 506→603, 507→604). Ordine INSERT invariato ma con la
--- pratica 511 spostata a 'Incontro/Sopralluogo' visto che 'Contatto' non
+-- pratica 511 spostata a 'Valutazione' visto che 'Contatto' non
 -- esiste più (migration 20260907120000_remove_contatto_fase_proprietari).
 INSERT INTO public.proprietari_pratiche (id, proprietario_id, via, tipologia, citta, fase, immobile_id, valutazione_stimata) VALUES
-    ('00000000-0000-0000-0000-000000000511', '00000000-0000-0000-0000-000000000501', 'Via Palma il Vecchio 15', 'Bilocale',  'Bergamo', 'Incontro/Sopralluogo', NULL,                                     NULL),
+    ('00000000-0000-0000-0000-000000000511', '00000000-0000-0000-0000-000000000501', 'Via Palma il Vecchio 15', 'Bilocale',  'Bergamo', 'Valutazione', NULL,                                     NULL),
     ('00000000-0000-0000-0000-000000000512', '00000000-0000-0000-0000-000000000502', 'Via San Bernardino 4',    'Trilocale', 'Bergamo', 'Rivalutazione',        NULL,                                     NULL),
     ('00000000-0000-0000-0000-000000000513', '00000000-0000-0000-0000-000000000503', 'Via Colle Aperto 12',     'Trilocale', 'Bergamo', 'Presa in carico',      '00000000-0000-0000-0000-000000000601', 320000),
     ('00000000-0000-0000-0000-000000000515', '00000000-0000-0000-0000-000000000505', 'Via Broseta 40',          'Bilocale',  'Bergamo', 'Presa in carico',      '00000000-0000-0000-0000-000000000602', 155000),

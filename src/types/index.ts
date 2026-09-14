@@ -65,6 +65,7 @@ export interface Property {
   is_deleted?: boolean;
   deleted_at?: string;
   visibile?: boolean;
+  pubblicato_sito?: boolean;
   proprietario_id?: string;
   zona_venditore?: string;
   motivazione_vendita?: string;
@@ -86,7 +87,7 @@ export type Sottofase = SottofaseInVendita | SottofaseVenduto;
 export const SOTTOFASI_IN_VENDITA: SottofaseInVendita[] = ['Preparazione', 'Pubblicato', 'In trattativa'];
 export const SOTTOFASI_VENDUTO: SottofaseVenduto[] = ['Vincolo', 'Preliminare', 'Rogito', 'Archivio'];
 
-export type FaseProprietario = 'Incontro/Sopralluogo' | 'Rivalutazione' | 'Presa in carico';
+export type FaseProprietario = 'Valutazione' | 'Rivalutazione' | 'Presa in carico';
 
 export interface Proprietario {
   id: string;
@@ -124,19 +125,6 @@ export interface ImmobilePipelineStato {
   immobile_id: string;
   fase: FasePipeline;
   sottofase: Sottofase;
-  updated_at: string;
-}
-
-export interface PipelineScadenza {
-  id: string;
-  immobile_id: string | null;
-  pratica_id: string | null;
-  fase: string;
-  sottofase: string | null;
-  descrizione: string | null;
-  scadenza: string;
-  completata: boolean;
-  created_at: string;
   updated_at: string;
 }
 
@@ -208,13 +196,19 @@ export interface LeadRicerca {
 
 export interface Task {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
+  contatto_id: string | null;
+  immobile_id: string | null;
   agente_id: string;
-  tipologia: 'Chiamata' | 'WhatsApp' | 'Appuntamento';
-  stato: 'Da fare' | 'In corso' | 'Completata';
+  titolo: string | null;
+  telefono: string | null;
+  nota: string | null;
   data: string;
-  ora?: string;
-  nota?: string;
+  ora: string | null;
+  stato: 'Da fare' | 'Completata';
+  colore: string | null;
+  urgente: boolean;
+  origine: 'contatti' | 'gestione';
 }
 
 export interface ImmobileUnita {

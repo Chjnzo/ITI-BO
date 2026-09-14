@@ -13,8 +13,12 @@ interface KanbanCardProps {
   dragging?: boolean;
 }
 
-const formatPrice = (price?: number) => {
-  if (!price) return 'Su richiesta';
+// Ritorna null (non "Su richiesta") quando il prezzo manca, così la card lo
+// mostra vuoto con un placeholder "Prezzo da impostare" muted: segnale
+// visibile che l'agente deve ancora inserirlo, senza dare falsa impressione
+// di prezzo "trattabile" come farebbe "Su richiesta".
+const formatPrice = (price?: number): string | null => {
+  if (!price) return null;
   return new Intl.NumberFormat('it-IT', {
     style: 'currency',
     currency: 'EUR',
@@ -74,7 +78,11 @@ const KanbanCard = ({ card, onOpen, dragging }: KanbanCardProps) => {
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.prezzo)}</span>
+        {formatPrice(card.prezzo) ? (
+          <span className="font-bold text-gray-900 text-sm shrink-0">{formatPrice(card.prezzo)}</span>
+        ) : (
+          <span className="text-xs italic text-gray-300 shrink-0">Prezzo da impostare</span>
+        )}
         <div className="flex items-center gap-1 min-w-0">
           {card.pubblicato_sito && (
             <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[0.6rem] font-bold uppercase">Online</Badge>

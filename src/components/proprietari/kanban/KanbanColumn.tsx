@@ -1,5 +1,4 @@
 import { useDroppable } from '@dnd-kit/core';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import KanbanCard from './KanbanCard';
 import type { FaseProprietario } from '@/types';
@@ -16,7 +15,7 @@ const KanbanColumn = ({ fase, cards, onOpen, activeId }: KanbanColumnProps) => {
   const { setNodeRef, isOver } = useDroppable({ id: fase });
 
   return (
-    <div className="flex flex-col w-80 shrink-0 h-full">
+    <div className="flex flex-col min-w-[20rem] flex-1 h-full">
       <div className="flex items-center justify-between px-2 pb-3 shrink-0">
         <h3 className="font-extrabold text-gray-900 text-sm uppercase tracking-wide">{fase}</h3>
         <span className="text-xs font-bold text-gray-400 bg-gray-100 rounded-full px-2.5 py-0.5">{cards.length}</span>
@@ -28,7 +27,10 @@ const KanbanColumn = ({ fase, cards, onOpen, activeId }: KanbanColumnProps) => {
           isOver && 'bg-[#94b0ab]/10 border-[#94b0ab]/30',
         )}
       >
-        <ScrollArea className="h-full pr-1">
+        {/* Vedi commento in properties/kanban/KanbanColumn: Radix ScrollArea
+            forzava fit-content sui figli, le card risultavano più strette del
+            box. Overflow nativo per far filler width:100%. */}
+        <div className="h-full overflow-y-auto">
           <div className="flex flex-col gap-3 p-1">
             {cards.length === 0 ? (
               <p className="text-center text-xs text-gray-400 italic py-8">Nessuna pratica</p>
@@ -43,7 +45,7 @@ const KanbanColumn = ({ fase, cards, onOpen, activeId }: KanbanColumnProps) => {
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );

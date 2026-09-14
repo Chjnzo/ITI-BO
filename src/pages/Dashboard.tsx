@@ -34,6 +34,12 @@ interface TodayAppointment {
   immobili?: { titolo: string } | null;
 }
 
+interface ContattoChild {
+  id: string;
+  nome: string;
+  cognome: string | null;
+}
+
 interface PendingTask {
   id: string;
   titolo: string | null;
@@ -43,7 +49,32 @@ interface PendingTask {
   ora: string | null;
   urgente: boolean;
   leads?: { nome: string; cognome: string } | null;
+  // Embed 1:1 verso proprietari/acquirenti/collaboratori via contatti.id.
+  //
+  // PostgREST restituisce l'oggetto singolo (non array) quando rileva la
+  // relazione 1:1 via PK condivisa, e `null` quando non c'è la riga figlia.
+  // Copriamo entrambe le forme (`ContattoChild | ContattoChild[] | null`)
+  // perché il formato può variare tra versioni di PostgREST/opzioni di query.
+  contatti?: {
+    proprietari: ContattoChild | ContattoChild[] | null;
+    acquirenti: ContattoChild | ContattoChild[] | null;
+    collaboratori: ContattoChild | ContattoChild[] | null;
+  } | null;
 }
+
+const firstOf = <T,>(v: T | T[] | null | undefined): T | null => {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+};
+
+const getTaskContactName = (task: PendingTask): string | null => {
+  const row = firstOf(task.contatti?.proprietari)
+    ?? firstOf(task.contatti?.acquirenti)
+    ?? firstOf(task.contatti?.collaboratori);
+  if (row) return `${row.nome} ${row.cognome ?? ''}`.trim();
+  if (task.leads) return `${task.leads.nome} ${task.leads.cognome}`.trim();
+  return null;
+};
 
 const ORIZZONTI_TASK = [
   { value: 'oggi', label: 'Oggi', giorni: 0 },
@@ -130,7 +161,15 @@ const Dashboard = () => {
           .order('ora_inizio', { ascending: true }),
         supabase
           .from('tasks')
-          .select('id, titolo, nota, data, ora, stato, urgente, leads(nome, cognome)')
+          .select(`
+            id, titolo, nota, data, ora, stato, urgente,
+            leads(nome, cognome),
+            contatti(
+              proprietari(id, nome, cognome),
+              acquirenti(id, nome, cognome),
+              collaboratori(id, nome, cognome)
+            )
+          `)
           .neq('stato', 'Completata')
           .eq('agente_id', user.id)
           .lte('data', horizon10)
@@ -371,7 +410,7 @@ const Dashboard = () => {
               <div className="space-y-3">
                 {displayedTasks.map(task => {
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
-                  const leadName = task.leads ? `${task.leads.nome} ${task.leads.cognome}` : null;
+                  const leadName = getTaskContactName(task);
                   return (
                     <div
                       key={task.id}

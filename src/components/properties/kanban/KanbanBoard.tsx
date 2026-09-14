@@ -70,8 +70,14 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: Ka
     } as Record<FasePipeline, PipelineCard[]>;
   }, [cards, searchQuery]);
 
+  // Archivio è una sottofase valida a livello DB/tipo ma NON viene mostrata
+  // come colonna kanban: gli immobili archiviati vivono in un elenco a parte
+  // accessibile via bottone dedicato (ArchivioModal). Il passaggio a
+  // Archivio si fa dal PipelineDetailSheet con pulsante "Manda in archivio".
   const sottofasi: Sottofase[] =
-    faseAttiva === 'In Vendita' ? SOTTOFASI_IN_VENDITA : SOTTOFASI_VENDUTO;
+    faseAttiva === 'In Vendita'
+      ? SOTTOFASI_IN_VENDITA
+      : SOTTOFASI_VENDUTO.filter((s) => s !== 'Archivio');
 
   const cardsPerSottofase = useMemo(() => {
     const grouped: Record<string, PipelineCard[]> = {};

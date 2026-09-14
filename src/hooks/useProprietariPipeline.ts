@@ -5,7 +5,7 @@ import { upsertFasePipeline, generaChecklistPerFase } from '@/lib/pipelineCheckl
 import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
 import type { FaseProprietario } from '@/types';
 
-export const FASI_PROPRIETARI: FaseProprietario[] = ['Incontro/Sopralluogo', 'Rivalutazione', 'Presa in carico'];
+export const FASI_PROPRIETARI: FaseProprietario[] = ['Valutazione', 'Rivalutazione', 'Presa in carico'];
 
 export interface PraticaCard {
   id: string;
@@ -65,8 +65,8 @@ export const useProprietariPipeline = () => {
       return ((data ?? []) as unknown as RawPraticaRow[])
         .map((row) => {
           // Stesso criterio di useImmobiliPipeline: la checklist mostrata conta
-          // solo i documenti della fase corrente (Incontro/Sopralluogo e
-          // Rivalutazione non hanno documenti in catalogo, quindi restano 0/0).
+          // solo i documenti della fase corrente (Valutazione e Rivalutazione
+          // non hanno documenti in catalogo, quindi restano 0/0).
           const documentiFaseCorrente = (row.documenti ?? []).filter((d) => d.fase === row.fase);
           return {
             id: row.id,
@@ -85,17 +85,12 @@ export const useProprietariPipeline = () => {
             docCompletati: documentiFaseCorrente.filter((d) => d.stato === 'Fatto').length,
           };
         })
-        // Passaggio automatico Proprietari → In Vendita: quando l'ultima fase
-        // della sezione Proprietari (Presa in carico) ha la checklist tutta
-        // completata (e la pratica ha già un immobile collegato, creato da
-        // spostaFase → creaImmobileDaPratica), la pratica sparisce dal kanban
-        // Proprietari. La card immobile resta visibile in In Vendita.
-        .filter((card) => !(
-          card.fase === 'Presa in carico'
-          && card.immobile_id
-          && card.docTotali > 0
-          && card.docCompletati === card.docTotali
-        ));
+        // Filtro anti-doppione (2026-09-14): appena una pratica ha un
+        // `immobile_id` significa che l'utente ha cliccato "Passa a In
+        // preparazione" e l'immobile è già in gestione. La pratica sparisce
+        // dal kanban proprietari — altrimenti apparirebbe contemporaneamente
+        // qui e nel kanban immobili (bug segnalato in test 2026-09-14).
+        .filter((card) => !card.immobile_id);
     },
     staleTime: 30_000,
   });
@@ -112,9 +107,10 @@ export const useProprietariPipeline = () => {
       // si genera da sola, va creata per la fase appena raggiunta. Idempotente.
       await generaChecklistPraticaPerFase(praticaId, fase);
 
-      if (fase === 'Presa in carico') {
-        await creaImmobileDaPratica(praticaId);
-      }
+      // Nota: la creazione automatica dell'immobile all'ingresso in "Presa in
+      // carico" è stata rimossa il 2026-09-14. Il passaggio in gestione è ora
+      // esplicito via pulsante "Passa a In preparazione" in PraticaDetailSheet
+      // (spec utente: tutto manuale, checklist non guida più il flow).
     },
     onMutate: async ({ praticaId, fase }) => {
       await queryClient.cancelQueries({ queryKey: QUERY_KEY });
@@ -144,17 +140,12 @@ export const useProprietariPipeline = () => {
   return { ...query, spostaFase: spostaFase.mutate };
 };
 
-// Quando una pratica arriva a "Presa in carico" (presa d'incarico firmata) si
-// crea automaticamente l'immobile corrispondente in gestione immobili,
-// saltando la fase "Acquisizione" della pipeline immobili: l'acquisizione è
-// appena avvenuta qui, nella pipeline proprietari. L'immobile entra
-// direttamente in "In Vendita" come bozza (stato 'Bozza', stesso comportamento
-// di default di PropertyWizard alla creazione — non tocchiamo `visibile`,
-// resta il default true come per ogni altro immobile appena creato), da
-// completare con foto/prezzo/dettagli tramite PropertyWizard. Idempotente: se
-// la pratica ha già un immobile_id (es. spostata avanti e indietro sulla
-// colonna "Presa in carico"), non ne crea un secondo.
-const creaImmobileDaPratica = async (praticaId: string) => {
+// La vecchia helper `creaImmobileDaPratica` (auto-crea l'immobile
+// all'ingresso in "Presa in carico") è stata rimossa il 2026-09-14: il
+// passaggio in gestione ora avviene solo su click esplicito del pulsante
+// "Passa a In preparazione" in PraticaDetailSheet (mutation
+// `passaAInPreparazione` che duplica la logica inline con feedback utente).
+export const _creaImmobileDaPraticaLegacy = async (praticaId: string) => {
   const { data: pratica, error: praticaError } = await supabase
     .from('proprietari_pratiche')
     .select('id, proprietario_id, via, tipologia, citta, immobile_id, valutazione_stimata, motivazione_vendita, scadenza_esclusiva')
@@ -162,6 +153,19 @@ const creaImmobileDaPratica = async (praticaId: string) => {
     .single();
   if (praticaError) throw praticaError;
   if (pratica.immobile_id) return;
+
+  // Se il proprietario ha già un link Drive impostato sul contatto (inserito
+  // manualmente da ProprietarioSchedaSheet o creato lazy dall'Edge Function
+  // drive-documenti), l'immobile lo eredita: un solo link coerente segue
+  // l'immobile dal momento in cui entra in gestione. Se il contatto non ha
+  // ancora un link, l'immobile resta con drive_folder_url NULL e verrà
+  // popolato dalla lazy-creation successiva (createFolder qui sotto o al
+  // primo upload di documento in PipelineDetailSheet).
+  const { data: contattoDrive } = await supabase
+    .from('contatti')
+    .select('drive_folder_url')
+    .eq('id', pratica.proprietario_id)
+    .maybeSingle();
 
   const baseSlug = (pratica.via || 'immobile').toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
   const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
@@ -179,6 +183,7 @@ const creaImmobileDaPratica = async (praticaId: string) => {
       motivazione_vendita: pratica.motivazione_vendita,
       scadenza_esclusiva: pratica.scadenza_esclusiva,
       proprietario_id: pratica.proprietario_id,
+      drive_folder_url: contattoDrive?.drive_folder_url ?? null,
       stato: 'Bozza',
       slug,
     })

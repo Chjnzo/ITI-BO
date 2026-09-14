@@ -15,13 +15,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Plus, Search, Check, CalendarIcon, User, StickyNote,
-  ChevronDown, ChevronRight, Phone, AlertTriangle,
+  ChevronDown, ChevronRight, Phone, AlertTriangle, ExternalLink, Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { type AgentProfile } from '@/components/agenda/EventFormModal';
+import { useContactNotes } from '@/hooks/useContactNotes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ interface Task {
   id: string;
   lead_id: string | null;
   contatto_id: string | null;
+  immobile_id: string | null;
   agente_id: string;
   titolo: string | null;
   telefono: string | null;
@@ -47,13 +49,15 @@ interface Task {
   urgente: boolean;
   origine: 'contatti' | 'gestione';
   leads?: { id: string; nome: string; cognome: string } | null;
-  // Embed 1:1 verso proprietari/acquirenti/collaboratori via contatti.id ===
-  // tasks.contatto_id: PostgREST li restituisce come array (0 o 1 elemento).
+  // Embed via contatti.id === tasks.contatto_id. PostgREST rileva la relazione
+  // 1:1 (PK condivisa) e restituisce l'oggetto singolo (non array) quando la
+  // riga figlio esiste, o `null` quando non esiste. Copriamo entrambi i casi.
   contatti?: {
-    proprietari: ContattoChild[];
-    acquirenti: ContattoChild[];
-    collaboratori: ContattoChild[];
+    proprietari: ContattoChild | ContattoChild[] | null;
+    acquirenti: ContattoChild | ContattoChild[] | null;
+    collaboratori: ContattoChild | ContattoChild[] | null;
   } | null;
+  immobili?: { id: string; titolo: string; indirizzo: string; citta: string } | null;
 }
 
 type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
@@ -62,11 +66,16 @@ type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
 // lead legacy. Priorità al nuovo modello: se task.contatti ha un match in
 // proprietari/acquirenti/collaboratori lo usiamo, altrimenti cadiamo su
 // task.leads (task pre-pivot ancora agganciate a lead_id).
+const firstOf = <T,>(v: T | T[] | null | undefined): T | null => {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+};
+
 const getContactInfo = (task: Task): { name: string | null; phone: string | null; tipo: ContattoTipo | 'leads' | null; targetId: string | null } => {
   if (task.contatti) {
     const tipi: ContattoTipo[] = ['proprietari', 'acquirenti', 'collaboratori'];
     for (const t of tipi) {
-      const row = task.contatti[t]?.[0];
+      const row = firstOf(task.contatti[t]);
       if (row) {
         return {
           name: `${row.nome} ${row.cognome ?? ''}`.trim(),
@@ -102,11 +111,6 @@ const bucketOf = (task: Task, now: Date): Bucket => {
   const endMonth = endOfMonth(today);
   if (!isAfter(d, endMonth)) return 'mese';
   return 'oltre';
-};
-
-const ORIGINE_BADGE: Record<'contatti' | 'gestione', { label: string; className: string }> = {
-  contatti: { label: 'Contatti', className: 'bg-sky-50 text-sky-700 border-sky-200' },
-  gestione: { label: 'Gestione', className: 'bg-violet-50 text-violet-700 border-violet-200' },
 };
 
 // Config visiva delle 4 colonne fisse (etichetta + colori bordo/pallino/titolo).
@@ -163,7 +167,6 @@ const TaskCard = React.memo(({ task, onToggleComplete, onToggleUrgente, onOpenLe
   const isUrgent = task.urgente && !isComplete;
   const contact = getContactInfo(task);
   const leadName = contact.name;
-  const originBadge = ORIGINE_BADGE[task.origine] ?? ORIGINE_BADGE.contatti;
   const hasContactLink = contact.tipo !== null;
 
   const borderColor = isComplete ? '#6ee7b7' : isUrgent ? '#ef4444' : (task.colore ?? 'transparent');
@@ -202,12 +205,6 @@ const TaskCard = React.memo(({ task, onToggleComplete, onToggleUrgente, onOpenLe
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn(
-            'text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded-md border shrink-0',
-            originBadge.className,
-          )}>
-            {originBadge.label}
-          </span>
           {leadName && task.titolo && (
             <span className="text-xs text-gray-500 truncate">{leadName}</span>
           )}
@@ -282,9 +279,17 @@ const Tasks = () => {
   const [beyondExpanded, setBeyondExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
-  const [origineFilter, setOrigineFilter] = useState<'tutte' | 'contatti' | 'gestione'>('tutte');
   const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
+  const taskDetailContattoId = taskDetail ? getContactInfo(taskDetail).targetId : null;
+  const taskDetailContattoTipo = taskDetail ? getContactInfo(taskDetail).tipo : null;
+  // Anteprima delle ultime note del contatto collegato: apre uno sguardo
+  // rapido sullo storico senza dover uscire dalla task. Nascoste per i lead
+  // legacy (contattoTipo === 'leads') dove il useContactNotes non funziona
+  // (usa contatto_id, non lead_id).
+  const { data: taskDetailNotes = [] } = useContactNotes(
+    taskDetailContattoTipo && taskDetailContattoTipo !== 'leads' ? taskDetailContattoId : null,
+  );
   const [taskDetailNota, setTaskDetailNota] = useState('');
   const [taskDetailTitolo, setTaskDetailTitolo] = useState('');
   const [taskDetailTelefono, setTaskDetailTelefono] = useState('');
@@ -314,13 +319,14 @@ const Tasks = () => {
     const { data, error } = await supabase
       .from('tasks')
       .select(`
-        id, titolo, telefono, lead_id, contatto_id, agente_id, nota, data, ora, stato, colore, urgente, origine,
+        id, titolo, telefono, lead_id, contatto_id, immobile_id, agente_id, nota, data, ora, stato, colore, urgente, origine,
         leads(id, nome, cognome),
         contatti(
           proprietari(id, nome, cognome, telefono),
           acquirenti(id, nome, cognome, telefono),
           collaboratori(id, nome, cognome, telefono)
-        )
+        ),
+        immobili(id, titolo, indirizzo, citta)
       `)
       .or(`stato.eq.Da fare,and(stato.eq.Completata,data.gte.${thirtyDaysAgo})`)
       .order('data', { ascending: true })
@@ -401,10 +407,12 @@ const Tasks = () => {
 
   // ── Derived data ─────────────────────────────────────────────────────────────
 
-  // Base: all pending matching search + date filter + origine filter
+  // Base: all pending matching search + date filter. Il vecchio filtro per
+  // "origine" (Contatti/Gestione) è stato rimosso il 2026-09-14 — l'utente
+  // vuole vedere l'elenco unificato senza segmentazioni artificiali. La
+  // colonna DB `tasks.origine` resta per audit ma non è più esposta in UI.
   const filteredPending = useMemo(() => tasks.filter(t => {
     if (t.stato === 'Completata') return false;
-    if (origineFilter !== 'tutte' && t.origine !== origineFilter) return false;
     const info = getContactInfo(t);
     const q = searchQuery.toLowerCase();
     const matchesSearch = !q
@@ -415,7 +423,7 @@ const Tasks = () => {
       || (info.phone?.toLowerCase().includes(q) ?? false);
     const matchesDate = !dateFilter || t.data === dateFilter;
     return matchesSearch && matchesDate;
-  }), [tasks, searchQuery, dateFilter, origineFilter]);
+  }), [tasks, searchQuery, dateFilter]);
 
   // Personale: filtered to current user
   const personalPending = useMemo(() =>
@@ -464,9 +472,8 @@ const Tasks = () => {
   const completedTasks = useMemo(() => tasks.filter(t => {
     if (t.stato !== 'Completata') return false;
     if (t.agente_id !== currentUserId) return false;
-    if (origineFilter !== 'tutte' && t.origine !== origineFilter) return false;
     return true;
-  }), [tasks, currentUserId, origineFilter]);
+  }), [tasks, currentUserId]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -474,8 +481,12 @@ const Tasks = () => {
     <AdminLayout fullHeight>
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
-        {/* Header — Agenda style */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 shrink-0">
+        {/* Header — Agenda style. Riga controlli fissa (tabs + search + data
+            + Nuova Task): posizione IDENTICA in Personale e Generale, così il
+            pulsante "Nuova Task" non si sposta cambiando vista. I toggle
+            agente della modalità Generale vivono in una riga separata sotto
+            (rendering condizionale), che non altera la layout della prima. */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4 shrink-0">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">Task</h1>
             <p className="text-gray-500 mt-1 font-medium">
@@ -497,43 +508,6 @@ const Tasks = () => {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
-
-            {/* Origine filter (Contatti / Gestione / Tutte) */}
-            <Tabs value={origineFilter} onValueChange={(v) => setOrigineFilter(v as typeof origineFilter)}>
-              <TabsList className="grid w-[280px] grid-cols-3 rounded-full p-1 bg-muted/50 border border-gray-100">
-                <TabsTrigger value="tutte" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-gray-800 data-[state=active]:text-white">
-                  Tutte
-                </TabsTrigger>
-                <TabsTrigger value="contatti" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-sky-600 data-[state=active]:text-white">
-                  Contatti
-                </TabsTrigger>
-                <TabsTrigger value="gestione" className="rounded-full px-3 text-xs font-semibold data-[state=active]:bg-violet-600 data-[state=active]:text-white">
-                  Gestione
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
-
-            {/* Agent visibility toggles (Generale only) */}
-            {viewMode === 'generale' && agents.map(agent => {
-              const color = agent.colore_calendario ?? '#94b0ab';
-              const isHidden = hiddenAgents.has(agent.id);
-              return (
-                <button
-                  key={agent.id}
-                  type="button"
-                  title={isHidden ? `Mostra ${agent.nome_completo}` : `Nascondi ${agent.nome_completo}`}
-                  onClick={() => toggleAgentVisibility(agent.id)}
-                  className="rounded-xl px-3 py-1 text-xs font-bold border transition-all h-9"
-                  style={{
-                    backgroundColor: isHidden ? '#f3f4f6' : hexWithOpacity(color, 0.12),
-                    borderColor: isHidden ? '#e5e7eb' : color,
-                    color: isHidden ? '#9ca3af' : color,
-                  }}
-                >
-                  {agent.nome_completo ?? agent.id}
-                </button>
-              );
-            })}
 
             {/* Search */}
             <div className="relative">
@@ -581,7 +555,7 @@ const Tasks = () => {
               </Button>
             )}
 
-            {/* New task */}
+            {/* New task — deve stare qui in tutte le viste (Personale + Generale). */}
             <Button
               onClick={() => setIsTaskModalOpen(true)}
               className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-2xl px-7 h-11 shadow-lg shadow-[#94b0ab]/20 font-bold transition-all"
@@ -590,6 +564,34 @@ const Tasks = () => {
             </Button>
           </div>
         </div>
+
+        {/* Toggle visibilità agenti — riga separata, solo in Generale. Sta
+            SOTTO la riga controlli per non spostare "Nuova Task" quando ci
+            sono molti agenti (che altrimenti forzerebbero il wrap). */}
+        {viewMode === 'generale' && (
+          <div className="flex items-center gap-2 flex-wrap mb-4 shrink-0">
+            {agents.map(agent => {
+              const color = agent.colore_calendario ?? '#94b0ab';
+              const isHidden = hiddenAgents.has(agent.id);
+              return (
+                <button
+                  key={agent.id}
+                  type="button"
+                  title={isHidden ? `Mostra ${agent.nome_completo}` : `Nascondi ${agent.nome_completo}`}
+                  onClick={() => toggleAgentVisibility(agent.id)}
+                  className="rounded-xl px-3 py-1 text-xs font-bold border transition-all h-9"
+                  style={{
+                    backgroundColor: isHidden ? '#f3f4f6' : hexWithOpacity(color, 0.12),
+                    borderColor: isHidden ? '#e5e7eb' : color,
+                    color: isHidden ? '#9ca3af' : color,
+                  }}
+                >
+                  {agent.nome_completo ?? agent.id}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Content area */}
         <div className="flex-1 min-h-0 relative">
@@ -773,9 +775,9 @@ const Tasks = () => {
                                   key={task.id}
                                   task={task}
                                   onToggleComplete={toggleComplete}
-                              onToggleUrgente={toggleUrgente}
+                                  onToggleUrgente={toggleUrgente}
                                   onOpenLead={openLeadProfile}
-                              onOpenDetail={openTaskDetail}
+                                  onOpenDetail={openTaskDetail}
                                   onUpdateDate={updateTaskDate}
                                 />
                               ))}
@@ -803,7 +805,9 @@ const Tasks = () => {
       <Dialog open={!!taskDetail} onOpenChange={(open) => { if (!open) setTaskDetail(null); }}>
         <DialogContent className="max-w-xl w-full border-none shadow-2xl p-0 overflow-hidden gap-0">
           {taskDetail && (() => {
-            const leadName = getContactInfo(taskDetail).name;
+            const contactInfo = getContactInfo(taskDetail);
+            const leadName = contactInfo.name;
+            const immobile = taskDetail.immobili;
             return (
               <>
                 {/* Header */}
@@ -816,8 +820,34 @@ const Tasks = () => {
                       placeholder={leadName || 'Titolo task...'}
                       className="w-full bg-transparent text-sm font-bold text-gray-800 placeholder-gray-400 outline-none border-b border-transparent focus:border-[#94b0ab]/40 transition-colors pb-0.5"
                     />
+                    {/* Pill link "Apri scheda contatto" — stile pill riconoscibile
+                        con icona utente + freccia esterna: chiaramente cliccabile
+                        (bordo, sfondo teal chiaro, hover pieno), non un semplice
+                        testo. Stessa impronta visiva usata per il pulsante
+                        Immobile subito sotto. */}
                     {leadName && (
-                      <p className="text-[11px] text-gray-500 truncate mt-0.5">{leadName}</p>
+                      <button
+                        type="button"
+                        onClick={() => { openLeadProfile(taskDetail); setTaskDetail(null); }}
+                        className="mt-1.5 inline-flex items-center gap-1.5 rounded-lg border border-[#94b0ab]/40 bg-white text-[#94b0ab] hover:bg-[#94b0ab] hover:text-white transition-colors px-2 py-1 text-[11px] font-bold group/link max-w-full"
+                        title="Apri scheda contatto"
+                      >
+                        <User size={11} className="shrink-0" />
+                        <span className="truncate">{leadName}</span>
+                        <ExternalLink size={10} className="shrink-0 opacity-70 group-hover/link:opacity-100" />
+                      </button>
+                    )}
+                    {immobile && (
+                      <button
+                        type="button"
+                        onClick={() => { navigate(`/immobili`, { state: { openImmobileId: immobile.id } }); setTaskDetail(null); }}
+                        className="mt-1.5 ml-1.5 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100 hover:text-gray-800 transition-colors px-2 py-1 text-[11px] font-semibold group/link max-w-full"
+                        title="Apri scheda immobile"
+                      >
+                        <Home size={11} className="shrink-0" />
+                        <span className="truncate">{immobile.titolo}</span>
+                        <ExternalLink size={10} className="shrink-0 opacity-70 group-hover/link:opacity-100" />
+                      </button>
                     )}
                   </div>
                   <div className="text-right shrink-0">
@@ -869,6 +899,30 @@ const Tasks = () => {
                       className="rounded-xl border-gray-200 bg-slate-50/60 min-h-[90px] resize-none text-[13px] leading-relaxed"
                     />
                   </div>
+                  {/* Anteprima ultime note del contatto collegato (post-pivot).
+                      Fornisce contesto senza far uscire dalla task; per lo
+                      storico completo l'utente clicca sul nome contatto in
+                      alto per aprire la scheda. */}
+                  {taskDetailNotes.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                        Ultime note {leadName ? `di ${leadName}` : ''}
+                      </Label>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {taskDetailNotes.slice(0, 3).map((n) => (
+                          <div key={n.id} className="rounded-lg border border-gray-100 px-2.5 py-1.5 bg-slate-50/40">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-[10px] font-bold text-[#94b0ab]">{n.autore}</span>
+                              <span className="text-[9px] text-gray-300">
+                                {format(parseISO(n.created_at), 'd MMM', { locale: it })}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-gray-600 whitespace-pre-wrap line-clamp-3">{n.testo}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="px-5 py-3 bg-gray-50 border-t border-gray-100 flex justify-end gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setTaskDetail(null)} className="rounded-xl h-8 px-4 text-xs font-bold text-gray-500">
