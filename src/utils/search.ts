@@ -5,15 +5,21 @@ export const stripDigits = (s: string): string => s.replace(/\D/g, '');
 export const escapeLike = (s: string): string => s.replace(/[%_\\]/g, '\\$&');
 
 /**
- * Builds an array of PostgREST OR-clause strings for a lead name/phone search.
+ * Builds an array of PostgREST OR-clause strings for a contact search.
  *
  * Strategy:
  * - Split the query into whitespace tokens → each token must match at least one
  *   field (AND between tokens, OR within each token's fields).
  * - If the whole query is phone-like (only digits/spaces/dashes/+), also add a
- *   digit-sequence pattern so "3331234567" matches "333 123 4567" stored in DB.
+ *   digit-sequence pattern so "3331234567" matches "333 123 4567" stored in DB
+ *   (applicato sia a `telefono` che a `cellulare`).
+ *
+ * @param q  Testo digitato dall'utente.
+ * @param extraFields  Colonne aggiuntive da coprire, specifiche della tabella
+ *   (es. `['via_immobile', 'citta_immobile']` per proprietari). Vengono
+ *   incluse in ogni token con lo stesso ILIKE dei campi base.
  */
-export function buildLeadSearchClauses(q: string): string[] {
+export function buildLeadSearchClauses(q: string, extraFields: string[] = []): string[] {
   const trimmed = q.trim();
   if (!trimmed) return [];
 
@@ -32,10 +38,14 @@ export function buildLeadSearchClauses(q: string): string[] {
       `nome.ilike.%${token}%`,
       `cognome.ilike.%${token}%`,
       `telefono.ilike.%${token}%`,
+      `cellulare.ilike.%${token}%`,
+      ...extraFields.map((f) => `${f}.ilike.%${token}%`),
     ];
-    // Add digit-sequence pattern only on the first (and usually only) token
+    // Add digit-sequence pattern solo sul primo token (di solito è quello con
+    // il telefono intero). Applicato a entrambe le colonne fisso/cellulare.
     if (phonePattern && i === 0) {
       clauses.push(`telefono.ilike.${phonePattern}`);
+      clauses.push(`cellulare.ilike.${phonePattern}`);
     }
     return clauses.join(',');
   });

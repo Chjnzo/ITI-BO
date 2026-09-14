@@ -1,5 +1,4 @@
 import { useDroppable } from '@dnd-kit/core';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import KanbanCard from './KanbanCard';
 import type { Sottofase } from '@/types';
 import type { PipelineCard } from '@/hooks/useImmobiliPipeline';
@@ -20,7 +19,7 @@ const KanbanColumn = ({ sottofase, cards, onOpen, activeId }: KanbanColumnProps)
   const { setNodeRef, isOver } = useDroppable({ id: sottofase });
 
   return (
-    <div className="flex flex-col w-72 shrink-0 h-full">
+    <div className="flex flex-col min-w-[20rem] flex-1 h-full">
       <div className="flex items-center justify-between px-2 pb-3 shrink-0">
         <h3 className="font-extrabold text-gray-900 text-sm uppercase tracking-wide">{sottofase}</h3>
         <span className="text-xs font-bold text-gray-400 bg-gray-100 rounded-full px-2.5 py-0.5">{cards.length}</span>
@@ -32,7 +31,12 @@ const KanbanColumn = ({ sottofase, cards, onOpen, activeId }: KanbanColumnProps)
           isOver ? 'border-[#94b0ab] bg-[#94b0ab]/5' : 'border-gray-100 bg-gray-50/50',
         )}
       >
-        <ScrollArea className="h-full pr-1">
+        {/* Nativo overflow: la ScrollArea di Radix wrappa i figli in un div
+            con `display:table`/`fit-content`, che faceva rendere le card alla
+            loro larghezza naturale invece che a piena colonna (card visibilmente
+            più strette del box). Con un div overflow-y-auto le card prendono
+            width:100% del genitore, come atteso. */}
+        <div className="h-full overflow-y-auto">
           <div className="flex flex-col gap-3 p-1">
             {cards.length === 0 ? (
               <p className="text-center text-xs text-gray-400 italic py-8">Nessun immobile</p>
@@ -47,7 +51,7 @@ const KanbanColumn = ({ sottofase, cards, onOpen, activeId }: KanbanColumnProps)
               ))
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
     </div>
   );

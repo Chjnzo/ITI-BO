@@ -97,8 +97,8 @@ const Properties = () => {
 
   useEffect(() => { setCurrentPage(1); }, [filter, debouncedSearch]);
 
-  const formatPrice = (price: number) => {
-    if (!price) return 'Su richiesta';
+  const formatPrice = (price?: number | null): string | null => {
+    if (!price) return null;
     return new Intl.NumberFormat('it-IT', {
       style: 'currency',
       currency: 'EUR',
@@ -134,8 +134,16 @@ const Properties = () => {
     }
   };
 
-  const toggleVisibile = async (id: string, current: boolean) => {
-    const { error } = await supabase.from('immobili').update({ visibile: !current }).eq('id', id);
+  // Toggle visibilità: sorgente di verità = `pubblicato_sito` (RLS anon del
+  // sito pubblico legge questo). Manteniamo `visibile` sincronizzato solo per
+  // retrocompat con eventuali query esterne che ancora lo leggono — il
+  // giorno che verifichiamo che nessuno lo usa più, si droppa la colonna.
+  const togglePubblicato = async (id: string, current: boolean) => {
+    const nuovo = !current;
+    const { error } = await supabase
+      .from('immobili')
+      .update({ pubblicato_sito: nuovo, visibile: nuovo })
+      .eq('id', id);
     if (error) showError("Errore visibilità.");
     else refetchProperties();
   };
@@ -253,7 +261,11 @@ const Properties = () => {
                         </div>
                       </td>
                       <td className="px-8 py-5 text-right">
-                        <div className="font-bold text-gray-900 text-lg">{formatPrice(prop.prezzo)}</div>
+                        {formatPrice(prop.prezzo) ? (
+                          <div className="font-bold text-gray-900 text-lg">{formatPrice(prop.prezzo)}</div>
+                        ) : (
+                          <div className="text-sm italic text-gray-300">Prezzo da impostare</div>
+                        )}
                       </td>
                       <td className="px-8 py-5 text-center">
                         <span className={cn(
@@ -283,14 +295,17 @@ const Properties = () => {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
-                                  onClick={() => toggleVisibile(prop.id, prop.visibile ?? true)}
-                                  className={cn("transition-all active:scale-90", prop.visibile === false ? "text-amber-400 hover:text-amber-500" : "text-gray-300 hover:text-gray-500")}
+                                  onClick={() => togglePubblicato(prop.id, prop.pubblicato_sito ?? false)}
+                                  className={cn(
+                                    "transition-all active:scale-90",
+                                    prop.pubblicato_sito ? "text-gray-300 hover:text-gray-500" : "text-amber-400 hover:text-amber-500",
+                                  )}
                                 >
-                                  {prop.visibile === false ? <EyeOff size={18} /> : <Eye size={18} />}
+                                  {prop.pubblicato_sito ? <Eye size={18} /> : <EyeOff size={18} />}
                                 </button>
                               </TooltipTrigger>
                               <TooltipContent className="rounded-xl font-bold">
-                                {prop.visibile === false ? "Nascoste dal sito — clicca per mostrare" : "Visibile sul sito — clicca per nascondere"}
+                                {prop.pubblicato_sito ? "Visibile sul sito — clicca per nascondere" : "Nascoste dal sito — clicca per pubblicare"}
                               </TooltipContent>
                             </Tooltip>
 

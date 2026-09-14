@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
 import ValuationWizard from '@/components/valutazioni/ValuationWizard';
 import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 
 interface AgenteOption {
   id: string;
@@ -32,6 +33,7 @@ interface ProprietarioDetail {
   cognome: string | null;
   email: string | null;
   telefono: string | null;
+  cellulare: string | null;
   professione: string | null;
   note_interne: string | null;
   caldo: boolean;
@@ -89,9 +91,11 @@ const formatMoney = (n: number | null) => n != null ? new Intl.NumberFormat('it-
 
 const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioSchedaSheetProps) => {
   const queryClient = useQueryClient();
+  const { data: currentProfile } = useCurrentProfile();
+  const autoreLoggato = currentProfile?.nome_completo?.trim() || 'Agente';
   const [tab, setTab] = useState('anagrafica');
   const [form, setForm] = useState({
-    nome: '', cognome: '', email: '', telefono: '', professione: '', note_interne: '',
+    nome: '', cognome: '', email: '', telefono: '', cellulare: '', professione: '', note_interne: '',
     via_immobile: '', citta_immobile: '', tipologia_immobile: '',
     zona_venditore: '', motivazione_vendita: '',
     scadenza_esclusiva: '', valutazione_stimata: '',
@@ -111,7 +115,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
     queryFn: async () => {
       const { data, error } = await supabase
         .from('proprietari')
-        .select('id, nome, cognome, email, telefono, professione, note_interne, caldo, via_immobile, citta_immobile, tipologia_immobile, zona_venditore, motivazione_vendita, scadenza_esclusiva, valutazione_stimata, contatti(agente_id, drive_folder_url)')
+        .select('id, nome, cognome, email, telefono, cellulare, professione, note_interne, caldo, via_immobile, citta_immobile, tipologia_immobile, zona_venditore, motivazione_vendita, scadenza_esclusiva, valutazione_stimata, contatti(agente_id, drive_folder_url)')
         .eq('id', proprietarioId!)
         .single();
       if (error) throw error;
@@ -132,6 +136,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
         cognome: proprietario.cognome ?? '',
         email: proprietario.email ?? '',
         telefono: proprietario.telefono ?? '',
+        cellulare: proprietario.cellulare ?? '',
         professione: proprietario.professione ?? '',
         note_interne: proprietario.note_interne ?? '',
         via_immobile: proprietario.via_immobile ?? '',
@@ -180,6 +185,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
       cognome: form.cognome.trim() || null,
       email: form.email.trim() || null,
       telefono: form.telefono.trim() || null,
+      cellulare: form.cellulare.trim() || null,
       professione: form.professione.trim() || null,
       note_interne: form.note_interne.trim() || null,
       via_immobile: form.via_immobile.trim() || null,
@@ -284,7 +290,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
       const { error: noteError } = await supabase.from('lead_notes').insert({
         contatto_id: proprietarioId,
         testo: `Hai scritto "${scadenzaTesto.trim()}" per il ${dataLabel}`,
-        autore: 'Agente',
+        autore: autoreLoggato,
       });
       if (noteError) throw noteError;
     },
@@ -363,7 +369,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
       const { error } = await supabase.from('lead_notes').insert({
         contatto_id: proprietarioId,
         testo: newNoteText.trim(),
-        autore: 'Agente',
+        autore: autoreLoggato,
       });
       if (error) throw error;
     },
@@ -391,7 +397,7 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
                 )}
               </SheetTitle>
               <SheetDescription className="font-medium">
-                {[proprietario.telefono, proprietario.email].filter(Boolean).join(' · ') || 'Proprietario'}
+                {[proprietario.cellulare, proprietario.telefono, proprietario.email].filter(Boolean).join(' · ') || 'Proprietario'}
               </SheetDescription>
             </SheetHeader>
 
@@ -476,13 +482,19 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
                     <Input type="email" value={form.email} onChange={(e) => setForm(f => ({ ...f, email: e.target.value }))} className="rounded-xl" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-gray-500">Telefono</Label>
+                    <Label className="text-xs font-bold text-gray-500">Telefono fisso</Label>
                     <Input value={form.telefono} onChange={(e) => setForm(f => ({ ...f, telefono: e.target.value }))} className="rounded-xl" />
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold text-gray-500">Professione</Label>
-                  <Input value={form.professione} onChange={(e) => setForm(f => ({ ...f, professione: e.target.value }))} className="rounded-xl" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
+                    <Input value={form.cellulare} onChange={(e) => setForm(f => ({ ...f, cellulare: e.target.value }))} className="rounded-xl" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-gray-500">Professione</Label>
+                    <Input value={form.professione} onChange={(e) => setForm(f => ({ ...f, professione: e.target.value }))} className="rounded-xl" />
+                  </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold text-gray-500">Agente abbinato</Label>
@@ -668,6 +680,17 @@ const ProprietarioSchedaSheet = ({ proprietarioId, onClose }: ProprietarioScheda
               </TabsContent>
 
               <TabsContent value="note" className="mt-4 space-y-3">
+                {/* Titolo dinamico: se il proprietario ha un agente assegnato
+                    mostriamo il suo nome, altrimenti "Note" secco. Rende
+                    esplicito che le note sono contestuali all'agente. */}
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                    {(() => {
+                      const nome = agenti.find((a) => a.id === agenteId)?.nome_completo?.trim();
+                      return nome ? `Note di ${nome}` : 'Note';
+                    })()}
+                  </h4>
+                </div>
                 <div className="flex items-start gap-2">
                   <Textarea
                     value={newNoteText}

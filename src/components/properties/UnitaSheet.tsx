@@ -126,8 +126,8 @@ const UnitaSheet = ({ property, onClose }: UnitaSheetProps) => {
     vendute: unita.filter(u => u.stato === 'Venduto').length,
   };
 
-  const formatPrezzo = (p: number | null) =>
-    p ? `€ ${p.toLocaleString('it-IT')}` : 'Su richiesta';
+  const formatPrezzo = (p: number | null): string | null =>
+    p ? `€ ${p.toLocaleString('it-IT')}` : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -343,7 +343,9 @@ const UnitaSheet = ({ property, onClose }: UnitaSheetProps) => {
                   <td className="px-4 py-4 text-center">
                     {u.terrazzo ? <Check size={14} className="text-[#94b0ab] mx-auto" /> : <span className="text-gray-200">—</span>}
                   </td>
-                  <td className="px-4 py-4 text-right font-bold text-gray-800">{formatPrezzo(u.prezzo)}</td>
+                  <td className="px-4 py-4 text-right font-bold text-gray-800">
+                    {formatPrezzo(u.prezzo) ?? <span className="text-xs italic font-normal text-gray-300">Prezzo da impostare</span>}
+                  </td>
                   <td className="px-4 py-4 text-center">
                     <span className={cn("px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border", STATO_COLORS[u.stato])}>
                       {u.stato}

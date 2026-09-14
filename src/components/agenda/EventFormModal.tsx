@@ -23,16 +23,22 @@ import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { FASI_PROPRIETARI } from '@/hooks/useProprietariPipeline';
 import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
-import type { FaseProprietario } from '@/types';
+import { generaChecklistPerFase, upsertFasePipeline } from '@/lib/pipelineChecklist';
+import type { FaseProprietario, Sottofase } from '@/types';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
 export interface Appointment {
   id: string;
   agente_id: string;
+  // Lista completa dei partecipanti (uuid). agente_id resta il primario ed è
+  // sempre incluso qui (garantito da CHECK + trigger su DB). Backfill:
+  // eventi storici hanno agenti_ids = [agente_id].
+  agenti_ids?: string[];
   tipologia: string;
   lead_id: string | null;
   contatto_id?: string | null;
@@ -165,6 +171,11 @@ interface EventFormModalProps {
   /** Generic contatto (acquirente/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
   defaultContattoId?: string;
   defaultContattoName?: string;
+  /** Immobile pre-selezionato (es. modale aperta dal kanban Gestione). */
+  defaultImmobileId?: string;
+  /** Tipologia pre-selezionata (es. modale aperta da un pulsante "Fissa appuntamento
+   *  Rogito" o "Preliminare" in gestione). */
+  defaultTipologia?: string;
   agents: AgentProfile[];
   properties: Property[];
   coloriMap?: TipologieMap;
@@ -176,13 +187,41 @@ const EventFormModal = ({
   defaultAgentId, defaultDate, defaultTimeStart,
   defaultLeadId, defaultLeadName,
   defaultContattoId, defaultContattoName,
+  defaultImmobileId, defaultTipologia,
   agents, properties, coloriMap, tipologieList,
 }: EventFormModalProps) => {
   const isEdit = !!event;
   const isContattoLinked = !!(event ? event.contatto_id : defaultContattoId);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const [agenteId, setAgenteId] = useState('');
+  // Naviga alla scheda contatto giusta (Proprietari/Acquirenti/Collaboratori)
+  // usando lo stesso protocollo che Contatti.tsx interpreta: contattiTab +
+  // openLeadId. Usato dal pulsante "Scheda contatto" quando l'appuntamento
+  // è collegato via contatto_id (post-pivot).
+  const goToContattoScheda = (tipo: 'proprietari' | 'acquirenti' | 'collaboratori', id: string) => {
+    onClose();
+    navigate('/contatti', { state: { contattiTab: tipo, openLeadId: id } });
+  };
+
+  // Agenti selezionati: array. Il primo elemento è il "primario" (finisce su
+  // appuntamenti.agente_id, che retta la RLS/vista per agente/colore).
+  // Il DB ha un trigger che mantiene coerenza (vedi migration
+  // 20260914150000_appuntamenti_multi_agente.sql).
+  const [agentiIds, setAgentiIds] = useState<string[]>([]);
+  const agenteId = agentiIds[0] ?? '';
+  const setAgenteId = (id: string) => setAgentiIds((prev) => prev.length === 0 ? [id] : [id, ...prev.filter((x) => x !== id)]);
+  const toggleAgente = (id: string) => setAgentiIds((prev) => {
+    if (prev.includes(id)) {
+      // Deseleziona. Se rimuovo il primario, il prossimo agente diventa
+      // automaticamente il nuovo primario.
+      const next = prev.filter((x) => x !== id);
+      return next;
+    }
+    // Seleziona in fondo (primario resta il primo). Se lista vuota, questo
+    // diventa il primario.
+    return [...prev, id];
+  });
   const [tipologia, setTipologia] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
@@ -221,7 +260,12 @@ const EventFormModal = ({
     autosavedIdRef.current = null;
     setAutoSaveStatus('idle');
     if (event) {
-      setAgenteId(event.agente_id);
+      // Se l'evento porta agenti_ids (backfill fatto per gli storici) uso
+      // quello; altrimenti fallback su agente_id come singolo.
+      const initialAgenti = event.agenti_ids && event.agenti_ids.length > 0
+        ? event.agenti_ids
+        : [event.agente_id];
+      setAgentiIds(initialAgenti);
       setTipologia(event.tipologia);
       setLeadId(event.lead_id ?? '');
       setLeadItems(event.leads && event.lead_id
@@ -236,14 +280,15 @@ const EventFormModal = ({
       setNote(event.note ?? '');
       setIndirizzo(event.indirizzo_appuntamento ?? '');
     } else {
-      setAgenteId(defaultAgentId ?? agents[0]?.id ?? '');
-      setTipologia('');
+      const initialAgent = defaultAgentId ?? agents[0]?.id ?? '';
+      setAgentiIds(initialAgent ? [initialAgent] : []);
+      setTipologia(defaultTipologia ?? '');
       setLeadId(defaultLeadId ?? '');
       setLeadItems(defaultLeadId && defaultLeadName
         ? [{ id: defaultLeadId, label: defaultLeadName }]
         : []);
       setLeadPhone(null);
-      setImmobileId('none');
+      setImmobileId(defaultImmobileId ?? 'none');
       setSelectedDate(defaultDate ? parseISO(defaultDate) : new Date());
       const initStart = defaultTimeStart ?? '09:00';
       setOraInizio(initStart);
@@ -252,7 +297,7 @@ const EventFormModal = ({
       setIndirizzo('');
     }
     setContattoDetail(null);
-  }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, agents]);
+  }, [open, event, defaultAgentId, defaultDate, defaultTimeStart, defaultLeadId, defaultLeadName, defaultImmobileId, defaultTipologia, agents]);
 
   // Se l'appuntamento è collegato via contatto_id (nuovo flow), risolviamo
   // nome/telefono dalla giusta tabella figlia: proprietari, acquirenti,
@@ -304,6 +349,7 @@ const EventFormModal = ({
     if (!isEdit || !open || !event?.id || !selectedDate || !agenteId) return;
     const payload = {
       agente_id: agenteId,
+      agenti_ids: agentiIds,
       tipologia: tipologia || 'Altro',
       ...getLeadContattoPayload(),
       immobile_id: immobileId !== 'none' ? immobileId : null,
@@ -336,6 +382,7 @@ const EventFormModal = ({
       setAutoSaveStatus('saving');
       const payload = {
         agente_id: agenteId,
+        agenti_ids: agentiIds,
         tipologia: tipologia || 'Altro',
         ...getLeadContattoPayload(),
         immobile_id: immobileId !== 'none' ? immobileId : null,
@@ -557,10 +604,25 @@ const EventFormModal = ({
     }
   };
 
-  // Fissare un appuntamento di tipologia "Rivalutazione" su un proprietario fa
-  // avanzare la sua pratica alla fase omonima — ma solo in avanti: se la
-  // pratica è già oltre (es. "Presa in carico"), non torna indietro.
-  const avanzaFaseSeRivalutazione = async (contattoId: string) => {
+  // Mappa tipologia appuntamento → destinazione pipeline. Fissare un
+  // appuntamento di quella tipologia (con un contatto proprietario o un
+  // immobile collegato) sposta automaticamente l'entità in quella fase, ma
+  // solo in avanti: se è già oltre nel flow, non torniamo indietro.
+  //
+  // Le tipologie non elencate qui non hanno automazioni (es. "Prima visita",
+  // "Telefonata", ecc.). Aggiunta di nuove mappe: basta estendere questi due
+  // dizionari.
+  const TIPOLOGIA_TO_FASE_PROPRIETARIO: Record<string, FaseProprietario> = {
+    'Valutazione Vendita': 'Valutazione',
+    'Valutazione Affitto': 'Valutazione',
+    'Rivalutazione': 'Rivalutazione',
+  };
+  const TIPOLOGIA_TO_SOTTOFASE_IMMOBILE: Record<string, Sottofase> = {
+    'Preliminare': 'Preliminare',
+    'Rogito': 'Rogito',
+  };
+
+  const avanzaFaseProprietarioSePossibile = async (contattoId: string, targetFase: FaseProprietario) => {
     const { data: pratica } = await supabase
       .from('proprietari_pratiche')
       .select('id, fase')
@@ -570,19 +632,43 @@ const EventFormModal = ({
       .maybeSingle();
     if (!pratica) return;
 
-    const targetIdx = FASI_PROPRIETARI.indexOf('Rivalutazione');
+    const targetIdx = FASI_PROPRIETARI.indexOf(targetFase);
     const currentIdx = FASI_PROPRIETARI.indexOf(pratica.fase as FaseProprietario);
-    if (currentIdx === -1 || currentIdx >= targetIdx) return;
+    if (currentIdx === -1 || targetIdx === -1 || currentIdx >= targetIdx) return;
 
     const { error } = await supabase
       .from('proprietari_pratiche')
-      .update({ fase: 'Rivalutazione', updated_at: new Date().toISOString() })
+      .update({ fase: targetFase, updated_at: new Date().toISOString() })
       .eq('id', pratica.id);
     if (error) return;
 
-    await generaChecklistPraticaPerFase(pratica.id, 'Rivalutazione');
+    await generaChecklistPraticaPerFase(pratica.id, targetFase);
     queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
     queryClient.invalidateQueries({ queryKey: ['proprietari-pratica-documenti', pratica.id] });
+  };
+
+  // Per l'immobile: solo Preliminare/Rogito (sottofasi di "Venduto") — porta
+  // la card in Venduto/<sottofase>. Non regressioni (se la card è già oltre
+  // la sottofase target, non la muoviamo indietro).
+  const SOTTOFASI_VENDUTO_ORDER: Sottofase[] = ['Vincolo', 'Preliminare', 'Rogito', 'Archivio'];
+
+  const avanzaFaseImmobileSePossibile = async (immobileId: string, targetSottofase: Sottofase) => {
+    const { data: stato } = await supabase
+      .from('immobile_pipeline_stato')
+      .select('fase, sottofase')
+      .eq('immobile_id', immobileId)
+      .maybeSingle();
+    // Se la card è ancora in "In Vendita" la spostiamo direttamente a Venduto/target.
+    // Se è già in Venduto ma su sottofase precedente, avanziamo. Altrimenti no-op.
+    if (!stato) return;
+    if (stato.fase === 'Venduto') {
+      const currentIdx = SOTTOFASI_VENDUTO_ORDER.indexOf(stato.sottofase as Sottofase);
+      const targetIdx = SOTTOFASI_VENDUTO_ORDER.indexOf(targetSottofase);
+      if (currentIdx >= targetIdx) return;
+    }
+    await upsertFasePipeline(immobileId, 'Venduto', targetSottofase);
+    await generaChecklistPerFase(immobileId, 'Venduto');
+    queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
   };
 
   const handleSave = async () => {
@@ -598,6 +684,7 @@ const EventFormModal = ({
     setIsSaving(true);
     const payload = {
       agente_id: agenteId,
+      agenti_ids: agentiIds,
       tipologia: tipologia || 'Altro',
       ...getLeadContattoPayload(),
       immobile_id: immobileId !== 'none' ? immobileId : null,
@@ -618,8 +705,16 @@ const EventFormModal = ({
       ({ error } = await supabase.from('appuntamenti').insert([payload]));
     }
 
-    if (!error && payload.tipologia === 'Rivalutazione' && payload.contatto_id) {
-      await avanzaFaseSeRivalutazione(payload.contatto_id);
+    if (!error) {
+      // Automazioni tipologia → fase pipeline (spec utente 2026-09-14).
+      const faseTargetProprietario = TIPOLOGIA_TO_FASE_PROPRIETARIO[payload.tipologia];
+      if (faseTargetProprietario && payload.contatto_id) {
+        await avanzaFaseProprietarioSePossibile(payload.contatto_id, faseTargetProprietario);
+      }
+      const sottofaseTargetImmobile = TIPOLOGIA_TO_SOTTOFASE_IMMOBILE[payload.tipologia];
+      if (sottofaseTargetImmobile && payload.immobile_id) {
+        await avanzaFaseImmobileSePossibile(payload.immobile_id, sottofaseTargetImmobile);
+      }
     }
 
     setIsSaving(false);
@@ -814,21 +909,56 @@ const EventFormModal = ({
             </Select>
           </div>
 
-          {/* Agente */}
+          {/* Agenti — multi-select. Il primo è il primario (colore calendario,
+              vista "Per agente", ecc.). Click su un chip alterna la selezione;
+              il primario è evidenziato con badge, gli altri sono partecipanti
+              secondari. Salvati insieme su appuntamenti.agenti_ids. */}
           <div className="space-y-2">
-            <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Agente</Label>
-            <Select value={agenteId} onValueChange={setAgenteId}>
-              <SelectTrigger className="h-12 rounded-xl border-gray-200 bg-slate-50/50">
-                <SelectValue placeholder="Seleziona agente..." />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {agents.map(a => (
-                  <SelectItem key={a.id} value={a.id}>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                Agenti {agentiIds.length > 1 && <span className="normal-case text-gray-400">({agentiIds.length} selezionati)</span>}
+              </Label>
+              {agentiIds.length === 0 && (
+                <span className="text-[10px] text-red-500 font-semibold">Seleziona almeno un agente</span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {agents.map((a) => {
+                const idx = agentiIds.indexOf(a.id);
+                const isSelected = idx >= 0;
+                const isPrimary = idx === 0;
+                const color = a.colore_calendario ?? '#94b0ab';
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggleAgente(a.id)}
+                    className={cn(
+                      'inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                      isSelected
+                        ? 'text-white shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+                    )}
+                    style={isSelected ? { backgroundColor: color, borderColor: color } : undefined}
+                    title={isPrimary ? 'Agente primario (colore/vista per agente)' : (isSelected ? 'Partecipante — clicca per rimuovere' : 'Aggiungi come partecipante')}
+                  >
+                    <span
+                      className={cn(
+                        'w-2 h-2 rounded-full',
+                        isSelected ? 'bg-white' : '',
+                      )}
+                      style={!isSelected ? { backgroundColor: color } : undefined}
+                    />
                     {a.nome_completo ?? a.id.substring(0, 8)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    {isPrimary && agentiIds.length > 1 && (
+                      <span className="ml-1 text-[9px] font-black uppercase tracking-widest bg-white/25 rounded px-1 py-0.5">
+                        Primario
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Lead / contatto collegato */}
@@ -868,6 +998,16 @@ const EventFormModal = ({
                       WhatsApp
                     </a>
                   </div>
+                )}
+                {contattoDetail?.tipo && (
+                  <button
+                    type="button"
+                    onClick={() => goToContattoScheda(contattoDetail.tipo, (event?.contatto_id ?? defaultContattoId)!)}
+                    className="w-full flex items-center justify-center gap-1.5 bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-3 py-2 text-xs font-bold transition-colors"
+                  >
+                    <User size={13} />
+                    Apri scheda contatto
+                  </button>
                 )}
               </div>
             ) : (

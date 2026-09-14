@@ -42,6 +42,9 @@ import TaskModal from '@/components/TaskModal';
 import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile } from '@/components/agenda/EventFormModal';
 import { cn } from '@/lib/utils';
 import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+
+const TIPI_CONTRATTO = ['Acquisto', 'Affitto'] as const;
 
 // acquirenti.stato pipeline — new mapping, no equivalent existed pre-pivot
 // (SELLER_STATES in the old Leads.tsx covered only the 3 seller-side states).
@@ -79,8 +82,10 @@ interface AcquirenteRecord {
   cognome: string;
   email?: string | null;
   telefono?: string | null;
+  cellulare?: string | null;
   budget?: number | string | null;
   tipologia_ricerca?: string[] | null;
+  tipo_contratto?: string[] | null;
   zone_ricercate?: string[] | null;
   note_interne?: string | null;
   stato?: string | null;
@@ -152,6 +157,8 @@ interface AcquirentiViewProps {
 }
 
 const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: AcquirentiViewProps) => {
+  const { data: currentProfile } = useCurrentProfile();
+  const autoreLoggato = currentProfile?.nome_completo?.trim() || 'Agente';
   const pendingDeepLinkRef = useRef<string | null>(deepLinkLeadId ?? null);
   const [acquirenti, setAcquirenti] = useState<AcquirenteRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -238,8 +245,8 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
         .select(`
           created_at, agente_id,
           acquirenti!inner(
-            id, nome, cognome, stato, budget, tipologia_ricerca, zone_ricercate,
-            note_interne, telefono, email,
+            id, nome, cognome, stato, budget, tipologia_ricerca, tipo_contratto, zone_ricercate,
+            note_interne, telefono, cellulare, email,
             acquirenti_immobili(immobili(titolo))
           )
         `)
@@ -292,7 +299,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
         .select(`
           created_at, agente_id,
           acquirenti!inner(
-            id, nome, cognome, stato, telefono, email,
+            id, nome, cognome, stato, telefono, cellulare, email,
             acquirenti_immobili(immobili(titolo))
           )
         `, { count: 'exact' })
@@ -368,7 +375,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
     let aborted = false;
     supabase
       .from('acquirenti')
-      .select('id, nome, cognome, email, telefono, stato, budget')
+      .select('id, nome, cognome, email, telefono, cellulare, stato, budget, tipo_contratto')
       .eq('id', openContattoId)
       .maybeSingle()
       .then(({ data }) => {
@@ -381,7 +388,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
 
   // Opens the unified dialog in create mode (no id → INSERT path)
   const openCreateModal = useCallback(() => {
-    setSelectedAcquirente({ nome: '', cognome: '', email: '', telefono: '', stato: 'Nuovo', created_at: new Date().toISOString() });
+    setSelectedAcquirente({ nome: '', cognome: '', email: '', telefono: '', cellulare: '', stato: 'Nuovo', tipo_contratto: ['Acquisto'], created_at: new Date().toISOString() });
     setZoneInput('');
   }, []);
 
@@ -508,9 +515,13 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
     nome: c.nome.trim(),
     cognome: c.cognome.trim(),
     telefono: c.telefono || null,
+    cellulare: c.cellulare || null,
     email: c.email || null,
     budget: parseFloat(String(c.budget)) || null,
     tipologia_ricerca: c.tipologia_ricerca?.length ? c.tipologia_ricerca : null,
+    // Fallback: se nessun tipo esplicito, storico = 'Acquisto' (allineato al
+    // DEFAULT DB della migration 20260914090100).
+    tipo_contratto: c.tipo_contratto?.length ? c.tipo_contratto : ['Acquisto'],
     zone_ricercate: c.zone_ricercate?.length ? c.zone_ricercate : null,
     note_interne: c.note_interne || null,
   });
@@ -800,7 +811,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
     setIsSavingNote(true);
     const { data, error } = await supabase
       .from('lead_notes')
-      .insert({ contatto_id: selectedAcquirente.id, testo: newNoteText.trim(), autore: 'Agente' })
+      .insert({ contatto_id: selectedAcquirente.id, testo: newNoteText.trim(), autore: autoreLoggato })
       .select('id, testo, autore, created_at')
       .single();
     setIsSavingNote(false);
@@ -1343,10 +1354,18 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
+                          <Label className="text-xs font-bold text-gray-500">Telefono fisso</Label>
                           <Input
                             value={selectedAcquirente.telefono || ''}
                             onChange={(e) => setSelectedAcquirente({...selectedAcquirente, telefono: e.target.value})}
+                            className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Cellulare</Label>
+                          <Input
+                            value={selectedAcquirente.cellulare || ''}
+                            onChange={(e) => setSelectedAcquirente({...selectedAcquirente, cellulare: e.target.value})}
                             className="h-11 rounded-xl border-gray-200 bg-slate-50/50"
                           />
                         </div>
@@ -1397,6 +1416,39 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                               placeholder="Importo personalizzato..."
                               className="h-10 pl-8 rounded-xl border-gray-200 bg-slate-50/50"
                             />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold text-gray-500">Tipo di contratto</Label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {TIPI_CONTRATTO.map((t) => {
+                              const cur = selectedAcquirente.tipo_contratto ?? ['Acquisto'];
+                              const active = cur.includes(t);
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => {
+                                    // Multi-selezionabile ma sempre almeno uno: se l'utente
+                                    // deseleziona l'unico rimasto lo teniamo comunque, così il
+                                    // record non risulta "senza tipo" (il DEFAULT DB è
+                                    // {'Acquisto'}, coerente con lo storico).
+                                    let next = active ? cur.filter((v) => v !== t) : [...cur, t];
+                                    if (next.length === 0) next = [t];
+                                    setSelectedAcquirente({ ...selectedAcquirente, tipo_contratto: next });
+                                  }}
+                                  className={cn(
+                                    'inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold border transition-all duration-150',
+                                    active
+                                      ? 'bg-blue-500 text-white border-blue-500 shadow-sm shadow-blue-200/60'
+                                      : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600 hover:bg-blue-50',
+                                  )}
+                                >
+                                  {t}
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
 
