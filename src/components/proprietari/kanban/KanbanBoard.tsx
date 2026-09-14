@@ -62,7 +62,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch }: KanbanBoardPr
       : (cards ?? []);
 
     const grouped: Record<FaseProprietario, PraticaCard[]> = {
-      'Incontro/Sopralluogo': [],
+      Valutazione: [],
       Rivalutazione: [],
       'Presa in carico': [],
     };

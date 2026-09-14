@@ -32,9 +32,11 @@ interface AvviaPraticaDialogProps {
 // Precondizione: il proprietario è già "caldo" (il bottone che apre questo
 // dialog appare solo per proprietari.caldo=true — vedi ProprietariList).
 // Avviare una pratica ora significa solo creare la prima riga in
-// proprietari_pratiche, direttamente in "Incontro/Sopralluogo" (la fase
-// "Contatto" è stata rimossa: il flag caldo copre da solo il primo momento
-// di contatto, vedi 20260907120000_remove_contatto_fase_proprietari.sql).
+// proprietari_pratiche, direttamente in "Valutazione" (la fase "Contatto" è
+// stata rimossa: il flag caldo copre da solo il primo momento di contatto,
+// vedi 20260907120000_remove_contatto_fase_proprietari.sql. La fase è stata
+// rinominata da "Incontro/Sopralluogo" a "Valutazione" in
+// 20260914090300_rename_incontro_sopralluogo_to_valutazione.sql).
 const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDialogProps) => {
   const [via, setVia] = useState('');
   const [tipologia, setTipologia] = useState('');
@@ -58,7 +60,7 @@ const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDi
           via: via.trim(),
           tipologia: tipologia || null,
           citta: citta.trim() || null,
-          fase: 'Incontro/Sopralluogo',
+          fase: 'Valutazione',
         });
       if (error) throw error;
 

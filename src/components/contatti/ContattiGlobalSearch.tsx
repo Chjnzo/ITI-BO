@@ -14,6 +14,11 @@ interface SearchResult {
   cognome: string | null;
   email: string | null;
   telefono: string | null;
+  cellulare: string | null;
+  // Solo per proprietari: via/città dell'immobile registrato in anagrafica —
+  // permette di ritrovare un proprietario ricordando la via dell'immobile.
+  via_immobile: string | null;
+  citta_immobile: string | null;
   tipo: ContattoTipo;
 }
 
@@ -58,17 +63,33 @@ const ContattiGlobalSearch = ({ onSelect }: Props) => {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      const clauses = buildLeadSearchClauses(trimmed);
+      // I proprietari hanno anche `via_immobile`/`citta_immobile` (l'indirizzo
+      // dell'immobile che vogliono vendere) — cerchiamo anche lì con lo stesso
+      // token. Acquirenti/collaboratori non hanno il campo, per loro le
+      // clauses restano ai campi base + cellulare.
       const runQuery = async (table: ContattoTipo) => {
+        const isProp = table === 'proprietari';
+        const clauses = buildLeadSearchClauses(
+          trimmed,
+          isProp ? ['via_immobile', 'citta_immobile'] : [],
+        );
+        const cols = isProp
+          ? 'id, nome, cognome, email, telefono, cellulare, via_immobile, citta_immobile'
+          : 'id, nome, cognome, email, telefono, cellulare';
         let q = supabase
           .from(table)
-          .select('id, nome, cognome, email, telefono')
+          .select(cols)
           .eq('is_deleted', false)
           .limit(8);
         for (const clause of clauses) q = q.or(clause);
         const { data, error } = await q;
         if (error || !data) return [] as SearchResult[];
-        return data.map((r) => ({ ...r, tipo: table } as SearchResult));
+        return (data as unknown as Array<Omit<SearchResult, 'tipo' | 'via_immobile' | 'citta_immobile'> & { via_immobile?: string | null; citta_immobile?: string | null }>).map((r) => ({
+          ...r,
+          via_immobile: r.via_immobile ?? null,
+          citta_immobile: r.citta_immobile ?? null,
+          tipo: table,
+        } as SearchResult));
       };
 
       const [prop, acq, coll] = await Promise.all([
@@ -111,7 +132,7 @@ const ContattiGlobalSearch = ({ onSelect }: Props) => {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
           onFocus={() => query && setOpen(true)}
-          placeholder="Cerca in tutti i contatti (nome, cognome, telefono, email)..."
+          placeholder="Cerca in tutti i contatti (nome, telefono, cellulare, email, via immobile)..."
           className="pl-9 pr-9 h-10 rounded-xl border-gray-200"
         />
         {query && (
@@ -159,7 +180,16 @@ const ContattiGlobalSearch = ({ onSelect }: Props) => {
                             {r.nome} {r.cognome ?? ''}
                           </div>
                           <div className="text-xs text-gray-400 truncate">
-                            {r.telefono ?? r.email ?? ''}
+                            {/* Priorità: cellulare > telefono fisso > email.
+                                Per proprietari mostriamo anche via/città immobile
+                                come seconda riga, così un match su via è visibile
+                                nella dropdown senza dover aprire la scheda. */}
+                            {r.cellulare ?? r.telefono ?? r.email ?? ''}
+                            {r.tipo === 'proprietari' && (r.via_immobile || r.citta_immobile) && (
+                              <span className="ml-2 text-gray-300">
+                                · {[r.via_immobile, r.citta_immobile].filter(Boolean).join(', ')}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </button>

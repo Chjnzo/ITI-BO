@@ -30,10 +30,12 @@ interface TaskModalProps {
   /** Generic contatto (acquirente/proprietario/collaboratore) link — takes priority over defaultLeadId when both are absent from a lead search. */
   defaultContattoId?: string;
   defaultContattoName?: string;
-  /** Area applicativa che apre il modale — finisce su tasks.origine e determina
-   *  il badge/filtro sulla pagina Task. Default 'contatti': oggi tutti i punti
-   *  di creazione sono in Contatti/Dashboard/Tasks; passare 'gestione' quando
-   *  il modale verrà aperto dal kanban proprietari/immobili o dalle pratiche. */
+  /** Immobile collegato pre-selezionato (es. modale aperta dal kanban Gestione).
+   *  Salva su tasks.immobile_id (FK a immobili). */
+  defaultImmobileId?: string;
+  defaultImmobileTitolo?: string;
+  /** Area applicativa che apre il modale — finisce su tasks.origine. Il badge
+   *  UI è stato tolto (2026-09-14) ma il dato in DB resta utile per audit. */
   origine?: 'contatti' | 'gestione';
 }
 
@@ -45,7 +47,7 @@ const TASK_COLORS = [
   { id: 'violet', hex: '#8b5cf6', label: 'Viola' },
 ];
 
-const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName, origine = 'contatti' }: TaskModalProps) => {
+const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, defaultContattoId, defaultContattoName, defaultImmobileId, defaultImmobileTitolo, origine = 'contatti' }: TaskModalProps) => {
   const [titolo, setTitolo] = useState('');
   const [telefono, setTelefono] = useState('');
   const [leadId, setLeadId] = useState('');
@@ -173,6 +175,7 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
       telefono: telefono.trim() || null,
       lead_id: leadIdCol,
       contatto_id: contattoIdCol,
+      immobile_id: defaultImmobileId ?? null,
       agente_id: agenteId || currentUserId,
       nota: nota.trim() || null,
       data: format(selectedDate!, 'yyyy-MM-dd'),
@@ -280,6 +283,11 @@ const TaskModal = ({ open, onClose, onSaved, defaultLeadId, defaultLeadName, def
           {/* Lead/contatto collegato (opzionale) */}
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-400">Contatto collegato</Label>
+            {defaultImmobileId && (
+              <div className="h-9 flex items-center px-3 rounded-lg border border-slate-100 bg-slate-50 text-xs text-gray-600 font-medium mb-1.5">
+                Immobile: <span className="ml-1 font-semibold text-gray-800">{defaultImmobileTitolo ?? 'selezionato'}</span>
+              </div>
+            )}
             {isContattoLinked ? (
               <div className="h-11 flex items-center px-3 rounded-none border border-slate-100 bg-slate-100 text-sm text-gray-700 font-medium">
                 {defaultContattoName || 'Contatto selezionato'}

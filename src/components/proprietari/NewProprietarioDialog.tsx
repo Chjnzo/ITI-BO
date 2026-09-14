@@ -25,6 +25,7 @@ interface FormState {
   cognome: string;
   email: string;
   telefono: string;
+  cellulare: string;
   professione: string;
   via_immobile: string;
   citta_immobile: string;
@@ -40,6 +41,7 @@ const emptyForm: FormState = {
   cognome: '',
   email: '',
   telefono: '',
+  cellulare: '',
   professione: '',
   via_immobile: '',
   citta_immobile: '',
@@ -54,7 +56,8 @@ const emptyForm: FormState = {
 // il nuovo flow è che il proprietario resta nella lista finché l'agente non
 // lo marca "caldo" (dalla scheda), e solo allora nella lista appare il tasto
 // "Avvia pratica" che apre AvviaPraticaDialog e crea la pratica in
-// 'Incontro/Sopralluogo'. Vedi 20260907120000_remove_contatto_fase_proprietari.sql.
+// 'Valutazione'. Vedi 20260907120000_remove_contatto_fase_proprietari.sql +
+// 20260914090300_rename_incontro_sopralluogo_to_valutazione.sql per il rename.
 const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDialogProps) => {
   const queryClient = useQueryClient();
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -86,6 +89,7 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
           cognome: form.cognome.trim() || null,
           email: form.email.trim() || null,
           telefono: form.telefono.trim() || null,
+          cellulare: form.cellulare.trim() || null,
           professione: form.professione.trim() || null,
           via_immobile: form.via_immobile.trim() || null,
           citta_immobile: form.citta_immobile.trim() || null,
@@ -187,7 +191,7 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="np-telefono" className="text-xs font-bold text-gray-500">Telefono</Label>
+                    <Label htmlFor="np-telefono" className="text-xs font-bold text-gray-500">Telefono fisso</Label>
                     <Input
                       id="np-telefono"
                       value={form.telefono}
@@ -195,6 +199,15 @@ const NewProprietarioDialog = ({ open, onClose, onCreated }: NewProprietarioDial
                       className="rounded-xl"
                     />
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="np-cellulare" className="text-xs font-bold text-gray-500">Cellulare</Label>
+                  <Input
+                    id="np-cellulare"
+                    value={form.cellulare}
+                    onChange={(e) => setForm((f) => ({ ...f, cellulare: e.target.value }))}
+                    className="rounded-xl"
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="np-professione" className="text-xs font-bold text-gray-500">Professione</Label>

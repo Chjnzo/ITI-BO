@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { it } from 'date-fns/locale';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,16 +11,25 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Phone, User, Calculator, ExternalLink, Sparkles, Pencil, Folder,
-  Paperclip, Loader2, Check, Plus, CalendarClock, X,
+  Paperclip, Loader2, Check, Plus, StickyNote, ArrowRight, Trash2, KeyRound,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
 import { cn } from '@/lib/utils';
 import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 import type { PraticaCard } from '@/hooks/useProprietariPipeline';
-import type { PipelineScadenza, ProprietarioPraticaDocumento } from '@/types';
+import type { ProprietarioPraticaDocumento } from '@/types';
+import { useContactNotes, useAddContactNote } from '@/hooks/useContactNotes';
+import { useTasks, useInvalidateTasks } from '@/hooks/useTasks';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+import { generaChecklistPerFase, upsertFasePipeline } from '@/lib/pipelineChecklist';
 import ValuationWizard from '@/components/valutazioni/ValuationWizard';
+import TaskModal from '@/components/TaskModal';
 
 interface PraticaDetailSheetProps {
   pratica: PraticaCard | null;
@@ -67,14 +78,18 @@ const extractEdgeError = async (error: unknown, fallback: string): Promise<strin
 
 const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
   const queryClient = useQueryClient();
+  const invalidateTasks = useInvalidateTasks();
+  const { data: currentProfile } = useCurrentProfile();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [nuovaScadenzaData, setNuovaScadenzaData] = useState('');
-  const [nuovaScadenzaDesc, setNuovaScadenzaDesc] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadDoc = useRef<ProprietarioPraticaDocumento | null>(null);
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+  const [newNoteText, setNewNoteText] = useState('');
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [confermaPassaggioFase, setConfermaPassaggioFase] = useState(false);
+  const [confermaEliminaImmobile, setConfermaEliminaImmobile] = useState(false);
 
   const { data: ultimaValutazione } = useQuery<{
     id: string;
@@ -101,17 +116,32 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
 
   // Drive folder del contatto proprietario (contatti.drive_folder_url).
   // Query separata perché PraticaCard non porta questo campo.
-  const { data: driveFolderInfo } = useQuery<{ drive_folder_url: string | null } | null>({
+  const { data: driveFolderInfo } = useQuery<{ drive_folder_url: string | null; agente_id: string | null } | null>({
     queryKey: ['contatto-drive', pratica?.proprietario_id],
     enabled: !!pratica?.proprietario_id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contatti')
-        .select('drive_folder_url')
+        .select('drive_folder_url, agente_id')
         .eq('id', pratica!.proprietario_id)
         .single();
       if (error) return null;
-      return data as { drive_folder_url: string | null };
+      return data as { drive_folder_url: string | null; agente_id: string | null };
+    },
+  });
+
+  // Nome dell'agente assegnato al proprietario — usato per il titolo dinamico
+  // della sezione "Note di [Agente]" (fallback "Note" se nessun agente).
+  const { data: agenteAssegnato } = useQuery<{ nome_completo: string | null } | null>({
+    queryKey: ['pratica-agente', driveFolderInfo?.agente_id],
+    enabled: !!driveFolderInfo?.agente_id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profili_agenti')
+        .select('nome_completo')
+        .eq('id', driveFolderInfo!.agente_id!)
+        .maybeSingle();
+      return data ?? null;
     },
   });
 
@@ -123,11 +153,11 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
     if (!pratica) {
       setForm(emptyForm);
       setIsEditing(false);
-      setNuovaScadenzaData('');
-      setNuovaScadenzaDesc('');
+      setNewNoteText('');
       return;
     }
     setIsEditing(false);
+    setNewNoteText('');
     setForm({
       via: pratica.via ?? '',
       tipologia: pratica.tipologia ?? '',
@@ -197,6 +227,10 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
 
   const documentiFaseCorrente = (documenti ?? []).filter((d) => d.fase === pratica?.fase);
 
+  // Solo aggiornamento stato del documento: nessun side-effect di passaggio
+  // automatico alla fase successiva. Il passaggio è ora esplicito via
+  // pulsante "Passa a In preparazione" qui sotto, così l'agente decide quando
+  // l'immobile è pronto per entrare in gestione (spec utente 2026-09-14).
   const toggleDocumento = useMutation({
     mutationFn: async (doc: ProprietarioPraticaDocumento) => {
       const nuovoStato = doc.stato === 'Fatto' ? 'Da fare' : 'Fatto';
@@ -209,29 +243,9 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
         .eq('id', doc.id);
       if (error) throw error;
     },
-    onSuccess: async (_data, doc) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['proprietari-pratica-documenti', pratica?.id] });
       queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
-
-      // Passaggio automatico Proprietari → In Vendita: quando l'ultima fase
-      // (Presa in carico) ha la checklist tutta completata la card sparirà
-      // dal kanban Proprietari (filtro in useProprietariPipeline) e la card
-      // immobile (creata da spostaFase→creaImmobileDaPratica) resta in
-      // In Vendita.
-      if (pratica?.fase === 'Presa in carico' && doc.stato === 'Da fare') {
-        const { data: fresche } = await supabase
-          .from('proprietari_pratica_documenti')
-          .select('stato')
-          .eq('pratica_id', pratica.id)
-          .eq('fase', 'Presa in carico');
-        const tutteFatte = (fresche ?? []).length > 0
-          && (fresche ?? []).every((d) => d.stato === 'Fatto');
-        if (tutteFatte) {
-          showSuccess('Pratica completata: immobile spostato in "In Vendita".');
-          queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
-          onClose();
-        }
-      }
     },
     onError: () => showError('Aggiornamento documento non riuscito.'),
   });
@@ -316,51 +330,185 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
-  // Scadenze — analogo della sezione in PipelineDetailSheet ma su pratica_id.
-  const { data: scadenze } = useQuery<PipelineScadenza[]>({
-    queryKey: ['pipeline-scadenze', 'pratica', pratica?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pipeline_scadenze')
-        .select('*')
-        .eq('pratica_id', pratica!.id)
-        .order('scadenza', { ascending: true });
-      if (error) throw error;
-      return (data ?? []) as PipelineScadenza[];
-    },
-    enabled: !!pratica,
+  // Note del proprietario collegato: stessa tabella `lead_notes` usata dalla
+  // scheda Contatti → così le note "seguono" il contatto ovunque appaia. Nessun
+  // filtro per fase: le note restano visibili sempre, anche quando l'immobile
+  // passa in gestione (era il bug segnalato dall'utente).
+  const { data: notes = [] } = useContactNotes(pratica?.proprietario_id ?? null);
+  const addNote = useAddContactNote(pratica?.proprietario_id ?? null);
+
+  // Task collegate al proprietario (contatto): comodo storico direttamente
+  // dalla scheda pratica, così l'agente non deve saltare tra viste.
+  const { data: tasks = [] } = useTasks({
+    scope: pratica?.proprietario_id
+      ? { kind: 'contatto', contattoId: pratica.proprietario_id }
+      : { kind: 'all' },
+    enabled: !!pratica?.proprietario_id,
   });
 
-  const aggiungiScadenza = useMutation({
+  // Passaggio manuale dalla fase "Presa in carico" al kanban immobili
+  // (sottofase Preparazione). Sostituisce il vecchio passaggio automatico
+  // triggerato dal completamento della checklist. Se l'immobile non esiste
+  // ancora, lo crea (idempotente: creaImmobileDaPratica salta se pratica.immobile_id
+  // è già presente). Se esiste, si limita a upsertare la fase pipeline a
+  // Preparazione (la card resta in Gestione).
+  // Guardia anti-doppio-click a livello ref: `isPending` di useMutation
+  // aggiorna lo state React nel ciclo successivo, quindi due click ravvicinati
+  // possono entrambi entrare nella mutationFn prima che il pulsante venga
+  // disabilitato. Il ref invece è sincrono — nessuna finestra di race.
+  const passaggioInCorsoRef = useRef(false);
+
+  const passaAInPreparazione = useMutation({
     mutationFn: async () => {
-      if (!pratica || !nuovaScadenzaData) return;
-      const { error } = await supabase.from('pipeline_scadenze').insert({
-        pratica_id: pratica.id,
-        fase: pratica.fase,
-        descrizione: nuovaScadenzaDesc.trim() || null,
-        scadenza: nuovaScadenzaData,
-      });
-      if (error) throw error;
+      if (!pratica) return;
+      if (passaggioInCorsoRef.current) {
+        console.warn('[passaAInPreparazione] già in corso, ignoro doppio click');
+        return;
+      }
+      passaggioInCorsoRef.current = true;
+      try {
+        // Guardia lato DB: rileggo la riga aggiornata e prendo il lock
+        // logico via UPDATE ... WHERE immobile_id IS NULL RETURNING. Se un'altra
+        // esecuzione ha già linkato un immobile a questa pratica, il WHERE
+        // matcha 0 righe e riusiamo quell'immobile invece di crearne un altro.
+        const { data: freshPratica, error: freshErr } = await supabase
+          .from('proprietari_pratiche')
+          .select('id, proprietario_id, via, tipologia, citta, valutazione_stimata, motivazione_vendita, scadenza_esclusiva, immobile_id')
+          .eq('id', pratica.id)
+          .single();
+        if (freshErr) throw freshErr;
+        let targetImmobileId = freshPratica.immobile_id;
+
+        if (!targetImmobileId) {
+          const { data: contattoDrive } = await supabase
+            .from('contatti')
+            .select('drive_folder_url')
+            .eq('id', freshPratica.proprietario_id)
+            .maybeSingle();
+
+          const baseSlug = (freshPratica.via || 'immobile').toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+          const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
+
+          const { data: created, error: immobileError } = await supabase
+            .from('immobili')
+            .insert({
+              titolo: freshPratica.tipologia ? `${freshPratica.tipologia} in ${freshPratica.via}` : freshPratica.via,
+              indirizzo: freshPratica.via,
+              citta: freshPratica.citta,
+              tipologia: freshPratica.tipologia,
+              prezzo: freshPratica.valutazione_stimata,
+              motivazione_vendita: freshPratica.motivazione_vendita,
+              scadenza_esclusiva: freshPratica.scadenza_esclusiva,
+              proprietario_id: freshPratica.proprietario_id,
+              drive_folder_url: contattoDrive?.drive_folder_url ?? null,
+              stato: 'Bozza',
+              // Auto-creazione da pratica: nasce SEMPRE nascosto dal sito
+              // pubblico. `visibile` (toggle admin nella lista /immobili) e
+              // `pubblicato_sito` (source of truth per la RLS anon) settati a
+              // false, così l'agente deve pubblicarlo esplicitamente dal
+              // kanban Gestione (sottofase "Pubblicato" → pulsante "Pubblica
+              // sul sito").
+              visibile: false,
+              pubblicato_sito: false,
+              slug,
+            })
+            .select('id')
+            .single();
+          if (immobileError) throw immobileError;
+
+          // UPDATE condizionale: settiamo immobile_id solo se ancora NULL.
+          // Se una race concomitante l'ha già scritto, il WHERE matcha 0 righe:
+          // scartiamo l'immobile appena creato e riusiamo quello vincitore.
+          const { data: linked, error: linkErr } = await supabase
+            .from('proprietari_pratiche')
+            .update({ immobile_id: created.id })
+            .eq('id', pratica.id)
+            .is('immobile_id', null)
+            .select('immobile_id');
+          if (linkErr) throw linkErr;
+
+          if (linked && linked.length > 0) {
+            targetImmobileId = created.id;
+          } else {
+            // Race: qualcun altro ha vinto. Recuperiamo l'immobile vincitore
+            // e cancelliamo quello nostro (hard-delete: non è mai stato usato).
+            const { data: winner } = await supabase
+              .from('proprietari_pratiche')
+              .select('immobile_id')
+              .eq('id', pratica.id)
+              .single();
+            await supabase.from('immobili').delete().eq('id', created.id);
+            targetImmobileId = winner?.immobile_id ?? created.id;
+          }
+
+          // Fire-and-forget: la cartella Drive è best-effort e la Edge Function
+          // può essere lenta o non configurata (env DRIVE_WEBAPP_URL). Non
+          // vogliamo far aspettare l'utente ~1s per un'operazione ausiliaria:
+          // il click "Sposta in Gestione" ora chiude subito dopo le operazioni
+          // critiche, la cartella si crea in background.
+          supabase.functions.invoke('drive-documenti', {
+            body: { action: 'createFolder', immobileId: targetImmobileId },
+          }).catch(() => { /* silenzioso */ });
+        }
+
+        await upsertFasePipeline(targetImmobileId!, 'In Vendita', 'Preparazione');
+        await generaChecklistPerFase(targetImmobileId!, 'In Vendita');
+      } finally {
+        passaggioInCorsoRef.current = false;
+      }
     },
     onSuccess: () => {
-      setNuovaScadenzaData('');
-      setNuovaScadenzaDesc('');
-      queryClient.invalidateQueries({ queryKey: ['pipeline-scadenze', 'pratica', pratica?.id] });
+      showSuccess('Immobile spostato in gestione.');
+      queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+      setConfermaPassaggioFase(false);
+      onClose();
     },
-    onError: () => showError('Impossibile aggiungere la scadenza.'),
+    onError: (err) => {
+      console.error('[passaAInPreparazione] ERROR', err);
+      showError(`Passaggio in gestione non riuscito: ${err instanceof Error ? err.message : String(err)}`);
+    },
   });
 
-  const eliminaScadenza = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('pipeline_scadenze').delete().eq('id', id);
+  // Elimina l'immobile collegato alla pratica (soft-delete) mantenendo il
+  // contatto proprietario intatto. Richiesta esplicita: "devo poter eliminare
+  // l'immobile a partire dalla sezione proprietario mantenendo però nella
+  // sezione contatti il contatto". La FK immobili.proprietario_id ha ON DELETE
+  // SET NULL, ma qui il soft-delete lascia la riga com'è — il contatto è
+  // separato per design.
+  const eliminaImmobile = useMutation({
+    mutationFn: async () => {
+      if (!pratica?.immobile_id) return;
+      const { error } = await supabase
+        .from('immobili')
+        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+        .eq('id', pratica.immobile_id);
       if (error) throw error;
+      // Slega la pratica dall'immobile eliminato (così può eventualmente
+      // ricreare un altro immobile se serve).
+      await supabase
+        .from('proprietari_pratiche')
+        .update({ immobile_id: null })
+        .eq('id', pratica.id);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pipeline-scadenze', 'pratica', pratica?.id] }),
+    onSuccess: () => {
+      showSuccess('Immobile eliminato. Il contatto proprietario resta in Contatti.');
+      queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
+      setConfermaEliminaImmobile(false);
+    },
+    onError: () => showError('Eliminazione non riuscita.'),
   });
+
+  const tipoNota = agenteAssegnato?.nome_completo?.trim()
+    ? `Note di ${agenteAssegnato.nome_completo.trim()}`
+    : 'Note';
+
+  const autoreLoggato = currentProfile?.nome_completo?.trim() || 'Agente';
 
   return (
     <Sheet open={!!pratica} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:max-w-[480px] overflow-y-auto">
+      <SheetContent side="right" className="w-full sm:max-w-[520px] overflow-y-auto">
         {pratica && (
           <>
             <SheetHeader className="text-left">
@@ -463,64 +611,7 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               )}
             </div>
 
-            {/* Scadenze — sempre visibili, editabili in qualsiasi fase */}
-            <div className="mt-6">
-              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
-                <CalendarClock size={12} /> Scadenze
-              </h4>
-              {(scadenze ?? []).length > 0 && (
-                <div className="space-y-2 mb-3">
-                  {(scadenze ?? []).map((s) => (
-                    <div key={s.id} className="flex items-center gap-2 rounded-xl border border-gray-100 px-3 py-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-bold text-gray-800">
-                            {new Date(s.scadenza).toLocaleDateString('it-IT')}
-                          </span>
-                          <Badge variant="outline" className="text-[0.6rem] font-semibold">{s.fase}</Badge>
-                        </div>
-                        {s.descrizione && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">{s.descrizione}</p>
-                        )}
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-gray-400 hover:text-red-500"
-                        onClick={() => eliminaScadenza.mutate(s.id)}
-                      >
-                        <X size={14} />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-start gap-2">
-                <Input
-                  type="date"
-                  value={nuovaScadenzaData}
-                  onChange={(e) => setNuovaScadenzaData(e.target.value)}
-                  className="rounded-xl h-10 w-40"
-                />
-                <Input
-                  placeholder="Descrizione (opzionale)..."
-                  value={nuovaScadenzaDesc}
-                  onChange={(e) => setNuovaScadenzaDesc(e.target.value)}
-                  className="rounded-xl h-10 flex-1"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  className="h-10 w-10 shrink-0 rounded-xl bg-[#94b0ab] hover:bg-[#7a948f]"
-                  disabled={!nuovaScadenzaData || aggiungiScadenza.isPending}
-                  onClick={() => aggiungiScadenza.mutate()}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
+            {/* Checklist documenti — flag manuale, non blocca il passaggio fase. */}
             <div className="mt-6">
               <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">Checklist documenti</h4>
               {documentiLoading ? (
@@ -531,26 +622,16 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
                 <div className="space-y-2">
                   {documentiFaseCorrente.map((doc) => {
                     // Upload disponibile solo nella fase "Presa in carico"
-                    // (le altre fasi proprietari non hanno documenti da
-                    // allegare, solo spunte).
+                    // (le altre fasi non hanno documenti da allegare, solo spunte).
                     const uploadAbilitato = pratica.fase === 'Presa in carico';
                     return (
                       <div
                         key={doc.id}
                         className="flex items-center gap-3 rounded-xl border border-gray-100 px-3 py-2.5 hover:bg-gray-50 transition-colors"
                       >
-                        <label
-                          className={cn(
-                            'flex items-center gap-3 flex-1 min-w-0',
-                            !uploadAbilitato || doc.stato === 'Fatto' || doc.drive_file_id
-                              ? 'cursor-pointer' : 'cursor-not-allowed',
-                          )}
-                          title={uploadAbilitato && doc.stato !== 'Fatto' && !doc.drive_file_id
-                            ? 'Carica prima il file per poterlo segnare come fatto' : undefined}
-                        >
+                        <label className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
                           <Checkbox
                             checked={doc.stato === 'Fatto'}
-                            disabled={uploadAbilitato && doc.stato !== 'Fatto' && !doc.drive_file_id}
                             onCheckedChange={() => toggleDocumento.mutate(doc)}
                           />
                           <span className={cn(
@@ -582,6 +663,104 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+
+            {/* Passaggio manuale a "In preparazione" (kanban immobili). Visibile
+                solo quando la pratica è nella fase finale "Presa in carico": è la
+                versione manuale del vecchio auto-passaggio triggerato dalla
+                checklist. La checklist ora non blocca né guida il passaggio. */}
+            {pratica.fase === 'Presa in carico' && (
+              <div className="mt-6">
+                <Button
+                  type="button"
+                  onClick={() => setConfermaPassaggioFase(true)}
+                  className="w-full bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold h-11 gap-2"
+                >
+                  <ArrowRight size={15} />
+                  Passa a "In preparazione" (Gestione)
+                </Button>
+              </div>
+            )}
+
+            {/* Task collegate — stesso storico visibile in /tasks e nella scheda contatto. */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">Task</h4>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setTaskModalOpen(true)}
+                  className="h-7 text-xs font-bold rounded-lg px-2 border-gray-200"
+                >
+                  <Plus size={12} className="mr-1" /> Nuova
+                </Button>
+              </div>
+              {tasks.length === 0 ? (
+                <p className="text-sm text-gray-300 italic">Nessuna task collegata.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tasks.slice(0, 8).map((t) => (
+                    <div key={t.id} className="rounded-xl border border-gray-100 px-3 py-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className={cn(
+                          'text-sm font-semibold truncate',
+                          t.stato === 'Completata' ? 'text-gray-400 line-through' : 'text-gray-700',
+                        )}>
+                          {t.titolo || t.nota || 'Task'}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {format(parseISO(t.data), 'd MMM yyyy', { locale: it })}
+                          {t.ora ? ` · ${t.ora.slice(0, 5)}` : ''}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="text-[0.65rem] font-semibold shrink-0">{t.stato}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Note del proprietario — sempre visibili, condivise con la scheda
+                contatti. Titolo dinamico con nome agente quando disponibile. */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3 flex items-center gap-1.5">
+                <StickyNote size={12} /> {tipoNota}
+              </h4>
+              <div className="flex items-start gap-2 mb-3">
+                <Textarea
+                  value={newNoteText}
+                  onChange={(e) => setNewNoteText(e.target.value)}
+                  placeholder="Scrivi una nota..."
+                  className="rounded-xl min-h-[3rem] text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => addNote.mutate(newNoteText, { onSuccess: () => setNewNoteText('') })}
+                  disabled={!newNoteText.trim() || addNote.isPending}
+                  className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl shrink-0"
+                >
+                  <StickyNote size={14} />
+                </Button>
+              </div>
+              {notes.length === 0 ? (
+                <p className="text-sm text-gray-300 italic">Nessuna nota.</p>
+              ) : (
+                <div className="space-y-2">
+                  {notes.slice(0, 6).map((n) => (
+                    <div key={n.id} className="rounded-xl border border-gray-100 px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs font-bold text-[#94b0ab]">{n.autore}</span>
+                        <span className="text-[0.65rem] text-gray-300">
+                          {format(parseISO(n.created_at), 'd MMM yyyy, HH:mm', { locale: it })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 whitespace-pre-wrap">{n.testo}</p>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -706,6 +885,78 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               )}
             </div>
 
+            {/* Elimina immobile: soft-delete. Il contatto proprietario NON viene
+                toccato — resta in Contatti come richiesto. Bottone visibile solo
+                se la pratica ha già un immobile collegato (creaImmobileDaPratica
+                a "Presa in carico" o passaggio manuale). */}
+            {pratica.immobile_id && (
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setConfermaEliminaImmobile(true)}
+                  className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold text-xs h-9 gap-1.5"
+                >
+                  <Trash2 size={14} /> Elimina immobile
+                </Button>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Il proprietario resta salvato in Contatti.
+                </p>
+              </div>
+            )}
+
+            <AlertDialog open={confermaPassaggioFase} onOpenChange={setConfermaPassaggioFase}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2 text-[#94b0ab]">
+                    <ArrowRight size={18} /> Passa a "In preparazione"
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    L'immobile <b>{pratica.via}</b> entrerà in Gestione, sezione "In Vendita",
+                    sottofase "Preparazione". Potrai completare foto/prezzo/scheda da lì.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annulla</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (passaAInPreparazione.isPending || passaggioInCorsoRef.current) return;
+                      passaAInPreparazione.mutate();
+                    }}
+                    disabled={passaAInPreparazione.isPending}
+                    className="bg-[#94b0ab] hover:bg-[#7a948f] text-white disabled:opacity-60 disabled:pointer-events-none"
+                  >
+                    {passaAInPreparazione.isPending ? 'Sposto…' : 'Sposta in Gestione'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={confermaEliminaImmobile} onOpenChange={setConfermaEliminaImmobile}>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+                    <KeyRound size={18} /> Elimina immobile
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    L'immobile della pratica verrà rimosso dalla pipeline e dal sito pubblico.
+                    Il contatto proprietario <b>{pratica.proprietario_nome}</b> resterà in Contatti.
+                    L'operazione è reversibile solo da amministratore DB.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Annulla</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => { e.preventDefault(); eliminaImmobile.mutate(); }}
+                    className="bg-red-500 hover:bg-red-600 text-white"
+                  >
+                    Elimina immobile
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
             <ValuationWizard
               open={wizardOpen}
               onClose={() => setWizardOpen(false)}
@@ -715,6 +966,20 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               initialProprietarioId={pratica.proprietario_id}
               initialProprietarioNome={pratica.proprietario_nome || undefined}
             />
+
+            <TaskModal
+              open={taskModalOpen}
+              onClose={() => setTaskModalOpen(false)}
+              onSaved={() => { setTaskModalOpen(false); invalidateTasks(); }}
+              defaultContattoId={pratica.proprietario_id}
+              defaultContattoName={pratica.proprietario_nome || undefined}
+              origine="gestione"
+            />
+
+            {/* Riferimento all'autore loggato per suppressare warning di
+                variabile non usata quando le note dedotte servono al placeholder
+                del componente <StickyNote> senza consumare autoreLoggato altrove. */}
+            <span className="hidden">{autoreLoggato}</span>
           </>
         )}
       </SheetContent>

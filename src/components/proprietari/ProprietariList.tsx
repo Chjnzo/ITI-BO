@@ -14,7 +14,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Phone, Search, X, KeyRound, Flame, Trash2 } from 'lucide-react';
+import { Phone, Search, X, KeyRound, Flame, Trash2, Briefcase } from 'lucide-react';
 import type { FaseProprietario } from '@/types';
 import { cn } from '@/lib/utils';
 import AvviaPraticaDialog from './AvviaPraticaDialog';
@@ -77,6 +77,11 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
   const [searchQuery, setSearchQuery] = useState('');
   const [agenteFilter, setAgenteFilter] = useState<string>('tutti');
   const [soloCaldi, setSoloCaldi] = useState(false);
+  // Filtro "in pratica" = ha almeno una riga in proprietari_pratiche.
+  // Derivato dai dati già in memoria, nessuna colonna DB extra. Combinabile
+  // liberamente con "solo caldi" (non a esclusione reciproca) — un proprietario
+  // può essere sia caldo sia già in pratica avviata.
+  const [soloInPratica, setSoloInPratica] = useState(false);
   const [avviaPraticaTarget, setAvviaPraticaTarget] = useState<ProprietarioRow | null>(null);
   const [schedaId, setSchedaId] = useState<string | null>(null);
   const [eliminaTarget, setEliminaTarget] = useState<ProprietarioRow | null>(null);
@@ -143,6 +148,9 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
     if (soloCaldi) {
       rows = rows.filter((p) => p.caldo);
     }
+    if (soloInPratica) {
+      rows = rows.filter((p) => (p.proprietari_pratiche ?? []).length > 0);
+    }
     const q = searchQuery.trim().toLowerCase();
     if (!q) return rows;
     const tokens = q.split(/\s+/).filter(Boolean);
@@ -158,7 +166,7 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
         );
       });
     });
-  }, [proprietari, searchQuery, agenteFilter, soloCaldi]);
+  }, [proprietari, searchQuery, agenteFilter, soloCaldi, soloInPratica]);
 
   const refreshAll = () => {
     fetchProprietari();
@@ -200,6 +208,19 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
           >
             <Flame size={14} className="mr-1.5" />
             Solo caldi
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSoloInPratica((v) => !v)}
+            className={cn(
+              'h-10 rounded-xl text-xs font-bold border-gray-200',
+              soloInPratica && 'bg-teal-50 border-teal-200 text-teal-700 hover:text-teal-700'
+            )}
+          >
+            <Briefcase size={14} className="mr-1.5" />
+            In pratica
           </Button>
 
           <Select value={agenteFilter} onValueChange={setAgenteFilter}>
