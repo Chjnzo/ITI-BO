@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Phone, User, Search, Save, X, Plus, Trash2, Briefcase, Mail } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isPhoneLikeQuery, stripDigits } from '@/utils/search';
 
 interface CollaboratoreRecord {
   id?: string;
@@ -126,18 +127,34 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
   }, [openContattoId, onContattoOpened]);
 
   const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return collaboratori;
+    const qRaw = searchQuery.trim();
+    if (!qRaw) return collaboratori;
+
+    // Query tutta phone-like: cerca solo la digit-sequence su telefono/
+    // cellulare (fix condiviso con buildLeadSearchClauses). Evita che token
+    // separati "328", "0886", "930" falliscano il match perché il DB ha
+    // "328 088 6930".
+    if (isPhoneLikeQuery(qRaw)) {
+      const qDigits = stripDigits(qRaw);
+      return collaboratori.filter((c) => {
+        const phoneNorm = stripDigits(c.telefono ?? '');
+        const cellNorm = stripDigits(c.cellulare ?? '');
+        return phoneNorm.includes(qDigits) || cellNorm.includes(qDigits);
+      });
+    }
+
+    const q = qRaw.toLowerCase();
     const tokens = q.split(/\s+/).filter(Boolean);
     return collaboratori.filter((c) => {
       const fullName = `${c.nome ?? ''} ${c.cognome ?? ''}`.toLowerCase();
-      const phoneNorm = (c.telefono ?? '').replace(/[\s-]/g, '');
+      const phoneNorm = stripDigits(c.telefono ?? '');
+      const cellNorm = stripDigits(c.cellulare ?? '');
       return tokens.every((token) => {
-        const tokenPhone = token.replace(/[\s-]/g, '');
+        const tokenPhone = stripDigits(token);
         return (
           fullName.includes(token) ||
           c.email?.toLowerCase().includes(token) ||
-          (tokenPhone && phoneNorm.includes(tokenPhone)) ||
+          (tokenPhone && (phoneNorm.includes(tokenPhone) || cellNorm.includes(tokenPhone))) ||
           c.professione?.toLowerCase().includes(token) ||
           c.note_interne?.toLowerCase().includes(token)
         );

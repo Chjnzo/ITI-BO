@@ -58,6 +58,7 @@ export const useProprietariPipeline = () => {
           proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey(nome, cognome, telefono, contatti(agente_id)),
           documenti:proprietari_pratica_documenti(stato, fase)
         `)
+        .eq('is_deleted', false)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;

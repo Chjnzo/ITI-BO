@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Phone, User, Calculator, ExternalLink, Sparkles, Pencil, Folder,
-  Paperclip, Loader2, Check, Plus, StickyNote, ArrowRight, Trash2, KeyRound,
+  Paperclip, Loader2, Check, Plus, StickyNote, ArrowRight, Trash2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -89,7 +89,7 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
   const [newNoteText, setNewNoteText] = useState('');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [confermaPassaggioFase, setConfermaPassaggioFase] = useState(false);
-  const [confermaEliminaImmobile, setConfermaEliminaImmobile] = useState(false);
+  const [confermaEliminaPratica, setConfermaEliminaPratica] = useState(false);
 
   const { data: ultimaValutazione } = useQuery<{
     id: string;
@@ -470,32 +470,38 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
     },
   });
 
-  // Elimina l'immobile collegato alla pratica (soft-delete) mantenendo il
-  // contatto proprietario intatto. Richiesta esplicita: "devo poter eliminare
-  // l'immobile a partire dalla sezione proprietario mantenendo però nella
-  // sezione contatti il contatto". La FK immobili.proprietario_id ha ON DELETE
-  // SET NULL, ma qui il soft-delete lascia la riga com'è — il contatto è
-  // separato per design.
-  const eliminaImmobile = useMutation({
+  // Elimina la pratica (soft-delete) da qualunque fase — anche da Valutazione,
+  // quando l'immobile non esiste ancora. Il contatto proprietario resta in
+  // Contatti come richiesto (spec utente 2026-09-23).
+  //
+  // Se la pratica ha già un immobile collegato (fase avanzata / passaggio in
+  // gestione), soft-delete anche l'immobile per coerenza — altrimenti l'utente
+  // vedrebbe la pratica sparire dal kanban proprietari ma l'immobile continuare
+  // a vivere nel kanban immobili orfano di riferimento pratica.
+  const eliminaPratica = useMutation({
     mutationFn: async () => {
-      if (!pratica?.immobile_id) return;
-      const { error } = await supabase
-        .from('immobili')
-        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-        .eq('id', pratica.immobile_id);
-      if (error) throw error;
-      // Slega la pratica dall'immobile eliminato (così può eventualmente
-      // ricreare un altro immobile se serve).
-      await supabase
+      if (!pratica) return;
+      const now = new Date().toISOString();
+      const { error: praticaErr } = await supabase
         .from('proprietari_pratiche')
-        .update({ immobile_id: null })
+        .update({ is_deleted: true, deleted_at: now, updated_at: now })
         .eq('id', pratica.id);
+      if (praticaErr) throw praticaErr;
+      if (pratica.immobile_id) {
+        const { error: immErr } = await supabase
+          .from('immobili')
+          .update({ is_deleted: true, deleted_at: now })
+          .eq('id', pratica.immobile_id);
+        if (immErr) throw immErr;
+      }
     },
     onSuccess: () => {
-      showSuccess('Immobile eliminato. Il contatto proprietario resta in Contatti.');
+      showSuccess('Pratica eliminata. Il proprietario resta in Contatti.');
       queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
       queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
-      setConfermaEliminaImmobile(false);
+      queryClient.invalidateQueries({ queryKey: ['proprietari-list'] });
+      setConfermaEliminaPratica(false);
+      onClose();
     },
     onError: () => showError('Eliminazione non riuscita.'),
   });
@@ -885,25 +891,23 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               )}
             </div>
 
-            {/* Elimina immobile: soft-delete. Il contatto proprietario NON viene
-                toccato — resta in Contatti come richiesto. Bottone visibile solo
-                se la pratica ha già un immobile collegato (creaImmobileDaPratica
-                a "Presa in carico" o passaggio manuale). */}
-            {pratica.immobile_id && (
-              <div className="mt-6 pt-4 border-t border-gray-100">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setConfermaEliminaImmobile(true)}
-                  className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold text-xs h-9 gap-1.5"
-                >
-                  <Trash2 size={14} /> Elimina immobile
-                </Button>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  Il proprietario resta salvato in Contatti.
-                </p>
-              </div>
-            )}
+            {/* Elimina pratica: soft-delete disponibile in ogni fase, anche in
+                Valutazione (quando non esiste ancora un immobile). Il contatto
+                proprietario NON viene toccato — resta in Contatti come da spec. */}
+            <div className="mt-6 pt-4 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setConfermaEliminaPratica(true)}
+                className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-xl font-bold text-xs h-9 gap-1.5"
+              >
+                <Trash2 size={14} /> Elimina pratica
+              </Button>
+              <p className="text-[10px] text-gray-400 mt-1">
+                Il proprietario resta salvato in Contatti.
+                {pratica.immobile_id && ' L\'immobile collegato viene anch\'esso eliminato.'}
+              </p>
+            </div>
 
             <AlertDialog open={confermaPassaggioFase} onOpenChange={setConfermaPassaggioFase}>
               <AlertDialogContent>
@@ -933,25 +937,28 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               </AlertDialogContent>
             </AlertDialog>
 
-            <AlertDialog open={confermaEliminaImmobile} onOpenChange={setConfermaEliminaImmobile}>
+            <AlertDialog open={confermaEliminaPratica} onOpenChange={setConfermaEliminaPratica}>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle className="flex items-center gap-2 text-red-600">
-                    <KeyRound size={18} /> Elimina immobile
+                    <Trash2 size={18} /> Elimina pratica
                   </AlertDialogTitle>
                   <AlertDialogDescription>
-                    L'immobile della pratica verrà rimosso dalla pipeline e dal sito pubblico.
-                    Il contatto proprietario <b>{pratica.proprietario_nome}</b> resterà in Contatti.
+                    La pratica di <b>{pratica.proprietario_nome}</b>
+                    {pratica.via ? <> in <b>{pratica.via}</b></> : null} verrà rimossa dal kanban.
+                    {pratica.immobile_id && ' Anche l\'immobile collegato viene rimosso da Gestione e dal sito pubblico.'}
+                    {' '}Il contatto proprietario resterà in Contatti.
                     L'operazione è reversibile solo da amministratore DB.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Annulla</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={(e) => { e.preventDefault(); eliminaImmobile.mutate(); }}
-                    className="bg-red-500 hover:bg-red-600 text-white"
+                    onClick={(e) => { e.preventDefault(); eliminaPratica.mutate(); }}
+                    disabled={eliminaPratica.isPending}
+                    className="bg-red-500 hover:bg-red-600 text-white disabled:opacity-60 disabled:pointer-events-none"
                   >
-                    Elimina immobile
+                    {eliminaPratica.isPending ? 'Elimino…' : 'Elimina pratica'}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

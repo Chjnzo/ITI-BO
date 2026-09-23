@@ -32,6 +32,11 @@ import type { FaseProprietario, Sottofase } from '@/types';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
+export interface AppointmentContattoChild {
+  nome: string;
+  cognome: string | null;
+}
+
 export interface Appointment {
   id: string;
   agente_id: string;
@@ -48,9 +53,46 @@ export interface Appointment {
   ora_fine: string | null;
   note: string | null;
   indirizzo_appuntamento: string | null;
+  // Embed legacy per appuntamenti pre-pivot ancora agganciati a lead_id.
   leads?: { nome: string; cognome: string; telefono?: string | null } | null;
+  // Embed 1:1 verso le 3 tabelle figlie di contatti (post-pivot, via contatto_id).
+  contatti?: {
+    proprietari: AppointmentContattoChild | AppointmentContattoChild[] | null;
+    acquirenti: AppointmentContattoChild | AppointmentContattoChild[] | null;
+    collaboratori: AppointmentContattoChild | AppointmentContattoChild[] | null;
+  } | null;
   immobili?: { titolo: string } | null;
 }
+
+// Select da riusare ovunque si carichino liste di appuntamenti per le viste
+// calendario (Agenda settimanale/per agente), per includere sia il fallback
+// legacy (leads) sia il nuovo embed via contatto_id.
+export const APPOINTMENT_CONTACT_SELECT = `
+  leads(nome, cognome, telefono),
+  contatti(
+    proprietari(nome, cognome),
+    acquirenti(nome, cognome),
+    collaboratori(nome, cognome)
+  )
+`;
+
+const firstOfContatto = <T,>(v: T | T[] | null | undefined): T | null => {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+};
+
+// Risolve il nome del contatto collegato a un appuntamento, sia via
+// contatto_id (post-pivot: proprietari/acquirenti/collaboratori) sia via
+// lead_id legacy. Usato dalle viste calendario che mostrano solo nome/cognome
+// (il dettaglio completo con telefono/tipo badge resta nel modal via contattoDetail).
+export const getAppointmentContactName = (event: Appointment): string | null => {
+  const contatto = firstOfContatto(event.contatti?.proprietari)
+    ?? firstOfContatto(event.contatti?.acquirenti)
+    ?? firstOfContatto(event.contatti?.collaboratori);
+  if (contatto) return `${contatto.nome} ${contatto.cognome ?? ''}`.trim();
+  if (event.leads) return `${event.leads.nome} ${event.leads.cognome}`.trim();
+  return null;
+};
 
 export interface AgentProfile {
   id: string;

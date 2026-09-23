@@ -24,6 +24,18 @@ interface AgentProfile {
   avatar_url: string | null;
 }
 
+interface ContattoChild {
+  id: string;
+  nome: string;
+  cognome: string | null;
+}
+
+interface ContattiEmbed {
+  proprietari: ContattoChild | ContattoChild[] | null;
+  acquirenti: ContattoChild | ContattoChild[] | null;
+  collaboratori: ContattoChild | ContattoChild[] | null;
+}
+
 interface TodayAppointment {
   id: string;
   tipologia: string;
@@ -31,13 +43,9 @@ interface TodayAppointment {
   ora_fine: string | null;
   note: string | null;
   leads?: { nome: string; cognome: string } | null;
+  // Embed via contatto_id → contatti(id) → proprietari/acquirenti/collaboratori (post-pivot).
+  contatti?: ContattiEmbed | null;
   immobili?: { titolo: string } | null;
-}
-
-interface ContattoChild {
-  id: string;
-  nome: string;
-  cognome: string | null;
 }
 
 interface PendingTask {
@@ -55,11 +63,7 @@ interface PendingTask {
   // relazione 1:1 via PK condivisa, e `null` quando non c'è la riga figlia.
   // Copriamo entrambe le forme (`ContattoChild | ContattoChild[] | null`)
   // perché il formato può variare tra versioni di PostgREST/opzioni di query.
-  contatti?: {
-    proprietari: ContattoChild | ContattoChild[] | null;
-    acquirenti: ContattoChild | ContattoChild[] | null;
-    collaboratori: ContattoChild | ContattoChild[] | null;
-  } | null;
+  contatti?: ContattiEmbed | null;
 }
 
 const firstOf = <T,>(v: T | T[] | null | undefined): T | null => {
@@ -67,12 +71,15 @@ const firstOf = <T,>(v: T | T[] | null | undefined): T | null => {
   return Array.isArray(v) ? (v[0] ?? null) : v;
 };
 
-const getTaskContactName = (task: PendingTask): string | null => {
-  const row = firstOf(task.contatti?.proprietari)
-    ?? firstOf(task.contatti?.acquirenti)
-    ?? firstOf(task.contatti?.collaboratori);
-  if (row) return `${row.nome} ${row.cognome ?? ''}`.trim();
-  if (task.leads) return `${task.leads.nome} ${task.leads.cognome}`.trim();
+// Risolve il nome del contatto sia per task/appuntamenti collegati via
+// contatto_id (post-pivot: proprietari/acquirenti/collaboratori) sia per i
+// record legacy ancora collegati via lead_id.
+const getContattoName = (row: { contatti?: ContattiEmbed | null; leads?: { nome: string; cognome: string } | null }): string | null => {
+  const contatto = firstOf(row.contatti?.proprietari)
+    ?? firstOf(row.contatti?.acquirenti)
+    ?? firstOf(row.contatti?.collaboratori);
+  if (contatto) return `${contatto.nome} ${contatto.cognome ?? ''}`.trim();
+  if (row.leads) return `${row.leads.nome} ${row.leads.cognome}`.trim();
   return null;
 };
 
@@ -124,9 +131,12 @@ const Dashboard = () => {
       const horizon10 = format(addDays(new Date(), 10), 'yyyy-MM-dd');
 
       // Build queries (conditional filters before Promise.all)
+      // NB: 'leads' è la tabella pre-pivot, non più scritta da nessuna UI —
+      // i contatti "in trattativa" vivono ora su 'acquirenti' (stesso enum stato).
       const activeLeadsQuery = supabase
-        .from('leads')
+        .from('acquirenti')
         .select('*', { count: 'exact', head: true })
+        .eq('is_deleted', false)
         .neq('stato', 'Chiuso');
 
       let todayAppCountQuery = supabase
@@ -155,7 +165,7 @@ const Dashboard = () => {
         pendingTasksCountQuery,
         supabase
           .from('appuntamenti')
-          .select('id, tipologia, ora_inizio, ora_fine, note, leads(nome, cognome), immobili(titolo)')
+          .select('id, tipologia, ora_inizio, ora_fine, note, leads(nome, cognome), contatti(proprietari(id, nome, cognome), acquirenti(id, nome, cognome), collaboratori(id, nome, cognome)), immobili(titolo)')
           .eq('data', today)
           .eq('agente_id', user.id)
           .order('ora_inizio', { ascending: true }),
@@ -216,7 +226,7 @@ const Dashboard = () => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const { data } = await supabase
       .from('appuntamenti')
-      .select('id, tipologia, ora_inizio, ora_fine, note, leads(nome, cognome), immobili(titolo)')
+      .select('id, tipologia, ora_inizio, ora_fine, note, leads(nome, cognome), contatti(proprietari(id, nome, cognome), acquirenti(id, nome, cognome), collaboratori(id, nome, cognome)), immobili(titolo)')
       .eq('data', today)
       .eq('agente_id', user.id)
       .order('ora_inizio', { ascending: true });
@@ -346,9 +356,7 @@ const Dashboard = () => {
                     <div className="w-1.5 h-1.5 rounded-full bg-[#94b0ab] mt-2 shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">
-                        {app.leads
-                          ? `${app.leads.nome} ${app.leads.cognome}`
-                          : (app.immobili?.titolo ?? app.tipologia)}
+                        {getContattoName(app) ?? (app.immobili?.titolo ?? app.tipologia)}
                       </p>
                       <p className="text-xs text-gray-400">
                         {app.ora_inizio ? app.ora_inizio.slice(0, 5) : ''}
@@ -410,7 +418,7 @@ const Dashboard = () => {
               <div className="space-y-3">
                 {displayedTasks.map(task => {
                   const isToday = task.data === format(new Date(), 'yyyy-MM-dd');
-                  const leadName = getTaskContactName(task);
+                  const leadName = getContattoName(task);
                   return (
                     <div
                       key={task.id}

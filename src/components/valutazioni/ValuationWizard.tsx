@@ -185,6 +185,7 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
   // Step 1 — Proprietario (avvio da scheda contatto, alternativo al lead)
   const [proprietarioId, setProprietarioId] = useState('');
   const [proprietarioNome, setProprietarioNome] = useState('');
+  const [proprietarioItems, setProprietarioItems] = useState<ComboboxItem[]>([]);
 
   // Step 2 — Dati Immobile
   const [indirizzo, setIndirizzo] = useState('');
@@ -372,6 +373,29 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
     setLeadItems((rows ?? []).map(r => ({
       id: r.id,
       label: `${r.nome} ${r.cognome}`,
+      sublabel: r.telefono ?? undefined,
+    })));
+  };
+
+  const searchProprietariAbortRef = React.useRef<AbortController | null>(null);
+
+  const searchProprietari = async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) { setProprietarioItems([]); return; }
+    searchProprietariAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchProprietariAbortRef.current = controller;
+
+    const { buildLeadSearchClauses } = await import('@/utils/search');
+    const clauses = buildLeadSearchClauses(trimmed);
+    let query = supabase.from('proprietari').select('id, nome, cognome, telefono').eq('is_deleted', false);
+    for (const clause of clauses) query = query.or(clause);
+    const { data: rows } = await query.limit(8);
+
+    if (controller.signal.aborted) return;
+    setProprietarioItems((rows ?? []).map(r => ({
+      id: r.id,
+      label: `${r.nome} ${r.cognome ?? ''}`.trim(),
       sublabel: r.telefono ?? undefined,
     })));
   };
@@ -640,6 +664,10 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
   };
 
   const isRecreate = !!initialData;
+  // Locked solo quando si arriva dalla scheda Proprietario (initialProprietarioId) —
+  // in quel caso il contatto non è modificabile. Altrimenti l'utente cerca e
+  // seleziona liberamente un proprietario tramite combobox.
+  const isProprietarioLocked = !!initialProprietarioId;
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -687,16 +715,16 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-10 py-8 space-y-7">
 
-          {/* ── STEP 1: Lead ─────────────────────────────────────────────── */}
+          {/* ── STEP 1: Proprietario ─────────────────────────────────────── */}
           {step === 1 && (
             <div className="space-y-7 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="space-y-1">
                 <h2 className="text-xl font-bold flex items-center gap-2 text-[#1a1a1a]">
-                  <Home size={22} className="text-[#94b0ab]" /> Lead Collegato
+                  <Home size={22} className="text-[#94b0ab]" /> Proprietario Collegato
                 </h2>
-                <p className="text-sm text-gray-400">Associa la valutazione a un contatto esistente (opzionale).</p>
+                <p className="text-sm text-gray-400">Associa la valutazione a un proprietario esistente (opzionale).</p>
               </div>
-              {proprietarioId ? (
+              {isProprietarioLocked && proprietarioId ? (
                 <div className="flex items-center gap-3 rounded-2xl border border-[#94b0ab]/30 bg-[#94b0ab]/5 px-5 py-4">
                   <UserCheck size={20} className="text-[#94b0ab] shrink-0" />
                   <div>
@@ -707,20 +735,23 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
               ) : (
                 <>
                   <div className="space-y-3">
-                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Lead</Label>
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Proprietario</Label>
                     <Combobox
-                      items={leadItems}
-                      value={leadId}
-                      onSelect={setLeadId}
-                      onSearch={searchLeads}
-                      placeholder="Cerca lead per nome... (opzionale)"
+                      items={proprietarioItems}
+                      value={proprietarioId}
+                      onSelect={(id) => {
+                        setProprietarioId(id);
+                        setProprietarioNome(proprietarioItems.find(i => i.id === id)?.label ?? '');
+                      }}
+                      onSearch={searchProprietari}
+                      placeholder="Cerca proprietario per nome... (opzionale)"
                       searchPlaceholder="Nome o cognome..."
-                      emptyMessage="Nessun lead trovato."
+                      emptyMessage="Nessun proprietario trovato."
                       className="rounded-2xl h-14 border-gray-100"
                     />
                   </div>
                   <p className="text-xs text-gray-400 italic">
-                    Puoi creare una valutazione anche senza associarla a un contatto.
+                    Puoi creare una valutazione anche senza associarla a un proprietario.
                   </p>
                 </>
               )}

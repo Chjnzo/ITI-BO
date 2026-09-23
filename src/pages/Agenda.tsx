@@ -11,6 +11,7 @@ import { Plus, ChevronLeft, ChevronRight, CalendarIcon, Columns3, CalendarDays }
 import { cn } from '@/lib/utils';
 import EventFormModal, {
   type Appointment, type AgentProfile, type TipologiaRow, type TipologieMap, TIPOLOGIA_COLORS,
+  APPOINTMENT_CONTACT_SELECT,
 } from '@/components/agenda/EventFormModal';
 import CategorieSheet from '@/components/agenda/CategorieSheet';
 import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
@@ -70,7 +71,7 @@ const Agenda = () => {
     const sunday = format(endOfWeek(parseISO(selectedDate), { weekStartsOn: 1 }), 'yyyy-MM-dd');
     const { data, error } = await supabase
       .from('appuntamenti')
-      .select('*, leads(nome, cognome, telefono), immobili(titolo)')
+      .select(`*, ${APPOINTMENT_CONTACT_SELECT}, immobili(titolo)`)
       .gte('data', monday)
       .lte('data', sunday)
       .order('ora_inizio');

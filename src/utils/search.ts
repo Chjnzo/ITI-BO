@@ -4,36 +4,59 @@ export const stripDigits = (s: string): string => s.replace(/\D/g, '');
 // Escapes PostgREST ILIKE special characters
 export const escapeLike = (s: string): string => s.replace(/[%_\\]/g, '\\$&');
 
+// Regex per riconoscere una query composta SOLO da cifre, spazi, trattini,
+// parentesi, punti o +. Se una query è tutta phone-like non ha senso cercarla
+// su nome/cognome/email/via: usiamo la sola digit-sequence su telefono e
+// cellulare, così qualunque formato in input matcha qualunque formato in DB.
+const PHONE_LIKE_RE = /^[\d\s\-().+]+$/;
+
+// Genera il pattern ILIKE "digit sequence" per matchare un numero di telefono
+// indipendentemente dagli spazi/dashes con cui è salvato in DB. Prende le
+// ultime 9 cifre (più che sufficienti per un mobile italiano senza prefisso
+// internazionale) e le intervalla con `%`.
+// Esempio: "3280886930" → "%2%8%0%8%8%6%9%3%0%".
+const digitSequencePattern = (digits: string): string =>
+  '%' + digits.slice(-9).split('').join('%') + '%';
+
 /**
  * Builds an array of PostgREST OR-clause strings for a contact search.
  *
  * Strategy:
- * - Split the query into whitespace tokens → each token must match at least one
- *   field (AND between tokens, OR within each token's fields).
- * - If the whole query is phone-like (only digits/spaces/dashes/+), also add a
- *   digit-sequence pattern so "3331234567" matches "333 123 4567" stored in DB
- *   (applicato sia a `telefono` che a `cellulare`).
+ * - Se la query è **completamente phone-like** (solo cifre + separatori):
+ *   ritorna un unico clause con la digit-sequence su telefono/cellulare.
+ *   Copre tutti i formati sia in input ("328 088 6930", "328-088-6930",
+ *   "3280886930", "328 0886 930") sia in DB. NON si cerca su nome/cognome/
+ *   email/via perché non ha senso.
+ * - Altrimenti (query mista o testuale): split per whitespace, ogni token
+ *   deve matchare almeno un campo (AND tra token, OR dentro i campi del
+ *   token). I campi coperti sono nome/cognome/telefono/cellulare + extra.
  *
  * @param q  Testo digitato dall'utente.
  * @param extraFields  Colonne aggiuntive da coprire, specifiche della tabella
  *   (es. `['via_immobile', 'citta_immobile']` per proprietari). Vengono
- *   incluse in ogni token con lo stesso ILIKE dei campi base.
+ *   incluse in ogni token con lo stesso ILIKE dei campi base — solo in
+ *   modalità "testuale", non quando la query è phone-like.
  */
 export function buildLeadSearchClauses(q: string, extraFields: string[] = []): string[] {
   const trimmed = q.trim();
   if (!trimmed) return [];
 
-  const tokens = trimmed.split(/\s+/).map(escapeLike);
-
-  // Phone-digit pattern: take the last 9 digits and join with % wildcards.
-  // e.g. "3331234567" → "%3%3%3%1%2%3%4%5%6%7%" — matches any formatting.
   const digits = stripDigits(trimmed);
-  const phonePattern =
-    digits.length >= 4 && /^[\d\s\-()+]+$/.test(trimmed)
-      ? '%' + digits.slice(-9).split('').join('%') + '%'
-      : null;
 
-  return tokens.map((token, i) => {
+  // Query interamente phone-like: singolo clause su telefono/cellulare con
+  // digit-sequence. Ignora la tokenizzazione — così "328 0886 930" (input)
+  // matcha "328 088 6930" (DB) e viceversa, senza dipendere dal fatto che
+  // ogni token separato si trovi consecutivo nella stringa salvata.
+  if (digits.length >= 4 && PHONE_LIKE_RE.test(trimmed)) {
+    const pattern = digitSequencePattern(digits);
+    return [
+      [`telefono.ilike.${pattern}`, `cellulare.ilike.${pattern}`].join(','),
+    ];
+  }
+
+  // Query testuale (o mista): comportamento a token.
+  const tokens = trimmed.split(/\s+/).map(escapeLike);
+  return tokens.map((token) => {
     const clauses = [
       `nome.ilike.%${token}%`,
       `cognome.ilike.%${token}%`,
@@ -41,15 +64,21 @@ export function buildLeadSearchClauses(q: string, extraFields: string[] = []): s
       `cellulare.ilike.%${token}%`,
       ...extraFields.map((f) => `${f}.ilike.%${token}%`),
     ];
-    // Add digit-sequence pattern solo sul primo token (di solito è quello con
-    // il telefono intero). Applicato a entrambe le colonne fisso/cellulare.
-    if (phonePattern && i === 0) {
-      clauses.push(`telefono.ilike.${phonePattern}`);
-      clauses.push(`cellulare.ilike.${phonePattern}`);
-    }
     return clauses.join(',');
   });
 }
+
+/**
+ * Ritorna `true` se la stringa è composta solo da cifre e separatori tipici di
+ * un numero di telefono (spazi, trattini, punti, parentesi, +) e contiene
+ * almeno 4 cifre. Usato dai filtri client-side per applicare la stessa
+ * normalizzazione digit-only del server-side quando l'utente cerca per
+ * telefono.
+ */
+export const isPhoneLikeQuery = (q: string): boolean => {
+  const trimmed = q.trim();
+  return trimmed.length > 0 && PHONE_LIKE_RE.test(trimmed) && stripDigits(trimmed).length >= 4;
+};
 
 /**
  * Client-side check: does a combobox item match the typed query?

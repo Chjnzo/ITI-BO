@@ -4,7 +4,7 @@ import React, { useState, useRef, useCallback, useMemo, memo } from 'react';
 import { format, isToday, parseISO, startOfWeek, addDays } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
+import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS, getAppointmentContactName } from '@/components/agenda/EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -260,9 +260,7 @@ const DayColumn = memo(({
                   </p>
                   {height > 42 && (
                     <p className="text-[11px] leading-tight truncate font-medium opacity-90" style={{ color: colors.text }}>
-                      {event.leads
-                        ? `${event.leads.nome} ${event.leads.cognome}`
-                        : event.immobili?.titolo ?? ''}
+                      {getAppointmentContactName(event) ?? (event.immobili?.titolo ?? '')}
                     </p>
                   )}
                   <span
@@ -542,9 +540,9 @@ const WeeklyPlanningView = ({
           <p className="text-[11.5px] font-bold leading-tight truncate" style={{ color: ghost.colors.text }}>
             {ghost.ghostTime} · {drag!.event.tipologia}
           </p>
-          {ghost.style.height > 42 && drag!.event.leads && (
+          {ghost.style.height > 42 && getAppointmentContactName(drag!.event) && (
             <p className="text-[11px] leading-tight truncate font-medium opacity-90" style={{ color: ghost.colors.text }}>
-              {drag!.event.leads.nome} {drag!.event.leads.cognome}
+              {getAppointmentContactName(drag!.event)}
             </p>
           )}
         </div>
