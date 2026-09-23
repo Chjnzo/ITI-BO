@@ -45,6 +45,7 @@ interface Valutazione {
   motivazione_ai: string | null;
   slug: string | null;
   leads?: { nome: string; cognome: string } | null;
+  proprietari?: { nome: string; cognome: string | null } | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ const Valutazioni = () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('valutazioni')
-      .select('id, indirizzo, citta, superficie_mq, stato, created_at, stima_min, stima_max, motivazione_ai, slug, leads(nome, cognome)')
+      .select('id, indirizzo, citta, superficie_mq, stato, created_at, stima_min, stima_max, motivazione_ai, slug, leads(nome, cognome), proprietari(nome, cognome)')
       .order('created_at', { ascending: false });
     if (error) {
       showError('Errore nel caricamento valutazioni');
@@ -241,7 +242,7 @@ const Valutazioni = () => {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/60">
                 <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[28%]">Immobile</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[22%]">Lead</th>
+                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[22%]">Proprietario</th>
                 <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[18%]">Stima</th>
                 <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[8%]">Stato</th>
                 <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-widest text-gray-400 w-[10%]">Data</th>
@@ -268,9 +269,11 @@ const Valutazioni = () => {
                       )}
                     </td>
 
-                    {/* Lead */}
+                    {/* Proprietario (post-pivot) con fallback al lead legacy */}
                     <td className="px-6 py-5 min-w-0">
-                      {v.leads
+                      {v.proprietari
+                        ? <span className="font-medium text-gray-700 truncate block max-w-full">{v.proprietari.nome} {v.proprietari.cognome}</span>
+                        : v.leads
                         ? <span className="font-medium text-gray-700 truncate block max-w-full">{v.leads.nome} {v.leads.cognome}</span>
                         : <span className="text-gray-300">—</span>}
                     </td>

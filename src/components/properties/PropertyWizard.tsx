@@ -124,7 +124,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   });
 
   const [prezzoSuRichiesta, setPrezzoSuRichiesta] = useState(false);
-  const [proprietarioLeadId, setProprietarioLeadId] = useState('');
+  const [proprietarioId, setProprietarioId] = useState('');
   const [proprietarioItems, setProprietarioItems] = useState<ComboboxItem[]>([]);
   const [customFeatureInput, setCustomFeatureInput] = useState('');
 
@@ -143,29 +143,47 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
     };
   }, []);
 
+  // Precarica il proprietario già collegato (edit mode) tramite proprietario_id.
   useEffect(() => {
+    if (!initialData?.proprietario_id) return;
     supabase
-      .from('leads')
+      .from('proprietari')
       .select('id, nome, cognome, telefono')
-      .in('tipo_cliente', ['Proprietario', 'Ibrido'])
-      .order('cognome')
-      .limit(100)
-      .then(({ data: rows }) => {
-        if (!rows) return;
-        const items: ComboboxItem[] = rows.map(r => ({
-          id: r.id,
-          label: `${r.nome} ${r.cognome}`,
-          sublabel: r.telefono ?? undefined,
-        }));
-        setProprietarioItems(items);
-        if (initialData?.proprietario) {
-          const match = items.find(
-            i => i.label.toLowerCase() === initialData.proprietario.toLowerCase()
-          );
-          if (match) setProprietarioLeadId(match.id);
-        }
+      .eq('id', initialData.proprietario_id)
+      .single()
+      .then(({ data: row }) => {
+        if (!row) return;
+        setProprietarioId(row.id);
+        setProprietarioItems([{
+          id: row.id,
+          label: `${row.nome} ${row.cognome ?? ''}`.trim(),
+          sublabel: row.telefono ?? undefined,
+        }]);
       });
-  }, []);
+  }, [initialData?.proprietario_id]);
+
+  const searchProprietariAbortRef = useRef<AbortController | null>(null);
+
+  const searchProprietari = async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) { setProprietarioItems([]); return; }
+    searchProprietariAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchProprietariAbortRef.current = controller;
+
+    const { buildLeadSearchClauses } = await import('@/utils/search');
+    const clauses = buildLeadSearchClauses(trimmed);
+    let query = supabase.from('proprietari').select('id, nome, cognome, telefono').eq('is_deleted', false);
+    for (const clause of clauses) query = query.or(clause);
+    const { data: rows } = await query.limit(8);
+
+    if (controller.signal.aborted) return;
+    setProprietarioItems((rows ?? []).map(r => ({
+      id: r.id,
+      label: `${r.nome} ${r.cognome ?? ''}`.trim(),
+      sublabel: r.telefono ?? undefined,
+    })));
+  };
 
   useEffect(() => {
     if (initialData) {
@@ -222,6 +240,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
       descrizione: formData.descrizione,
       link_immobiliare: formData.link_immobiliare,
       proprietario: formData.proprietario || null,
+      proprietario_id: proprietarioId || null,
       slug,
     };
   };
@@ -316,13 +335,7 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
   };
 
   const handleProprietarioSelect = (id: string) => {
-    setProprietarioLeadId(id);
-    if (!id) {
-      setFormData(prev => ({ ...prev, proprietario: '' }));
-      return;
-    }
-    const item = proprietarioItems.find(i => i.id === id);
-    if (item) setFormData(prev => ({ ...prev, proprietario: item.label }));
+    setProprietarioId(id);
   };
 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -457,14 +470,6 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
         .update({ ...buildPayload(), stato: formData.stato, ...imagePayload })
         .eq('id', immobileId);
       if (error) throw error;
-
-      if (proprietarioLeadId) {
-        const { error: propErr } = await supabase
-          .from('leads')
-          .update({ stato_venditore: 'Chiuso' })
-          .eq('id', proprietarioLeadId);
-        if (propErr) Sentry.captureException(propErr, { tags: { feature: 'proprietario_state_update' } });
-      }
 
       showSuccess(initialData ? "Immobile aggiornato correttamente" : "Immobile pubblicato con successo");
       onSuccess();
@@ -658,14 +663,15 @@ const PropertyWizard = ({ initialData, onClose, onSuccess, leadId, onLeadLinked 
                 <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">Proprietario</Label>
                 <Combobox
                   items={proprietarioItems}
-                  value={proprietarioLeadId}
+                  value={proprietarioId}
                   onSelect={handleProprietarioSelect}
-                  placeholder="Cerca proprietario o ibrido..."
+                  onSearch={searchProprietari}
+                  placeholder="Cerca proprietario..."
                   searchPlaceholder="Nome o cognome..."
-                  emptyMessage="Nessun lead trovato."
+                  emptyMessage="Nessun proprietario trovato."
                   className="rounded-2xl h-14 border-gray-100 bg-white"
                 />
-                {!proprietarioLeadId && formData.proprietario && (
+                {!proprietarioId && formData.proprietario && (
                   <p className="text-xs text-gray-400 mt-1">Attuale: {formData.proprietario}</p>
                 )}
               </div>

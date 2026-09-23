@@ -78,6 +78,7 @@ interface ValutazioneDetail {
   stato: string;
   created_at: string;
   leads?: { nome: string; cognome: string } | null;
+  proprietari?: { nome: string; cognome: string | null } | null;
   zone_omi?: ZonaOmiRow | null;
 }
 
@@ -307,7 +308,7 @@ const ValuazioneReport = () => {
       const query = session?.user
         ? supabase
             .from('valutazioni')
-            .select('*, leads(nome, cognome), zone_omi(codice_zona, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio)')
+            .select('*, leads(nome, cognome), proprietari(nome, cognome), zone_omi(codice_zona, fascia, zona, prezzo_mq_min, prezzo_mq_max, prezzo_mq_medio)')
             .eq('slug', slug)
             .single()
         : supabase.rpc('get_public_valuation_report', { p_slug: slug }).single();
@@ -642,7 +643,9 @@ const ValuazioneReport = () => {
           <div className="px-8 pb-5">
             <p className="text-xs text-gray-400">
               Generato il {format(parseISO(val.created_at), "d MMMM yyyy", { locale: it })}
-              {val.leads && (
+              {val.proprietari ? (
+                <span className="font-semibold text-gray-600"> · per {val.proprietari.nome} {val.proprietari.cognome}</span>
+              ) : val.leads && (
                 <span className="font-semibold text-gray-600"> · per {val.leads.nome} {val.leads.cognome}</span>
               )}
             </p>

@@ -18,6 +18,7 @@ import { it } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import EventFormModal, {
   type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS,
+  APPOINTMENT_CONTACT_SELECT, getAppointmentContactName,
 } from './EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -85,10 +86,10 @@ const EventBlock = ({ event, onClick, coloriMap }: EventBlockProps) => {
         {event.ora_inizio?.slice(0, 5)} {event.tipologia}
       </p>
 
-      {/* Lead name */}
-      {height > 36 && event.leads && (
+      {/* Nome contatto (post-pivot via contatto_id, fallback lead legacy) */}
+      {height > 36 && getAppointmentContactName(event) && (
         <p className="text-[10px] leading-tight truncate opacity-80 mt-px" style={{ color: colors.text }}>
-          {event.leads.nome} {event.leads.cognome}
+          {getAppointmentContactName(event)}
         </p>
       )}
 
@@ -330,7 +331,7 @@ const AgentExpandModal = ({
     }
     const { data, error } = await supabase
       .from('appuntamenti')
-      .select('*, leads(nome, cognome, telefono), immobili(titolo)')
+      .select(`*, ${APPOINTMENT_CONTACT_SELECT}, immobili(titolo)`)
       .eq('agente_id', agent.id)
       .gte('data', rangeStart)
       .lte('data', rangeEnd)

@@ -3,7 +3,7 @@
 import React, { useMemo, memo, useRef } from 'react';
 import { isToday, parseISO } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS } from '@/components/agenda/EventFormModal';
+import { type Appointment, type AgentProfile, type TipologieMap, TIPOLOGIA_COLORS, getAppointmentContactName } from '@/components/agenda/EventFormModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -190,9 +190,7 @@ const AgentColumn = memo(({
                   </p>
                   {height > 42 && (
                     <p className="text-[11px] leading-tight truncate font-medium opacity-90" style={{ color: colors.text }}>
-                      {event.leads
-                        ? `${event.leads.nome} ${event.leads.cognome}`
-                        : event.immobili?.titolo ?? ''}
+                      {getAppointmentContactName(event) ?? (event.immobili?.titolo ?? '')}
                     </p>
                   )}
                 </div>

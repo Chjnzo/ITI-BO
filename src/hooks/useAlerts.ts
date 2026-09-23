@@ -146,7 +146,8 @@ export const useAlerts = () => {
         .select(`
           id, via, citta, fase, updated_at,
           proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey(nome, cognome, contatti(agente_id))
-        `);
+        `)
+        .eq('is_deleted', false);
       if (error) throw error;
       return (data ?? []) as unknown as RawPraticaRow[];
     },

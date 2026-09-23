@@ -19,6 +19,7 @@ import type { FaseProprietario } from '@/types';
 import { cn } from '@/lib/utils';
 import AvviaPraticaDialog from './AvviaPraticaDialog';
 import ProprietarioSchedaSheet from './ProprietarioSchedaSheet';
+import { isPhoneLikeQuery, stripDigits } from '@/utils/search';
 
 interface ProprietarioPraticaRow {
   id: string;
@@ -27,6 +28,7 @@ interface ProprietarioPraticaRow {
   citta: string | null;
   fase: FaseProprietario;
   updated_at: string;
+  is_deleted: boolean;
 }
 
 interface ProprietarioRow {
@@ -35,6 +37,7 @@ interface ProprietarioRow {
   cognome: string | null;
   email: string | null;
   telefono: string | null;
+  cellulare: string | null;
   professione: string | null;
   is_deleted: boolean;
   caldo: boolean;
@@ -65,8 +68,9 @@ interface ProprietariListProps {
 }
 
 const ultimaPratica = (pratiche: ProprietarioPraticaRow[]): ProprietarioPraticaRow | null => {
-  if (!pratiche.length) return null;
-  return [...pratiche].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
+  const attive = pratiche.filter((p) => !p.is_deleted);
+  if (!attive.length) return null;
+  return [...attive].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0];
 };
 
 const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onContattoOpened }: ProprietariListProps) => {
@@ -97,9 +101,9 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
       .select(`
         agente_id, created_at,
         proprietari!inner(
-          id, nome, cognome, email, telefono, professione, is_deleted, caldo,
+          id, nome, cognome, email, telefono, cellulare, professione, is_deleted, caldo,
           via_immobile, citta_immobile, tipologia_immobile,
-          proprietari_pratiche(id, via, tipologia, citta, fase, updated_at)
+          proprietari_pratiche(id, via, tipologia, citta, fase, updated_at, is_deleted)
         )
       `)
       .eq('proprietari.is_deleted', false)
@@ -149,20 +153,36 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
       rows = rows.filter((p) => p.caldo);
     }
     if (soloInPratica) {
-      rows = rows.filter((p) => (p.proprietari_pratiche ?? []).length > 0);
+      rows = rows.filter((p) => (p.proprietari_pratiche ?? []).some((pr) => !pr.is_deleted));
     }
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return rows;
+    const qRaw = searchQuery.trim();
+    if (!qRaw) return rows;
+
+    // Se la query è tutta phone-like (es. "328 0886 930" oppure "3280886930"),
+    // normalizza a solo cifre e cerca sull'ultima porzione contro
+    // telefono/cellulare — evita che token separati non consecutivi in DB
+    // facciano fallire il match. Fix condiviso con buildLeadSearchClauses.
+    if (isPhoneLikeQuery(qRaw)) {
+      const qDigits = stripDigits(qRaw);
+      return rows.filter((p) => {
+        const phoneNorm = stripDigits(p.telefono ?? '');
+        const cellNorm = stripDigits(p.cellulare ?? '');
+        return phoneNorm.includes(qDigits) || cellNorm.includes(qDigits);
+      });
+    }
+
+    const q = qRaw.toLowerCase();
     const tokens = q.split(/\s+/).filter(Boolean);
     return rows.filter((p) => {
       const fullName = `${p.nome ?? ''} ${p.cognome ?? ''}`.toLowerCase();
-      const phoneNorm = (p.telefono ?? '').replace(/[\s-]/g, '');
+      const phoneNorm = stripDigits(p.telefono ?? '');
+      const cellNorm = stripDigits(p.cellulare ?? '');
       return tokens.every((token) => {
-        const tokenPhone = token.replace(/[\s-]/g, '');
+        const tokenPhone = stripDigits(token);
         return (
           fullName.includes(token) ||
           p.email?.toLowerCase().includes(token) ||
-          (tokenPhone && phoneNorm.includes(tokenPhone))
+          (tokenPhone && (phoneNorm.includes(tokenPhone) || cellNorm.includes(tokenPhone)))
         );
       });
     });

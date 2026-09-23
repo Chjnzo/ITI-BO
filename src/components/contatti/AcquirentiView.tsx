@@ -43,6 +43,7 @@ import EventFormModal, { TIPOLOGIA_COLORS, type Appointment, type AgentProfile }
 import { cn } from '@/lib/utils';
 import { TIPOLOGIE_IMMOBILE } from '@/lib/constants';
 import { useCurrentProfile } from '@/hooks/useCurrentProfile';
+import { buildLeadSearchClauses } from '@/utils/search';
 
 const TIPI_CONTRATTO = ['Acquisto', 'Affitto'] as const;
 
@@ -226,6 +227,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   const [acquirenteNotes, setAcquirenteNotes] = useState<AcquirenteNote[]>([]);
   const [newNoteText, setNewNoteText] = useState('');
   const [isSavingNote, setIsSavingNote] = useState(false);
+  // Buffer note in creazione: fino a quando l'acquirente non esiste in DB
+  // (contatti.id non ancora generato) non possiamo inserire in lead_notes.
+  // Bufferizziamo lato client — al submit dell'acquirente le inseriamo in
+  // batch dopo la INSERT di acquirenti. Reset al close/switch selectedAcquirente.
+  const [pendingNotes, setPendingNotes] = useState<string[]>([]);
 
   const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '';
 
@@ -254,18 +260,15 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
         .order('created_at', { ascending: false });
 
       if (searchQuery.trim()) {
-        const sq = searchQuery.trim();
-        const tokens = sq.toLowerCase().split(/\s+/).filter(Boolean);
-        for (const token of tokens) {
-          const tokenPhone = token.replace(/[\s-]/g, '');
-          const clauses = [
-            `nome.ilike.%${token}%`,
-            `cognome.ilike.%${token}%`,
-            `email.ilike.%${token}%`,
-            `telefono.ilike.%${tokenPhone}%`,
-            `note_interne.ilike.%${token}%`,
-          ];
-          query = query.or(clauses.join(','), { foreignTable: 'acquirenti' });
+        // Usa buildLeadSearchClauses: copre nome/cognome/telefono/cellulare
+        // (con normalizzazione digit-sequence per numeri di telefono formattati
+        // diversamente) + i campi extra specifici di acquirenti (email, note_interne).
+        // Il bug pre-fix: si cercava solo su `telefono`, quindi un contatto con
+        // numero salvato in `cellulare` non veniva trovato nel tab Acquirenti,
+        // anche se la ricerca globale lo trovava.
+        const clauses = buildLeadSearchClauses(searchQuery, ['email', 'note_interne']);
+        for (const clause of clauses) {
+          query = query.or(clause, { foreignTable: 'acquirenti' });
         }
       } else {
         if (filterBudgetMin !== null) query = query.gte('acquirenti.budget', filterBudgetMin);
@@ -569,6 +572,24 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       if (error) {
         showError("Errore nella creazione: " + error.message);
       } else {
+        // Flush del buffer note: le note scritte durante il censimento vengono
+        // inserite ora che contatti.id esiste. Se questo insert fallisce non
+        // annulliamo la creazione dell'acquirente — la persona è già in
+        // Contatti, avvisiamo l'agente perché possa reinserire le note a mano.
+        if (pendingNotes.length > 0) {
+          const rows = pendingNotes.map((testo) => ({
+            contatto_id: contatto.id,
+            testo,
+            autore: autoreLoggato,
+          }));
+          const { error: notesError } = await supabase.from('lead_notes').insert(rows);
+          if (notesError) {
+            showError(
+              `Acquirente creato ma ${pendingNotes.length === 1 ? 'la nota' : 'le note'} non salvate. Reinseriscile a mano dalla scheda.`,
+            );
+          }
+          setPendingNotes([]);
+        }
         showSuccess("Contatto creato correttamente");
         setZoneInput('');
         fetchAcquirenti();
@@ -793,8 +814,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
     })();
   }, [selectedAcquirente?.id]);
 
-  // Fetch notes whenever a different acquirente is opened
+  // Fetch notes whenever a different acquirente is opened.
+  // `pendingNotes` viene resettato ogni volta che si cambia scheda: fresh buffer
+  // per ogni nuovo acquirente in creazione, e in edit mode non serve.
   useEffect(() => {
+    setPendingNotes([]);
     if (!selectedAcquirente?.id) { setAcquirenteNotes([]); setNewNoteText(''); return; }
     (async () => {
       const { data } = await supabase
@@ -807,11 +831,20 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   }, [selectedAcquirente?.id]);
 
   const handleSaveNote = async () => {
-    if (!newNoteText.trim() || !selectedAcquirente?.id) return;
+    const testo = newNoteText.trim();
+    if (!testo) return;
+    // Create mode (l'acquirente non esiste ancora in DB): bufferizziamo la
+    // nota client-side, verrà inserita in lead_notes dopo la INSERT di
+    // acquirenti in handleSaveDetails. Nessuna call al DB qui.
+    if (!selectedAcquirente?.id) {
+      setPendingNotes((prev) => [...prev, testo]);
+      setNewNoteText('');
+      return;
+    }
     setIsSavingNote(true);
     const { data, error } = await supabase
       .from('lead_notes')
-      .insert({ contatto_id: selectedAcquirente.id, testo: newNoteText.trim(), autore: autoreLoggato })
+      .insert({ contatto_id: selectedAcquirente.id, testo, autore: autoreLoggato })
       .select('id, testo, autore, created_at')
       .single();
     setIsSavingNote(false);
@@ -1305,10 +1338,15 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                             <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteTasks.length}</span>
                           )}
                         </TabsTrigger>
-                        <TabsTrigger value="note" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
+                        {/* Il tab Note è sbloccato anche in creazione: le note
+                            vengono bufferizzate client-side (pendingNotes) e
+                            inserite in lead_notes dopo la INSERT di acquirenti.
+                            Serve per non far "pasticciare nelle località" mentre
+                            si censiscono le specifiche di ricerca. */}
+                        <TabsTrigger value="note" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
                           <FileText size={15} /> Note
-                          {acquirenteNotes.length > 0 && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteNotes.length}</span>
+                          {(acquirenteNotes.length + pendingNotes.length) > 0 && (
+                            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-[#94b0ab]/10 text-[#94b0ab] text-[10px] font-black">{acquirenteNotes.length + pendingNotes.length}</span>
                           )}
                         </TabsTrigger>
                         <TabsTrigger value="documenti" disabled={isCreate} className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#94b0ab] data-[state=active]:bg-transparent px-0 h-full font-bold text-gray-400 data-[state=active]:text-[#94b0ab] gap-2 disabled:opacity-30 disabled:cursor-not-allowed">
@@ -1884,23 +1922,49 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                     })()}
 
                     <div className="space-y-2">
-                      {acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedAcquirente.note_interne && acquirenteNotes.filter((n) => n.autore !== 'Agente').length === 0 ? (
+                      {acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).length === 0 && !selectedAcquirente.note_interne && acquirenteNotes.filter((n) => n.autore !== 'Agente').length === 0 && pendingNotes.length === 0 ? (
                         <div className="py-8 text-center bg-white rounded-xl border border-dashed border-gray-200 shadow-sm">
                           <FileText className="mx-auto text-gray-200 mb-2" size={26} />
                           <p className="text-xs text-gray-400 italic">Nessuna nota per questo contatto.</p>
                         </div>
                       ) : (
-                        acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
-                          <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
-                              <span className="text-[10px] text-gray-400 font-medium">
-                                {safeFormat(note.created_at, 'd MMM yyyy HH:mm', { locale: it })}
-                              </span>
+                        <>
+                          {acquirenteNotes.filter((n) => n.autore === 'Agente' && !n.testo?.startsWith('[Audit]')).map((note) => (
+                            <div key={note.id} className="rounded-xl border p-4 bg-white border-gray-100 shadow-sm">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-[#94b0ab]">{note.autore}</span>
+                                <span className="text-[10px] text-gray-400 font-medium">
+                                  {safeFormat(note.created_at, 'd MMM yyyy HH:mm', { locale: it })}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
                             </div>
-                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{note.testo}</p>
-                          </div>
-                        ))
+                          ))}
+                          {/* Note bufferizzate durante creazione: verranno
+                              inserite in lead_notes dopo il salvataggio.
+                              Rimovibili prima del submit. */}
+                          {pendingNotes.map((testo, i) => (
+                            <div key={`pending-${i}`} className="rounded-xl border p-4 bg-amber-50 border-amber-100 shadow-sm">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs font-bold text-amber-700">{autoreLoggato}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-black uppercase tracking-widest text-amber-500 bg-amber-100 border border-amber-200 rounded-full px-2 py-0.5">
+                                    Da salvare
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setPendingNotes((prev) => prev.filter((_, idx) => idx !== i))}
+                                    className="text-amber-400 hover:text-amber-600"
+                                    title="Rimuovi nota"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-wrap">{testo}</p>
+                            </div>
+                          ))}
+                        </>
                       )}
                     </div>
 
@@ -1909,7 +1973,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                       <Textarea
                         value={newNoteText}
                         onChange={(e) => setNewNoteText(e.target.value)}
-                        placeholder="Scrivi una nota su questo contatto..."
+                        placeholder={!selectedAcquirente.id ? "Note qui — verranno salvate quando crei l'acquirente..." : "Scrivi una nota su questo contatto..."}
                         className="rounded-xl border-gray-200 bg-slate-50/50 min-h-[80px] resize-none text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -1919,7 +1983,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                         }}
                       />
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-gray-300">Ctrl+Invio per salvare</span>
+                        <span className="text-[10px] text-gray-300">
+                          {!selectedAcquirente.id
+                            ? 'Le note saranno salvate insieme all\'acquirente.'
+                            : 'Ctrl+Invio per salvare'}
+                        </span>
                         <Button
                           type="button"
                           size="sm"
@@ -1928,7 +1996,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                           className="bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl h-8 px-4 text-xs font-bold gap-1.5"
                         >
                           <Save size={12} />
-                          {isSavingNote ? 'Salvataggio...' : 'Salva nota'}
+                          {isSavingNote ? 'Salvataggio...' : (!selectedAcquirente.id ? 'Aggiungi' : 'Salva nota')}
                         </Button>
                       </div>
                     </div>

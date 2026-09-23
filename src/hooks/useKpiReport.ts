@@ -43,6 +43,7 @@ const immobiliIdsPerAgente = async (agenteId: string): Promise<string[]> => {
   const { data, error } = await supabase
     .from('proprietari_pratiche')
     .select('immobile_id, proprietari!inner(contatti(agente_id))')
+    .eq('is_deleted', false)
     .not('immobile_id', 'is', null);
   if (error) throw error;
   return ((data ?? []) as unknown as { immobile_id: string; proprietari: { contatti: { agente_id: string | null } | null } | null }[])

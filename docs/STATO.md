@@ -5,7 +5,63 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-08-27 — Fase 7 (Motore alert configurabile) del pivot
+_Ultimo aggiornamento: 2026-09-23 — Sessione feedback utente su modulo Gestione (Marco).
+**Fatto:** (1) Elimina pratica disponibile in ogni fase, anche in Valutazione. Migration
+`20260923120000_proprietari_pratiche_soft_delete.sql` applicata in prod via MCP: aggiunge
+`is_deleted boolean NOT NULL DEFAULT false` e `deleted_at timestamptz` a
+`proprietari_pratiche`, più indice parziale `idx_proprietari_pratiche_not_deleted` su
+`updated_at DESC WHERE is_deleted = false`. `PraticaDetailSheet.tsx` rifatto: tasto "Elimina
+pratica" sempre visibile (rimossa la guardia `pratica.immobile_id`); soft-delete della pratica
++ soft-delete cascata sull'immobile collegato se esiste (per evitare card orfane nel kanban
+immobili); proprietario intatto in Contatti come da spec. `useProprietariPipeline.ts`,
+`useAlerts.ts`, `useKpiReport.ts`, `ProprietariList.tsx` filtrano `is_deleted=false` così le
+pratiche eliminate spariscono da kanban / alert / KPI / lista proprietari._
+
+**Aperto — Automazioni tipologia appuntamento → fase (da riprendere):**
+Oggi in `EventFormModal.tsx:657-714` esistono già i mapper `avanzaFaseProprietarioSePossibile`
+e `avanzaFaseImmobileSePossibile` invocati in `handleSave` dopo il salvataggio di un
+appuntamento — "solo avanti mai indietro", indice di fase confrontato contro `FASI_PROPRIETARI`.
+Mappature attive:
+- Valutazione Vendita / Affitto → pratica: `Valutazione`
+- Rivalutazione → pratica: `Rivalutazione`
+- Preliminare → immobile: `Venduto / Preliminare`
+- Rogito → immobile: `Venduto / Rogito`
+
+Tipologie NON mappate (per cui Marco vuole confronto con Rogge/Sturni prima di decidere):
+Prima visita, Seconda Visita, Terza Visita, Incontro con proprietario, Firma proposta,
+Telefonata, Riunione, Consulente finanziario, Foto/video, Perito, Altro.
+
+Proposta iniziale (non implementata, in attesa di conferma team): *Incontro con proprietario →
+pratica Presa in carico; Prima visita → immobile In Vendita/Pubblicato; Terza Visita → immobile
+In Vendita/In trattativa; Firma proposta → immobile In Vendita/In trattativa.* Le operative
+(Telefonata, Riunione, Foto/video, Perito, Altro) restano senza trigger.
+
+**In più**, gap segnalato durante l'audit: nella scheda pratica (`PraticaDetailSheet.tsx`) e nella
+scheda immobile in gestione (`PipelineDetailSheet.tsx`) NON esiste sezione "Appuntamenti" —
+anche quando l'automazione avanza la fase, l'agente non vede gli eventi collegati. Da aggiungere
+insieme alla nuova mappa: query `appuntamenti` con `contatto_id = proprietario_id` (scheda pratica)
+o `immobile_id = card.id` (scheda immobile).
+
+**Aperto — Cartella Drive automatica per proprietario:** Marco vuole che alla creazione di un
+proprietario si crei automaticamente una cartella Drive nominata `Cognome Nome`, rinominata a
+`Cognome Nome — Via Xxx` quando si avvia la pratica e nasce l'immobile. Link sempre visibile in
+alto sia nella scheda proprietario che in tutte le fasi della gestione. Stato attuale: il flusso
+"cartella del contatto" è **già rotto in silenzio** — `PraticaDetailSheet.tsx:253-264`
+(`ensureContattoFolder`) chiama `drive-documenti` con `entita: 'contatto'` ma la Edge Function
+`supabase/functions/drive-documenti/index.ts` non gestisce quel branch (solo `immobileId`), quindi
+la chiamata fallisce e il `catch` vuoto la ingoia. La cartella oggi si crea solo lazy al passaggio
+"Passa a In preparazione" (immobile-side), o via link incollato a mano nella scheda proprietario /
+scheda immobile. Per implementare la spec serve toccare: `google-apps-script/DocumentiDrive.gs`
+(aggiungere azione `renameFolder` — richiede redeploy manuale della Web App su script.google.com,
+Marco ha confermato di poterlo fare), `drive-documenti/index.ts` (branch `entita: 'contatto'` +
+azione `renameFolder`), `NewProprietarioDialog.tsx` (createFolder al salvataggio),
+`PraticaDetailSheet.tsx::passaAInPreparazione` (renameFolder quando arriva l'immobile). Nessuna
+migration DB necessaria: `contatti.drive_folder_url/drive_folder_id` esistono già.
+Marco ha confermato di poter rifare il deploy Apps Script quando avrò pronto il `.gs`.
+
+---
+
+_Aggiornamento precedente: 2026-08-27 — Fase 7 (Motore alert configurabile) del pivot
 Proprietari/Compratori/Collaboratori **fatta e verificata in locale — pivot completo, 7 fasi su
 7**. Migration `20260827190000_alert_regole.sql`: nuova tabella `alert_regole` con 7 righe fisse
 pre-seedate (una per ogni combinazione valida `entita_tipo`/`fase`: 3 immobili + 4 proprietari,
