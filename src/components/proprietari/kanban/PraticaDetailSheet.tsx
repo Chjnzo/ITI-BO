@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   Phone, User, Calculator, ExternalLink, Sparkles, Pencil, Folder,
-  Paperclip, Loader2, Check, Plus, StickyNote, ArrowRight, Trash2,
+  Paperclip, Loader2, Check, Plus, StickyNote, ArrowRight, Trash2, CalendarPlus,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
@@ -30,6 +30,9 @@ import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { generaChecklistPerFase, upsertFasePipeline } from '@/lib/pipelineChecklist';
 import ValuationWizard from '@/components/valutazioni/ValuationWizard';
 import TaskModal from '@/components/TaskModal';
+import EventFormModal, {
+  type AgentProfile, type TipologiaRow, type TipologieMap, TIPOLOGIA_COLORS,
+} from '@/components/agenda/EventFormModal';
 
 interface PraticaDetailSheetProps {
   pratica: PraticaCard | null;
@@ -88,6 +91,7 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [newNoteText, setNewNoteText] = useState('');
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [eventModalOpen, setEventModalOpen] = useState(false);
   const [confermaPassaggioFase, setConfermaPassaggioFase] = useState(false);
   const [confermaEliminaPratica, setConfermaEliminaPratica] = useState(false);
 
@@ -226,6 +230,68 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
   });
 
   const documentiFaseCorrente = (documenti ?? []).filter((d) => d.fase === pratica?.fase);
+
+  // Appuntamenti collegati alla pratica: uniamo eventi legati al proprietario
+  // (via contatto_id, il modo naturale prima che l'immobile esista) con quelli
+  // legati all'immobile della pratica (una volta creato). Così la scheda mostra
+  // tutta la storia — richiesta cliente 2026-09-28: "agenda e gestione devono
+  // dialogare, quello che fisso in agenda con quel contatto/immobile devo
+  // vederlo qui e viceversa".
+  const { data: appuntamentiCollegati = [] } = useQuery<Array<{ id: string; data: string; ora_inizio: string | null; tipologia: string; note: string | null }>>({
+    queryKey: ['pratica-appuntamenti', pratica?.proprietario_id, pratica?.immobile_id],
+    enabled: !!pratica?.proprietario_id,
+    queryFn: async () => {
+      const filters: string[] = [];
+      if (pratica?.proprietario_id) filters.push(`contatto_id.eq.${pratica.proprietario_id}`);
+      if (pratica?.immobile_id) filters.push(`immobile_id.eq.${pratica.immobile_id}`);
+      const { data, error } = await supabase
+        .from('appuntamenti')
+        .select('id, data, ora_inizio, tipologia, note')
+        .or(filters.join(','))
+        .order('data', { ascending: false })
+        .limit(20);
+      if (error) return [];
+      return (data ?? []) as Array<{ id: string; data: string; ora_inizio: string | null; tipologia: string; note: string | null }>;
+    },
+  });
+
+  // Dati minimi per aprire EventFormModal dalla scheda pratica. Non montiamo
+  // la lista completa immobili come in Agenda.tsx — al massimo aggiungiamo
+  // quello della pratica corrente se esiste, così il combobox non è vuoto.
+  const { data: agenti = [] } = useQuery<AgentProfile[]>({
+    queryKey: ['profili-agenti-per-evento'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profili_agenti')
+        .select('id, nome_completo, colore_calendario');
+      if (error) return [];
+      return (data ?? []) as AgentProfile[];
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: tipologieRows = [] } = useQuery<TipologiaRow[]>({
+    queryKey: ['tipologie-appuntamenti'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('tipologie_appuntamenti').select('*').order('ordine');
+      if (error) return [];
+      return (data ?? []) as TipologiaRow[];
+    },
+    staleTime: 10 * 60_000,
+  });
+
+  const coloriMapEvento: TipologieMap = tipologieRows.length === 0
+    ? TIPOLOGIA_COLORS
+    : Object.fromEntries(tipologieRows.map(t => [t.nome, { bg: t.colore_bg, border: t.colore_border, text: '#ffffff' }]));
+
+  const tipologieListEvento = tipologieRows.map(t => t.nome);
+
+  // Se la pratica è ancora "Valutazione"/"Rivalutazione" (nessun immobile
+  // creato), l'array properties è vuoto ma EventFormModal continua a funzionare
+  // — l'utente potrà semplicemente non collegare l'evento a un immobile.
+  const propertiesEvento = pratica?.immobile_id
+    ? [{ id: pratica.immobile_id, titolo: pratica.via, copertina_url: null }]
+    : [];
 
   // Solo aggiornamento stato del documento: nessun side-effect di passaggio
   // automatico alla fase successiva. Il passaggio è ora esplicito via
@@ -494,6 +560,15 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
           .eq('id', pratica.immobile_id);
         if (immErr) throw immErr;
       }
+      // Proprietario che ci ha fatto valutare ma non ha dato incarico rimane
+      // come lead caldo: se in futuro rivende, riprendiamo il contatto senza
+      // perdere il fatto che ci ha già conosciuti (spec cliente 2026-09-28).
+      if (pratica.proprietario_id) {
+        await supabase
+          .from('proprietari')
+          .update({ caldo: true })
+          .eq('id', pratica.proprietario_id);
+      }
     },
     onSuccess: () => {
       showSuccess('Pratica eliminata. Il proprietario resta in Contatti.');
@@ -685,10 +760,48 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
                   className="w-full bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl font-bold h-11 gap-2"
                 >
                   <ArrowRight size={15} />
-                  Passa a "In preparazione" (Gestione)
+                  Passa a "In vendita" (Gestione)
                 </Button>
               </div>
             )}
+
+            {/* Appuntamenti collegati alla pratica — dialogo agenda↔gestione
+                (spec cliente 2026-09-28). Include eventi collegati al
+                proprietario e/o all'immobile della pratica. */}
+            <div className="mt-6">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-gray-400">Appuntamenti</h4>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEventModalOpen(true)}
+                  className="h-7 text-xs font-bold rounded-lg px-2 border-gray-200"
+                >
+                  <CalendarPlus size={12} className="mr-1" /> Fissa
+                </Button>
+              </div>
+              {appuntamentiCollegati.length === 0 ? (
+                <p className="text-sm text-gray-300 italic">Nessun appuntamento collegato.</p>
+              ) : (
+                <div className="space-y-2">
+                  {appuntamentiCollegati.slice(0, 6).map((a) => (
+                    <div key={a.id} className="rounded-xl border border-gray-100 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="text-sm font-semibold text-gray-700 truncate">{a.tipologia}</span>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[#94b0ab] shrink-0">
+                          {format(parseISO(a.data), 'd MMM yyyy', { locale: it })}
+                          {a.ora_inizio && ` · ${a.ora_inizio.slice(0, 5)}`}
+                        </span>
+                      </div>
+                      {a.note && (
+                        <p className="text-xs text-gray-400 mt-0.5 truncate">{a.note}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Task collegate — stesso storico visibile in /tasks e nella scheda contatto. */}
             <div className="mt-6">
@@ -981,6 +1094,23 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               defaultContattoId={pratica.proprietario_id}
               defaultContattoName={pratica.proprietario_nome || undefined}
               origine="gestione"
+            />
+
+            <EventFormModal
+              open={eventModalOpen}
+              onClose={() => setEventModalOpen(false)}
+              onSaved={() => {
+                setEventModalOpen(false);
+                queryClient.invalidateQueries({ queryKey: ['pratica-appuntamenti', pratica.proprietario_id, pratica.immobile_id] });
+                queryClient.invalidateQueries({ queryKey: ['appuntamenti'] });
+              }}
+              defaultContattoId={pratica.proprietario_id}
+              defaultContattoName={pratica.proprietario_nome || undefined}
+              defaultImmobileId={pratica.immobile_id ?? undefined}
+              agents={agenti}
+              properties={propertiesEvento}
+              coloriMap={coloriMapEvento}
+              tipologieList={tipologieListEvento}
             />
 
             {/* Riferimento all'autore loggato per suppressare warning di

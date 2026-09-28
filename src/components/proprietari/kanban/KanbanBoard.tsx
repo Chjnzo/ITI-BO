@@ -23,9 +23,12 @@ interface KanbanBoardProps {
   // sulla stessa riga del pill switcher esterno (uniformità UI). Se assente
   // mostra la search interna come prima.
   externalSearch?: { value: string; onChange: (v: string) => void };
+  // Filtro agente controllato dal padre. "tutti"/undefined = mostra tutte le
+  // pratiche (spec cliente 2026-09-28).
+  agenteFilter?: string;
 }
 
-const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch }: KanbanBoardProps = {}) => {
+const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch, agenteFilter }: KanbanBoardProps = {}) => {
   const { data: cards, isLoading, spostaFase } = useProprietariPipeline();
   const [activeCard, setActiveCard] = useState<PraticaCard | null>(null);
   // Si tiene solo l'id, non l'oggetto card: la card selezionata va ricavata
@@ -54,12 +57,15 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch }: KanbanBoardPr
 
   const cardsByFase = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const filtered = query
+    let filtered = query
       ? (cards ?? []).filter((card) =>
           [card.via, card.citta, card.tipologia, card.proprietario_nome]
             .some((field) => field?.toLowerCase().includes(query)),
         )
       : (cards ?? []);
+    if (agenteFilter && agenteFilter !== 'tutti') {
+      filtered = filtered.filter((c) => c.agente_id === agenteFilter);
+    }
 
     const grouped: Record<FaseProprietario, PraticaCard[]> = {
       Valutazione: [],
@@ -70,7 +76,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, externalSearch }: KanbanBoardPr
       grouped[card.fase].push(card);
     });
     return grouped;
-  }, [cards, searchQuery]);
+  }, [cards, searchQuery, agenteFilter]);
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveCard(event.active.data.current as PraticaCard);

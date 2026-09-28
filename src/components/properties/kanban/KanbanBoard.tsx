@@ -25,9 +25,13 @@ interface KanbanBoardProps {
   // separati al livello superiore, così non abbiamo un doppio switcher.
   fissaFase?: FasePipeline;
   externalSearch?: { value: string; onChange: (v: string) => void };
+  // Filtro agente controllato dal padre (Gestione.tsx). "tutti" o undefined =
+  // mostra tutte le card. Filtro applicato via `agente_id` risalito dal
+  // proprietario dell'immobile (spec cliente 2026-09-28).
+  agenteFilter?: string;
 }
 
-const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: KanbanBoardProps = {}) => {
+const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch, agenteFilter }: KanbanBoardProps = {}) => {
   const { data: cards, isLoading, spostaSottofase } = useImmobiliPipeline();
   const [faseAttiva, setFaseAttiva] = useState<FasePipeline>(fissaFase ?? 'In Vendita');
   const [localSearch, setLocalSearch] = useState('');
@@ -58,17 +62,20 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch }: Ka
 
   const cardsByFase = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const filtered = query
+    let filtered = query
       ? (cards ?? []).filter((card) =>
           [card.titolo, card.indirizzo, card.citta, card.proprietario_nome]
             .some((field) => field?.toLowerCase().includes(query)),
         )
       : (cards ?? []);
+    if (agenteFilter && agenteFilter !== 'tutti') {
+      filtered = filtered.filter((c) => c.agente_id === agenteFilter);
+    }
     return {
       'In Vendita': filtered.filter((c) => c.fase === 'In Vendita'),
       Venduto: filtered.filter((c) => c.fase === 'Venduto'),
     } as Record<FasePipeline, PipelineCard[]>;
-  }, [cards, searchQuery]);
+  }, [cards, searchQuery, agenteFilter]);
 
   // Archivio è una sottofase valida a livello DB/tipo ma NON viene mostrata
   // come colonna kanban: gli immobili archiviati vivono in un elenco a parte

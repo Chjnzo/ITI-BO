@@ -19,7 +19,7 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Phone, User, Search, Save, X, Plus, Trash2, Briefcase, Mail } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatTelefoni } from '@/lib/utils';
 import { isPhoneLikeQuery, stripDigits } from '@/utils/search';
 
 interface CollaboratoreRecord {
@@ -385,7 +385,7 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
                       <div className="font-bold text-gray-900 truncate">{c.nome} {c.cognome}</div>
                       <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5 min-w-0">
                         <Phone size={10} className="text-gray-300 shrink-0" />
-                        <span className="truncate">{c.telefono || 'N/D'}</span>
+                        <span className="truncate">{formatTelefoni(c.telefono, c.cellulare)}</span>
                       </div>
                     </td>
                     <td className="px-8 py-5 min-w-0">

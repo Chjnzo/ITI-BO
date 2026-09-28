@@ -21,6 +21,11 @@ export interface PipelineCard {
   copertina_url?: string;
   drive_folder_url: string | null;
   proprietario_nome: string | null;
+  // Agente assegnato all'immobile via proprietario.contatti.agente_id.
+  // Popolato quando l'immobile ha un proprietario collegato (creazione via
+  // pratica) — vale null per immobili "sciolti" creati da PropertyWizard.
+  // Usato dal filtro agente in /gestione (spec cliente 2026-09-28).
+  agente_id: string | null;
   fase: FasePipeline;
   // Sottofase persistita su immobile_pipeline_stato.sottofase, spostabile
   // manualmente via drag&drop tra le colonne del kanban (non più derivata dai
@@ -46,7 +51,7 @@ interface RawImmobileRow {
   data_atto: string | null;
   drive_folder_url: string | null;
   pubblicato_sito: boolean;
-  proprietario_contatto: { proprietari: { nome: string; cognome: string | null } | null } | null;
+  proprietario_contatto: { agente_id: string | null; proprietari: { nome: string; cognome: string | null } | null } | null;
   pipeline: { fase: FasePipeline; sottofase: Sottofase | null } | null;
   documenti: { stato: 'Da fare' | 'Fatto'; fase: FasePipeline; sottofase: Sottofase | null }[] | null;
 }
@@ -67,7 +72,7 @@ export const useImmobiliPipeline = () => {
         .select(`
           id, titolo, prezzo, citta, indirizzo, copertina_url,
           data_preliminare, data_atto, drive_folder_url, pubblicato_sito,
-          proprietario_contatto:contatti!immobili_proprietario_id_fkey(proprietari(nome, cognome)),
+          proprietario_contatto:contatti!immobili_proprietario_id_fkey(agente_id, proprietari(nome, cognome)),
           pipeline:immobile_pipeline_stato(fase, sottofase),
           documenti:immobile_documenti(stato, fase, sottofase)
         `)
@@ -97,6 +102,7 @@ export const useImmobiliPipeline = () => {
             proprietario_nome: row.proprietario_contatto?.proprietari
               ? `${row.proprietario_contatto.proprietari.nome} ${row.proprietario_contatto.proprietari.cognome ?? ''}`.trim()
               : null,
+            agente_id: row.proprietario_contatto?.agente_id ?? null,
             fase,
             sottofase,
             docTotali: documentiSottofase.length,

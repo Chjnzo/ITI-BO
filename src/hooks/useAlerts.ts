@@ -102,8 +102,9 @@ export const useAlerts = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('immobile_alert')
-        .select('*, immobile:immobili(titolo, indirizzo, citta)')
+        .select('*, immobile:immobili!inner(titolo, indirizzo, citta, is_deleted)')
         .eq('risolto', false)
+        .eq('immobile.is_deleted', false)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []) as unknown as AlertManuale[];

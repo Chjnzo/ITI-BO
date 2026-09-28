@@ -17,7 +17,7 @@ import {
 import { Trash2, CalendarIcon, Phone, MessageCircle, Save, MapPin, X, User, Mail, Euro, Home, Tag, Info } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { showError, showSuccess } from '@/utils/toast';
-import { cn } from '@/lib/utils';
+import { cn, formatTelefoni } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import { it } from 'date-fns/locale';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -541,11 +541,11 @@ const EventFormModal = ({
     const clauses = buildLeadSearchClauses(trimmed);
 
     type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
-    type Row = { id: string; nome: string; cognome: string | null; telefono: string | null; via_immobile?: string | null; citta_immobile?: string | null };
+    type Row = { id: string; nome: string; cognome: string | null; telefono: string | null; cellulare: string | null; via_immobile?: string | null; citta_immobile?: string | null };
     const runQuery = async (table: ContattoTipo): Promise<{ tipo: ContattoTipo; row: Row }[]> => {
       const cols = table === 'proprietari'
-        ? 'id, nome, cognome, telefono, via_immobile, citta_immobile'
-        : 'id, nome, cognome, telefono';
+        ? 'id, nome, cognome, telefono, cellulare, via_immobile, citta_immobile'
+        : 'id, nome, cognome, telefono, cellulare';
       let query = supabase.from(table).select(cols).eq('is_deleted', false).limit(8);
       for (const clause of clauses) query = query.or(clause);
       const { data, error } = await query;
@@ -575,7 +575,10 @@ const EventFormModal = ({
     setLeadItems(all.map(({ tipo, row }) => ({
       id: row.id,
       label: `${row.nome} ${row.cognome ?? ''}`.trim(),
-      sublabel: row.telefono ?? undefined,
+      // Se il contatto ha sia telefono che cellulare mostro entrambi separati da
+      // "·" (spec cliente 2026-09-28): prima davano "ND" perché in molti record
+      // solo `cellulare` era compilato e in agenda si leggeva `telefono`.
+      sublabel: formatTelefoni(row.telefono, row.cellulare, ''),
       badge: TIPO_BADGE[tipo],
     })));
   };
