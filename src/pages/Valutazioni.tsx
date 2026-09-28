@@ -70,7 +70,6 @@ const Valutazioni = () => {
   const [valutazioni, setValutazioni] = useState<Valutazione[]>([]);
   const [loading, setLoading] = useState(true);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
-  const [wizardLeadId, setWizardLeadId] = useState<string | undefined>(undefined);
   const [recreateData, setRecreateData] = useState<ValuationInitialData | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
 
@@ -101,9 +100,8 @@ const Valutazioni = () => {
   useEffect(() => { fetchValutazioni(); }, [fetchValutazioni]);
 
   useEffect(() => {
-    const state = location.state as { openWizard?: boolean; leadId?: string } | null;
+    const state = location.state as { openWizard?: boolean } | null;
     if (state?.openWizard) {
-      setWizardLeadId(state.leadId);
       setIsWizardOpen(true);
       window.history.replaceState({}, '');
     }
@@ -426,10 +424,9 @@ const Valutazioni = () => {
       {/* Wizard */}
       <ValuationWizard
         open={isWizardOpen}
-        initialLeadId={wizardLeadId}
         initialData={recreateData}
-        onClose={() => { setIsWizardOpen(false); setWizardLeadId(undefined); setRecreateData(null); }}
-        onSaved={() => { setIsWizardOpen(false); setWizardLeadId(undefined); setRecreateData(null); fetchValutazioni(); }}
+        onClose={() => { setIsWizardOpen(false); setRecreateData(null); }}
+        onSaved={() => { setIsWizardOpen(false); setRecreateData(null); fetchValutazioni(); }}
       />
 
       {/* ── Edit Modal ──────────────────────────────────────────────────────── */}

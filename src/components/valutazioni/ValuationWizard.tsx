@@ -158,16 +158,14 @@ interface ValuationWizardProps {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  initialLeadId?: string;
   /** Avvio da scheda Proprietario: blocca lo step 1 sul contatto passato invece
-   * di far scegliere un lead dalla combobox (i due percorsi sono mutuamente
-   * esclusivi — un proprietario non è un "lead" nel vecchio senso). */
+   * di far scegliere dalla combobox. */
   initialProprietarioId?: string;
   initialProprietarioNome?: string;
   initialData?: ValuationInitialData | null;
 }
 
-const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprietarioId, initialProprietarioNome, initialData }: ValuationWizardProps) => {
+const ValuationWizard = ({ open, onClose, onSaved, initialProprietarioId, initialProprietarioNome, initialData }: ValuationWizardProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
@@ -177,12 +175,9 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
   const [valutazioneId, setValutazioneId] = useState<string | null>(null);
   const [valutazioneSlug, setValutazioneSlug] = useState<string | null>(null);
 
-  // Step 1 — Lead
-  const [leadId, setLeadId] = useState('');
-  const [leadItems, setLeadItems] = useState<ComboboxItem[]>([]);
   const [agenteId, setAgenteId] = useState('');
 
-  // Step 1 — Proprietario (avvio da scheda contatto, alternativo al lead)
+  // Step 1 — Proprietario (pescato dai contatti post-pivot).
   const [proprietarioId, setProprietarioId] = useState('');
   const [proprietarioNome, setProprietarioNome] = useState('');
   const [proprietarioItems, setProprietarioItems] = useState<ComboboxItem[]>([]);
@@ -277,22 +272,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
             }))
           : [emptyComparabileAttivo()],
       );
-      if (initialData.lead_id) {
-        supabase
-          .from('leads')
-          .select('id, nome, cognome, telefono')
-          .eq('id', initialData.lead_id)
-          .single()
-          .then(({ data: row }) => {
-            if (row) {
-              setLeadId(row.id);
-              setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
-            }
-          });
-      } else {
-        setLeadId('');
-        setLeadItems([]);
-      }
       if (initialData.proprietario_id) {
         supabase
           .from('proprietari')
@@ -312,8 +291,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
     } else {
       setValutazioneId(null);
       setValutazioneSlug(null);
-      setLeadId('');
-      setLeadItems([]);
       setProprietarioId('');
       setProprietarioNome('');
       setIndirizzo('');
@@ -338,44 +315,9 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
       if (initialProprietarioId) {
         setProprietarioId(initialProprietarioId);
         setProprietarioNome(initialProprietarioNome ?? '');
-      } else if (initialLeadId) {
-        supabase
-          .from('leads')
-          .select('id, nome, cognome, telefono')
-          .eq('id', initialLeadId)
-          .single()
-          .then(({ data: row }) => {
-            if (row) {
-              setLeadId(row.id);
-              setLeadItems([{ id: row.id, label: `${row.nome} ${row.cognome}`, sublabel: row.telefono ?? undefined }]);
-            }
-          });
       }
     }
-  }, [open, initialLeadId, initialProprietarioId, initialProprietarioNome, initialData]);
-
-  const searchLeadsAbortRef = React.useRef<AbortController | null>(null);
-
-  const searchLeads = async (q: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) { setLeadItems([]); return; }
-    searchLeadsAbortRef.current?.abort();
-    const controller = new AbortController();
-    searchLeadsAbortRef.current = controller;
-
-    const { buildLeadSearchClauses } = await import('@/utils/search');
-    const clauses = buildLeadSearchClauses(trimmed);
-    let query = supabase.from('leads').select('id, nome, cognome, telefono');
-    for (const clause of clauses) query = query.or(clause);
-    const { data: rows } = await query.limit(8);
-
-    if (controller.signal.aborted) return;
-    setLeadItems((rows ?? []).map(r => ({
-      id: r.id,
-      label: `${r.nome} ${r.cognome}`,
-      sublabel: r.telefono ?? undefined,
-    })));
-  };
+  }, [open, initialProprietarioId, initialProprietarioNome, initialData]);
 
   const searchProprietariAbortRef = React.useRef<AbortController | null>(null);
 
@@ -451,7 +393,6 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
   };
 
   const buildDraftPayload = () => ({
-    lead_id: leadId || null,
     proprietario_id: proprietarioId || null,
     agente_id: agenteId || null,
     indirizzo: indirizzo.trim(),
@@ -636,14 +577,9 @@ const ValuationWizard = ({ open, onClose, onSaved, initialLeadId, initialProprie
         await supabase.from('valutazioni').update(updates).eq('id', valutazioneId);
       }
 
-      // CRM automation — only for new valuations
-      if (leadId && !initialData) {
-        supabase.from('leads').update({ stato_venditore: 'Valutazione fatta' }).eq('id', leadId);
-        supabase.from('lead_notes').insert({
-          lead_id: leadId,
-          testo: `Valutazione AI completata — ${indirizzo.trim()} (${superficieMq} m²). Stima: €${stimaMin}–€${stimaMax}.`,
-        });
-      }
+      // Nota automatica sul contatto proprietario — post-pivot la fonte di
+      // verità dello stato "valutazione fatta" è la riga in `valutazioni`
+      // stessa, non un flag su leads/proprietari (spec 2026-09-28).
       if (proprietarioId && !initialData) {
         supabase.from('lead_notes').insert({
           contatto_id: proprietarioId,

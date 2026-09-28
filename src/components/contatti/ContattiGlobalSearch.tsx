@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Search, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { buildLeadSearchClauses } from '@/utils/search';
+import { formatTelefoni } from '@/lib/utils';
 
 export type ContattoTipo = 'proprietari' | 'acquirenti' | 'collaboratori';
 
@@ -180,11 +181,11 @@ const ContattiGlobalSearch = ({ onSelect }: Props) => {
                             {r.nome} {r.cognome ?? ''}
                           </div>
                           <div className="text-xs text-gray-400 truncate">
-                            {/* Priorità: cellulare > telefono fisso > email.
-                                Per proprietari mostriamo anche via/città immobile
-                                come seconda riga, così un match su via è visibile
-                                nella dropdown senza dover aprire la scheda. */}
-                            {r.cellulare ?? r.telefono ?? r.email ?? ''}
+                            {/* Mostra telefono + cellulare insieme se presenti
+                                (spec cliente 2026-09-28); fallback email se nessun
+                                telefono. Per proprietari aggiungiamo anche
+                                via/città immobile in coda. */}
+                            {formatTelefoni(r.telefono, r.cellulare, r.email ?? '')}
                             {r.tipo === 'proprietari' && (r.via_immobile || r.citta_immobile) && (
                               <span className="ml-2 text-gray-300">
                                 · {[r.via_immobile, r.citta_immobile].filter(Boolean).join(', ')}

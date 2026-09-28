@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Phone, Search, X, KeyRound, Flame, Trash2, Briefcase } from 'lucide-react';
 import type { FaseProprietario } from '@/types';
-import { cn } from '@/lib/utils';
+import { cn, formatTelefoni } from '@/lib/utils';
 import AvviaPraticaDialog from './AvviaPraticaDialog';
 import ProprietarioSchedaSheet from './ProprietarioSchedaSheet';
 import { isPhoneLikeQuery, stripDigits } from '@/utils/search';
@@ -329,7 +329,7 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
                         </div>
                         <div className="text-xs text-gray-400 font-medium flex items-center gap-1.5 mt-0.5 min-w-0">
                           <Phone size={10} className="text-gray-300 shrink-0" />
-                          <span className="truncate">{p.telefono || 'N/D'}</span>
+                          <span className="truncate">{formatTelefoni(p.telefono, p.cellulare)}</span>
                         </div>
                       </td>
                       <td className="px-8 py-5 min-w-0">

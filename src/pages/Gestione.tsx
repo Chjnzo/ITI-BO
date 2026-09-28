@@ -2,14 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, Archive } from 'lucide-react';
+import { Search, Archive, Users } from 'lucide-react';
 import KanbanProprietari from '@/components/proprietari/kanban/KanbanBoard';
 import KanbanImmobili from '@/components/properties/kanban/KanbanBoard';
 import ArchivioModal from '@/components/properties/kanban/ArchivioModal';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { supabase } from '@/lib/supabase';
+import { useCurrentProfile } from '@/hooks/useCurrentProfile';
 import { cn } from '@/lib/utils';
 
 type GestioneTab = 'proprietari' | 'in-vendita' | 'venduto';
@@ -29,6 +35,29 @@ const Gestione = () => {
   // cioè "cerca" i risultati del nuovo contesto, senza costringere l'utente
   // a rifiltrare — comportamento coerente con altri pill di questa app).
   const [searchQuery, setSearchQuery] = useState('');
+  // Filtro agente (spec cliente 2026-09-28): agenti/admin possono restringere
+  // le board proprietari + in-vendita + venduto ai propri immobili. Default
+  // "tutti" per admin; per agenti loggati, precompilato col proprio id così
+  // vedono subito "i miei" — coerente con lo stesso pattern in ProprietariList.
+  const { data: currentProfile } = useCurrentProfile();
+  const [agenteFilter, setAgenteFilter] = useState<string>('tutti');
+  useEffect(() => {
+    if (currentProfile?.id && currentProfile.ruolo !== 'Admin' && agenteFilter === 'tutti') {
+      setAgenteFilter(currentProfile.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProfile?.id]);
+  const { data: agenti = [] } = useQuery<Array<{ id: string; nome_completo: string; colore_calendario: string | null }>>({
+    queryKey: ['profili-agenti-filter'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profili_agenti')
+        .select('id, nome_completo, colore_calendario')
+        .order('nome_completo');
+      return (data ?? []) as Array<{ id: string; nome_completo: string; colore_calendario: string | null }>;
+    },
+    staleTime: 5 * 60_000,
+  });
   const [archivioOpen, setArchivioOpen] = useState(false);
   // Immobile da aprire nella board Venduto quando l'utente clicca una riga
   // nel modale Archivio: passato come autoOpenId a KanbanImmobili "venduto",
@@ -69,6 +98,24 @@ const Gestione = () => {
               />
             </div>
 
+            <Select value={agenteFilter} onValueChange={setAgenteFilter}>
+              <SelectTrigger className="h-10 w-[180px] rounded-xl border-gray-200 bg-white text-xs font-semibold">
+                <Users size={14} className="text-gray-400 mr-1" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                <SelectItem value="tutti">Tutti gli agenti</SelectItem>
+                {currentProfile?.id && (
+                  <SelectItem value={currentProfile.id}>I miei</SelectItem>
+                )}
+                {agenti
+                  .filter(a => a.id !== currentProfile?.id)
+                  .map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.nome_completo}</SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+
             {/* Bottone Archivio: sempre montato per evitare che la riga cambi
                 altezza tra i tab (colonne rimangono nella stessa posizione
                 verticale). Reso invisibile fuori da "venduto" con `invisible`
@@ -94,6 +141,7 @@ const Gestione = () => {
               autoOpenId={openPraticaId}
               onAutoOpened={clearNavState}
               externalSearch={{ value: searchQuery, onChange: setSearchQuery }}
+              agenteFilter={agenteFilter}
             />
           </TabsContent>
           <TabsContent value="in-vendita" className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
@@ -102,6 +150,7 @@ const Gestione = () => {
               autoOpenId={openImmobileId}
               onAutoOpened={clearNavState}
               externalSearch={{ value: searchQuery, onChange: setSearchQuery }}
+              agenteFilter={agenteFilter}
             />
           </TabsContent>
           <TabsContent value="venduto" className="flex flex-col flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
@@ -110,6 +159,7 @@ const Gestione = () => {
               autoOpenId={manualOpenImmobileId ?? openImmobileId}
               onAutoOpened={resetVendutoAutoOpen}
               externalSearch={{ value: searchQuery, onChange: setSearchQuery }}
+              agenteFilter={agenteFilter}
             />
           </TabsContent>
         </Tabs>

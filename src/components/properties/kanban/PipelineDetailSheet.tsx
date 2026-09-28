@@ -31,6 +31,7 @@ import {
 } from '@/types';
 import TaskModal from '@/components/TaskModal';
 import EventFormModal, { type AgentProfile } from '@/components/agenda/EventFormModal';
+import { Combobox, type ComboboxItem } from '@/components/ui/combobox';
 
 // Estensioni/MIME ammessi per upload documenti. Include PDF e immagini
 // comuni (jpg/png/webp/heic).
@@ -83,6 +84,66 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
   const [isEditingDrive, setIsEditingDrive] = useState(false);
   const [agentiForEvent, setAgentiForEvent] = useState<AgentProfile[]>([]);
   const [tipologiaAppuntamento, setTipologiaAppuntamento] = useState<string | null>(null);
+
+  // Abbinamento acquirente per la fase "In trattativa" (spec cliente
+  // 2026-09-28): il campo è persistito su `immobili.acquirente_id` (FK a
+  // `contatti`), popolato solo qui via combobox che pesca da `acquirenti`.
+  const [acquirenteItems, setAcquirenteItems] = useState<ComboboxItem[]>([]);
+  const searchAcquirentiAbortRef = useRef<AbortController | null>(null);
+  const { data: acquirenteCorrente = null } = useQuery<{ id: string; nome: string; cognome: string | null; telefono: string | null } | null>({
+    queryKey: ['immobile-acquirente', card?.id],
+    enabled: !!card?.id,
+    queryFn: async () => {
+      const { data: imm } = await supabase
+        .from('immobili').select('acquirente_id').eq('id', card!.id).single();
+      if (!imm?.acquirente_id) return null;
+      const { data: acq } = await supabase
+        .from('acquirenti').select('id, nome, cognome, telefono')
+        .eq('id', imm.acquirente_id).maybeSingle();
+      return acq ?? null;
+    },
+  });
+  useEffect(() => {
+    if (acquirenteCorrente) {
+      setAcquirenteItems([{
+        id: acquirenteCorrente.id,
+        label: `${acquirenteCorrente.nome} ${acquirenteCorrente.cognome ?? ''}`.trim(),
+        sublabel: acquirenteCorrente.telefono ?? undefined,
+      }]);
+    } else {
+      setAcquirenteItems([]);
+    }
+  }, [acquirenteCorrente]);
+  const searchAcquirenti = async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) { setAcquirenteItems([]); return; }
+    searchAcquirentiAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAcquirentiAbortRef.current = controller;
+    const { buildLeadSearchClauses } = await import('@/utils/search');
+    const clauses = buildLeadSearchClauses(trimmed);
+    let query = supabase.from('acquirenti').select('id, nome, cognome, telefono, cellulare').eq('is_deleted', false);
+    for (const clause of clauses) query = query.or(clause);
+    const { data } = await query.limit(8);
+    if (controller.signal.aborted) return;
+    setAcquirenteItems((data ?? []).map((r) => ({
+      id: r.id, label: `${r.nome} ${r.cognome ?? ''}`.trim(),
+      sublabel: [r.telefono, r.cellulare].filter(Boolean).join(' · ') || undefined,
+    })));
+  };
+  const abbinaAcquirente = useMutation({
+    mutationFn: async (acquirenteId: string | null) => {
+      if (!card) return;
+      const { error } = await supabase
+        .from('immobili').update({ acquirente_id: acquirenteId }).eq('id', card.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      showSuccess('Acquirente aggiornato.');
+      queryClient.invalidateQueries({ queryKey: ['immobile-acquirente', card?.id] });
+    },
+    onError: () => showError('Aggiornamento non riuscito.'),
+  });
 
   useEffect(() => {
     setNuovoAlert('');
@@ -806,26 +867,55 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
                 </Button>
               )}
               {card.fase === 'In Vendita' && card.sottofase === 'In trattativa' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    onClick={() => passaAVenduto.mutate('Vincolo')}
-                    disabled={passaAVenduto.isPending}
-                    className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
-                  >
-                    <ArrowRight size={13} />
-                    Passa a Vincolo
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => passaAVenduto.mutate('Preliminare')}
-                    disabled={passaAVenduto.isPending}
-                    className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
-                  >
-                    <ArrowRight size={13} />
-                    Passa a Preliminare
-                  </Button>
-                </div>
+                <>
+                  {/* Abbinamento acquirente (spec cliente 2026-09-28): quando
+                      l'immobile è in trattativa, l'agente collega qui il
+                      compratore pescandolo dai Contatti/Acquirenti. */}
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-4 py-3 space-y-2">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                      Acquirente collegato
+                    </Label>
+                    <Combobox
+                      items={acquirenteItems}
+                      value={acquirenteCorrente?.id ?? ''}
+                      onSelect={(id) => abbinaAcquirente.mutate(id || null)}
+                      onSearch={searchAcquirenti}
+                      placeholder="Cerca un acquirente..."
+                      searchPlaceholder="Nome, cognome, telefono..."
+                      emptyMessage="Nessun acquirente trovato."
+                      className="h-11 rounded-xl bg-white border-gray-100"
+                    />
+                    {acquirenteCorrente && (
+                      <button
+                        type="button"
+                        onClick={() => abbinaAcquirente.mutate(null)}
+                        className="text-[10px] font-semibold text-gray-400 hover:text-red-500 underline underline-offset-2"
+                      >
+                        Rimuovi abbinamento
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      onClick={() => passaAVenduto.mutate('Vincolo')}
+                      disabled={passaAVenduto.isPending}
+                      className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
+                    >
+                      <ArrowRight size={13} />
+                      Passa a Vincolo
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => passaAVenduto.mutate('Preliminare')}
+                      disabled={passaAVenduto.isPending}
+                      className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
+                    >
+                      <ArrowRight size={13} />
+                      Passa a Preliminare
+                    </Button>
+                  </div>
+                </>
               )}
               {/* Manda in archivio: visibile solo da Rogito (fase finale
                   operativa). Sposta la card in Venduto/Archivio — sparisce
