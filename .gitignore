@@ -48,3 +48,9 @@ ruvector.db
 
 # Not meant for this repo — see file header (written to be copied elsewhere)
 /ADOZIONE-METODO-ALTRO-PROGETTO.md
+
+# Playwright E2E test output
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

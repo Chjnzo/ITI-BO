@@ -5,7 +5,51 @@
 > un'informazione risponde "a che punto siamo", vive qui — non duplicarla in `OBIETTIVI.md`
 > (cosa vogliamo) o `DECISIONI.md` (perché l'abbiamo fatto così).
 
-_Ultimo aggiornamento: 2026-09-23 — Sessione feedback utente su modulo Gestione (Marco).
+_Ultimo aggiornamento: 2026-09-28 — Sessione feedback clienti fine settembre (15 richieste post-uso
+reale del CRM).
+
+**Fatto — 15 fix consegnati e mergiati in `main` (PR #32, branch `windows-v3`):** rename bottone
+"In preparazione" → "In vendita"; elimina pratica rivalutazione con proprietario che resta
+`caldo=true`; dropdown filtro agente in `/gestione` (default "I miei" per non-admin); alert
+filtrati su `immobile.is_deleted=false`; cleanup completo dei residui `.from('leads')` nel
+frontend (post-pivot, `useLeads.ts` eliminato); helper `formatTelefoni()` in `src/lib/utils.ts`
+(fix "ND" in agenda quando telefono/cellulare sono entrambi presenti); blocco "Appuntamenti
+collegati" + pulsante "Fissa" aggiunto anche in `PraticaDetailSheet.tsx` (era già presente in
+`PipelineDetailSheet.tsx`); `immobili.acquirente_id` (FK → contatti) con combobox in fase "In
+trattativa"; fix `nearest_zona_omi` a 4 step (comune+2km → comune senza radius → prefisso 5 char →
+spatial 1500m, ridotto da 5000m) — verificato che il caso Torre Boldone ora risolve in BG-TB-B1
+invece di rimbalzare su Ponteranica; backfill di 517 appuntamenti orfani via
+`contatti.lead_id_origine`.
+
+**Fatto — hardening sicurezza DB (3 migration applicate in prod via MCP, non ancora committate su
+git):** `20260928170000_fix_search_path_ruolo_triggers.sql` (search_path esplicito su
+`enforce_ruolo_change_admin_only`/`sync_is_admin_from_ruolo`, chiude il warning
+`function_search_path_mutable`); `20260928170100_revoke_public_execute_internal_functions.sql` +
+`20260928170200_fix_anon_execute_still_granted.sql` (revoca `EXECUTE` su `is_admin()` per `anon` e
+su `handle_new_agente_profile()` per `anon`/`authenticated` — la prima revoke da `PUBLIC` non
+bastava perché Supabase concede grant espliciti separati ad `anon`/`authenticated`). Verificato con
+`get_advisors`: restano solo i 2 warning attesi su `upsert_lead`/`get_public_valuation_report`
+(pubblici di proposito) e "HaveIBeenPwned disattivato" (toggle dashboard Auth, non ancora attivato,
+nessuna azione recente su questo punto).
+
+**Descoped — A3 fase 2 (match retroattivo appuntamenti orfani via indirizzo/telefono
+normalizzato):** analisi dati mostra che dei 156 appuntamenti ancora orfani (`contatto_id IS
+NULL`) su 1152 totali, 141 non hanno né indirizzo né telefono e molti sono voci personali/interne
+finite nel calendario condiviso ("ferie", "Nutrizionista", "RICONSEGNA GESTIONALE"), non veri
+appuntamenti cliente; i restanti ~15 hanno solo un campo `indirizzo_appuntamento` libero e sporco
+(a volte un indirizzo vero, a volte un telefono, a volte un nome). Il cliente farà il collegamento
+a mano sui pochi casi reali — non vale il costo di una edge function con dry-run per un rischio di
+falsi positivi concreto su dati così sporchi.
+
+**Aperto — unico punto rimasto dal giro di feedback:** E1, rename Segreteria → Simona. Bloccato in
+attesa dell'email definitiva da parte del cliente. Update una volta nota:
+`UPDATE profili_agenti SET nome_completo='Simona' WHERE
+id='00cae3a1-1bcb-4190-8fab-edad242e8896'`. Bonus da coordinare insieme: fix typo email
+`segretereria@` → `segreteria@`.
+
+---
+
+_Aggiornamento precedente: 2026-09-23 — Sessione feedback utente su modulo Gestione (Marco).
 **Fatto:** (1) Elimina pratica disponibile in ogni fase, anche in Valutazione. Migration
 `20260923120000_proprietari_pratiche_soft_delete.sql` applicata in prod via MCP: aggiunge
 `is_deleted boolean NOT NULL DEFAULT false` e `deleted_at timestamptz` a
