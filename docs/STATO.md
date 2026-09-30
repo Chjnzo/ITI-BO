@@ -91,18 +91,35 @@ proprietario si crei automaticamente una cartella Drive nominata `Cognome Nome`,
 `Cognome Nome — Via Xxx` quando si avvia la pratica e nasce l'immobile. Link sempre visibile in
 alto sia nella scheda proprietario che in tutte le fasi della gestione.
 
-**Aggiornamento 2026-09-29:** la nota precedente ("branch `entita: 'contatto'` non gestito dalla
-Edge Function") era **stale** — il branch è già implementato in produzione (deployato da una
-sessione precedente senza commit su git, disallineamento poi sanato riportando il file locale
-allo stato prod + aggiunta logging diagnostico, deploy v4). Nonostante ciò `drive-documenti`
-risponde **HTTP 500 in produzione in modo riproducibile** (confermato via `function_edge_logs`:
-due chiamate reali il 2026-09-29 alle 10:37:47 e 10:39:14, entrambe fallite). La causa esatta non
-è ancora nota: prima del deploy v4 la funzione non aveva NESSUN log, quindi l'errore reale
-(secrets mancanti? risposta non-JSON di Apps Script? errore lato Apps Script?) era invisibile.
-v4 logga ora l'HTTP status + raw body di ogni chiamata ad Apps Script (`console.log`) e ogni
-errore (`console.error`). **Serve una nuova riproduzione reale** (click "Avvia pratica" da parte
-di un utente autenticato in app) per leggere i log freschi e trovare la causa — non ho un modo di
-autenticarmi come utente reale per triggerare la chiamata da qui.
+**Aggiornamento 2026-09-30 — RISOLTO.** Root cause a più livelli, trovate e sanate tutte in
+sequenza nella stessa sessione (branch `fix-2909`):
+1. **Script Properties mancanti** su script.google.com (`SHARED_TOKEN`, `ROOT_FOLDER_ID`) —
+   causavano l'HTTP 500 riproducibile del 2026-09-29 (confermato via `function_logs` dopo il
+   deploy v4 con logging diagnostico). Marco le ha impostate manualmente dal dashboard Apps Script.
+2. **Web App Apps Script live obsoleta**: la copia effettivamente deployata su script.google.com
+   era una versione vecchia priva del case `createFolder` in `doPost` (solo `upload`/`getDownload`,
+   `FASI_VALIDE` ancora con `'Acquisizione'/'Archivio'`) — mai allineata alla copia di riferimento
+   nel repo nonostante quest'ultima fosse già aggiornata in una sessione precedente senza commit.
+   Marco ha incollato il contenuto aggiornato di `google-apps-script/DocumentiDrive.gs` e rifatto
+   il deploy.
+3. **`FASI_VALIDE` incompleta anche nel file corretto**: mancavano le 3 fasi lato contatto
+   (`Incontro/Sopralluogo`, `Rivalutazione`, `Presa in carico`) — avrebbe fatto fallire comunque gli
+   upload checklist in "Presa in carico". Fix committato (`0ed4e08`).
+4. **Falso allarme finale**: dopo i fix 1-3, test ripetuti mostravano ancora zero richieste di
+   rete verso `drive-documenti` (nemmeno il preflight CORS, poi solo preflight senza POST
+   seguente) nonostante toast di successo. Diagnosticato con un hook temporaneo
+   (`window.__supabase`, rimosso a fine indagine) per riprodurre la chiamata isolata da console:
+   una volta forzato un reload pulito del bundle (la cache — browser o CDN Cloudflare Pages —
+   serviva ancora JS vecchio), la chiamata reale ha funzionato al primo colpo. Non era quindi un
+   bug di codice ma cache stantia durante i test.
+5. **Verifica end-to-end confermata via DB**: pratica di test "his sihs" → `contatti.drive_folder_id`
+   e `drive_folder_url` popolati, `proprietari_pratica_documenti.drive_file_id` popolato dopo
+   upload reale di "CI/CF proprietario". Pipeline creazione cartella + upload funziona in prod.
+
+I catch vuoti attorno a `supabase.functions.invoke('drive-documenti', ...)` in
+`AvviaPraticaDialog.tsx`, `PraticaDetailSheet.tsx` (x2) e `PipelineDetailSheet.tsx` ora loggano
+l'errore in console invece di ignorarlo silenziosamente (`console.error`) — utile per la prossima
+volta che qualcosa fallisce silenziosamente in questo flusso.
 
 Per la spec completa (rename cartella all'ingresso in gestione) serve ancora toccare:
 `google-apps-script/DocumentiDrive.gs` (aggiungere azione `renameFolder` — richiede redeploy
