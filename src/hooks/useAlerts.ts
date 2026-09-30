@@ -142,13 +142,19 @@ export const useAlerts = () => {
   const proprietariBase = useQuery<RawPraticaRow[]>({
     queryKey: PROPRIETARI_BASE_QUERY_KEY,
     queryFn: async () => {
+      // `!inner` + filtro su proprietario.is_deleted: senza, una pratica non
+      // eliminata ma legata a un proprietario soft-cancellato restava
+      // visibile negli alert (es. contatti di test "pasta con il tonno"
+      // eliminati il 2026-09-10 ma con pratica ancora attiva — ghost alert
+      // segnalato dai clienti il 2026-09-29).
       const { data, error } = await supabase
         .from('proprietari_pratiche')
         .select(`
           id, via, citta, fase, updated_at,
-          proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey(nome, cognome, contatti(agente_id))
+          proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey!inner(nome, cognome, contatti(agente_id), is_deleted)
         `)
-        .eq('is_deleted', false);
+        .eq('is_deleted', false)
+        .eq('proprietario.is_deleted', false);
       if (error) throw error;
       return (data ?? []) as unknown as RawPraticaRow[];
     },

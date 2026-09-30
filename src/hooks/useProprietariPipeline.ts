@@ -51,14 +51,20 @@ export const useProprietariPipeline = () => {
   const query = useQuery<PraticaCard[]>({
     queryKey: QUERY_KEY,
     queryFn: async () => {
+      // `!inner` + filtro su proprietario.is_deleted: senza, una pratica non
+      // eliminata ma legata a un proprietario soft-cancellato restava
+      // visibile nel kanban (ghost card, es. contatti di test "pasta con il
+      // tonno" — stesso bug fixato in useAlerts.ts, segnalato dai clienti
+      // il 2026-09-29).
       const { data, error } = await supabase
         .from('proprietari_pratiche')
         .select(`
           id, proprietario_id, via, tipologia, citta, fase, valutazione_stimata, immobile_id, updated_at,
-          proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey(nome, cognome, telefono, contatti(agente_id)),
+          proprietario:proprietari!proprietari_pratiche_proprietario_id_fkey!inner(nome, cognome, telefono, contatti(agente_id), is_deleted),
           documenti:proprietari_pratica_documenti(stato, fase)
         `)
         .eq('is_deleted', false)
+        .eq('proprietario.is_deleted', false)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;

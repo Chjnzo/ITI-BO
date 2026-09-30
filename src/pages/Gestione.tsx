@@ -35,14 +35,17 @@ const Gestione = () => {
   // cioè "cerca" i risultati del nuovo contesto, senza costringere l'utente
   // a rifiltrare — comportamento coerente con altri pill di questa app).
   const [searchQuery, setSearchQuery] = useState('');
-  // Filtro agente (spec cliente 2026-09-28): agenti/admin possono restringere
-  // le board proprietari + in-vendita + venduto ai propri immobili. Default
-  // "tutti" per admin; per agenti loggati, precompilato col proprio id così
-  // vedono subito "i miei" — coerente con lo stesso pattern in ProprietariList.
+  // Filtro agente (spec cliente 2026-09-28): agenti possono restringere le
+  // board proprietari + in-vendita + venduto ai propri immobili, precompilato
+  // col proprio id così vedono subito "i miei". Admin e Segreteria non hanno
+  // immobili "propri" (segreteria non è un agente con pratiche assegnate) e
+  // restano su "tutti" di default — bug segnalato dai clienti il 2026-09-29:
+  // la segreteria si ritrovava filtrata sul proprio id (senza risultati) ad
+  // ogni ingresso e doveva riselezionare "tutti" manualmente.
   const { data: currentProfile } = useCurrentProfile();
   const [agenteFilter, setAgenteFilter] = useState<string>('tutti');
   useEffect(() => {
-    if (currentProfile?.id && currentProfile.ruolo !== 'Admin' && agenteFilter === 'tutti') {
+    if (currentProfile?.id && currentProfile.ruolo === 'Agente' && agenteFilter === 'tutti') {
       setAgenteFilter(currentProfile.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

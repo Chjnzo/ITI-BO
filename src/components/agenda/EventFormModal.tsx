@@ -291,7 +291,7 @@ const EventFormModal = ({
   // contatti + proprietari/acquirenti/collaboratori. Serve per mostrare
   // nome+telefono in edit mode quando il modal è aperto da calendario e
   // defaultContattoName non è disponibile.
-  const [contattoDetail, setContattoDetail] = useState<{ nome: string; cognome: string | null; telefono: string | null; tipo: 'proprietari' | 'acquirenti' | 'collaboratori' } | null>(null);
+  const [contattoDetail, setContattoDetail] = useState<{ nome: string; cognome: string | null; telefono: string | null; cellulare: string | null; tipo: 'proprietari' | 'acquirenti' | 'collaboratori' } | null>(null);
 
   const autosavedIdRef = useRef<string | null>(null);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -353,12 +353,12 @@ const EventFormModal = ({
       for (const tipo of ['proprietari', 'acquirenti', 'collaboratori'] as const) {
         const { data } = await supabase
           .from(tipo)
-          .select('nome, cognome, telefono')
+          .select('nome, cognome, telefono, cellulare')
           .eq('id', contattoId)
           .maybeSingle();
         if (aborted) return;
         if (data) {
-          setContattoDetail({ ...(data as { nome: string; cognome: string | null; telefono: string | null }), tipo });
+          setContattoDetail({ ...(data as { nome: string; cognome: string | null; telefono: string | null; cellulare: string | null }), tipo });
           return;
         }
       }
@@ -1028,12 +1028,12 @@ const EventFormModal = ({
                     </span>
                   )}
                 </div>
-                {contattoDetail?.telefono && (
+                {(contattoDetail?.telefono || contattoDetail?.cellulare) && (
                   <div className="flex items-center gap-2 text-xs text-gray-600">
                     <Phone size={12} className="text-gray-400 shrink-0" />
-                    <span className="font-mono">{contattoDetail.telefono}</span>
+                    <span className="font-mono">{formatTelefoni(contattoDetail.telefono, contattoDetail.cellulare)}</span>
                     <a
-                      href={getWhatsAppUrl(contattoDetail.telefono)}
+                      href={getWhatsAppUrl((contattoDetail.cellulare || contattoDetail.telefono)!)}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}

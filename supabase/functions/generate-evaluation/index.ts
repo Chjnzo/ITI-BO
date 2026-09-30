@@ -309,18 +309,28 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const locationIqKey = Deno.env.get("LOCATIONIQ_API_KEY");
 
-    console.log("Env check — SUPABASE_URL:", supabaseUrl ? "ok" : "MISSING", "| SERVICE_KEY:", serviceKey ? "ok" : "MISSING", "| OPENAI_KEY:", openaiKey ? "ok" : "MISSING");
+    console.log("Env check — SUPABASE_URL:", supabaseUrl ? "ok" : "MISSING", "| SERVICE_KEY:", serviceKey ? "ok" : "MISSING", "| OPENAI_KEY:", openaiKey ? "ok" : "MISSING", "| LOCATIONIQ_KEY:", locationIqKey ? "ok" : "MISSING");
 
     if (!openaiKey) {
       return json({ error: "OPENAI_API_KEY non configurata.", success: false }, 500);
+    }
+    if (!locationIqKey) {
+      return json({ error: "LOCATIONIQ_API_KEY non configurata.", success: false }, 500);
     }
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
     // -----------------------------------------------------------------------
-    // 1. Geocode via Nominatim (inline, with fallback)
+    // 1. Geocode via LocationIQ (inline, with fallback)
     // -----------------------------------------------------------------------
+    // Nominatim pubblico blocca sistematicamente le richieste dagli IP delle
+    // Edge Function Supabase (ban a livello di IP/datacenter, non rate-limit
+    // temporaneo — verificato 2026-09-29: 100% delle chiamate rispondevano
+    // 403 dall'IP di produzione, 200 OK dalla stessa query da un IP normale).
+    // LocationIQ usa lo stesso formato di risposta di Nominatim (stessi campi
+    // address.city/town/village), quindi il parsing sotto resta invariato.
 
     const cittaRaw = citta.trim();
     const cittaTokens = cittaRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -337,28 +347,23 @@ Deno.serve(async (req) => {
     }
 
     const nominatimFetch = async (q: string): Promise<{ lat: number; lng: number; officialCity: string | null } | null> => {
-      const params = new URLSearchParams({ format: "json", limit: "1", addressdetails: "1", q });
-      const url = `https://nominatim.openstreetmap.org/search?${params}`;
-      console.log("Nominatim URL:", url);
-      const res = await fetch(url, {
-        headers: {
-          "User-Agent": "IlTuoImmobiliare-App/1.0 (info@iltuoimmobiliare.it)",
-          "Accept-Language": "it",
-        },
-      });
+      const params = new URLSearchParams({ key: locationIqKey, format: "json", limit: "1", addressdetails: "1", q });
+      const url = `https://us1.locationiq.com/v1/search?${params}`;
+      console.log("LocationIQ URL:", url.replace(locationIqKey, "***"));
+      const res = await fetch(url, { headers: { "Accept-Language": "it" } });
       if (!res.ok) {
-        console.error("Nominatim HTTP error:", res.status);
+        console.error("LocationIQ HTTP error:", res.status);
         return null;
       }
       const results = await res.json();
-      console.log(`Nominatim results for "${q}":`, results?.length ?? 0);
+      console.log(`LocationIQ results for "${q}":`, results?.length ?? 0);
       if (!Array.isArray(results) || results.length === 0) return null;
       const r = results[0];
-      // Extract the official municipality from Nominatim address details.
+      // Extract the official municipality from the address details.
       // "city" covers capoluoghi; "town"/"village"/"municipality" covers smaller comuni.
       const addr = r.address ?? {};
       const officialCity: string | null = addr.city ?? addr.municipality ?? addr.town ?? addr.village ?? null;
-      console.log(`Nominatim official city for "${q}": ${officialCity}`);
+      console.log(`LocationIQ official city for "${q}": ${officialCity}`);
       return { lat: parseFloat(r.lat), lng: parseFloat(r.lon), officialCity };
     };
 

@@ -89,18 +89,29 @@ o `immobile_id = card.id` (scheda immobile).
 **Aperto — Cartella Drive automatica per proprietario:** Marco vuole che alla creazione di un
 proprietario si crei automaticamente una cartella Drive nominata `Cognome Nome`, rinominata a
 `Cognome Nome — Via Xxx` quando si avvia la pratica e nasce l'immobile. Link sempre visibile in
-alto sia nella scheda proprietario che in tutte le fasi della gestione. Stato attuale: il flusso
-"cartella del contatto" è **già rotto in silenzio** — `PraticaDetailSheet.tsx:253-264`
-(`ensureContattoFolder`) chiama `drive-documenti` con `entita: 'contatto'` ma la Edge Function
-`supabase/functions/drive-documenti/index.ts` non gestisce quel branch (solo `immobileId`), quindi
-la chiamata fallisce e il `catch` vuoto la ingoia. La cartella oggi si crea solo lazy al passaggio
-"Passa a In preparazione" (immobile-side), o via link incollato a mano nella scheda proprietario /
-scheda immobile. Per implementare la spec serve toccare: `google-apps-script/DocumentiDrive.gs`
-(aggiungere azione `renameFolder` — richiede redeploy manuale della Web App su script.google.com,
-Marco ha confermato di poterlo fare), `drive-documenti/index.ts` (branch `entita: 'contatto'` +
-azione `renameFolder`), `NewProprietarioDialog.tsx` (createFolder al salvataggio),
-`PraticaDetailSheet.tsx::passaAInPreparazione` (renameFolder quando arriva l'immobile). Nessuna
-migration DB necessaria: `contatti.drive_folder_url/drive_folder_id` esistono già.
+alto sia nella scheda proprietario che in tutte le fasi della gestione.
+
+**Aggiornamento 2026-09-29:** la nota precedente ("branch `entita: 'contatto'` non gestito dalla
+Edge Function") era **stale** — il branch è già implementato in produzione (deployato da una
+sessione precedente senza commit su git, disallineamento poi sanato riportando il file locale
+allo stato prod + aggiunta logging diagnostico, deploy v4). Nonostante ciò `drive-documenti`
+risponde **HTTP 500 in produzione in modo riproducibile** (confermato via `function_edge_logs`:
+due chiamate reali il 2026-09-29 alle 10:37:47 e 10:39:14, entrambe fallite). La causa esatta non
+è ancora nota: prima del deploy v4 la funzione non aveva NESSUN log, quindi l'errore reale
+(secrets mancanti? risposta non-JSON di Apps Script? errore lato Apps Script?) era invisibile.
+v4 logga ora l'HTTP status + raw body di ogni chiamata ad Apps Script (`console.log`) e ogni
+errore (`console.error`). **Serve una nuova riproduzione reale** (click "Avvia pratica" da parte
+di un utente autenticato in app) per leggere i log freschi e trovare la causa — non ho un modo di
+autenticarmi come utente reale per triggerare la chiamata da qui.
+
+Per la spec completa (rename cartella all'ingresso in gestione) serve ancora toccare:
+`google-apps-script/DocumentiDrive.gs` (aggiungere azione `renameFolder` — richiede redeploy
+manuale della Web App su script.google.com, Marco ha confermato di poterlo fare),
+`drive-documenti/index.ts` (azione `renameFolder`, il branch `createFolder` esiste già),
+`NewProprietarioDialog.tsx` (createFolder al salvataggio, oggi il create è lazy solo in
+`PraticaDetailSheet.tsx::ensureContattoFolder`), `PraticaDetailSheet.tsx::passaAInPreparazione`
+(renameFolder quando arriva l'immobile). Nessuna migration DB necessaria:
+`contatti.drive_folder_url/drive_folder_id` esistono già.
 Marco ha confermato di poter rifare il deploy Apps Script quando avrò pronto il `.gs`.
 
 ---

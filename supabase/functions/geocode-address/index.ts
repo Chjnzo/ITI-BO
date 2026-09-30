@@ -20,30 +20,39 @@ Deno.serve(async (req) => {
       );
     }
 
+    const locationIqKey = Deno.env.get("LOCATIONIQ_API_KEY");
+    if (!locationIqKey) {
+      return new Response(
+        JSON.stringify({ error: "LOCATIONIQ_API_KEY non configurata.", success: false }),
+        { status: 500, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Nominatim pubblico blocca con 403 le richieste dagli IP delle Edge
+    // Function Supabase (ban a livello di IP/datacenter — verificato
+    // 2026-09-29). LocationIQ ha lo stesso formato di risposta di Nominatim.
     const params = new URLSearchParams({
+      key: locationIqKey,
       format: "json",
       limit: "1",
       addressdetails: "1",
       q: address.trim(),
     });
 
-    const nominatimUrl = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+    const geocodeUrl = `https://us1.locationiq.com/v1/search?${params.toString()}`;
 
-    const nominatimRes = await fetch(nominatimUrl, {
-      headers: {
-        "User-Agent": "IlTuoImmobiliare-App/1.0 (info@iltuoimmobiliare.it)",
-        "Accept-Language": "it",
-      },
+    const geocodeRes = await fetch(geocodeUrl, {
+      headers: { "Accept-Language": "it" },
     });
 
-    if (!nominatimRes.ok) {
+    if (!geocodeRes.ok) {
       return new Response(
-        JSON.stringify({ error: "Nominatim non disponibile.", success: false }),
+        JSON.stringify({ error: "Servizio di geocoding non disponibile.", success: false }),
         { status: 502, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
       );
     }
 
-    const results = await nominatimRes.json();
+    const results = await geocodeRes.json();
 
     if (!Array.isArray(results) || results.length === 0) {
       return new Response(

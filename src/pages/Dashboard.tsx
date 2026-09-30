@@ -132,12 +132,25 @@ const Dashboard = () => {
 
       // Build queries (conditional filters before Promise.all)
       // NB: 'leads' è la tabella pre-pivot, non più scritta da nessuna UI —
-      // i contatti "in trattativa" vivono ora su 'acquirenti' (stesso enum stato).
-      const activeLeadsQuery = supabase
+      // i contatti vivono ora su proprietari/acquirenti/collaboratori.
+      // "Lead Attivi" deve sommare le 3 tabelle: contare solo 'acquirenti' qui
+      // escludeva tutti i proprietari (928 righe) dal conteggio, facendolo
+      // apparire "bloccato" a ~1950 invece di ~2900+ (segnalato dal cliente
+      // come possibile perdita dati il 2026-09-29 — non era perdita dati, era
+      // un bug di conteggio post-pivot).
+      const activeProprietariQuery = supabase
+        .from('proprietari')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_deleted', false);
+      const activeAcquirentiQuery = supabase
         .from('acquirenti')
         .select('*', { count: 'exact', head: true })
         .eq('is_deleted', false)
         .neq('stato', 'Chiuso');
+      const activeCollaboratoriQuery = supabase
+        .from('collaboratori')
+        .select('*', { count: 'exact', head: true })
+        .eq('is_deleted', false);
 
       let todayAppCountQuery = supabase
         .from('appuntamenti')
@@ -152,7 +165,9 @@ const Dashboard = () => {
       if (!admin) pendingTasksCountQuery = pendingTasksCountQuery.eq('agente_id', user.id);
 
       const [
-        { count: activeLeadsCount, error: activeLeadsError },
+        { count: activeProprietariCount, error: activeProprietariError },
+        { count: activeAcquirentiCount, error: activeAcquirentiError },
+        { count: activeCollaboratoriCount, error: activeCollaboratoriError },
         { count: todayAppCount, error: todayAppCountError },
         { count: pendingTasksCount, error: pendingTasksCountError },
         { data: appsData, error: appsError },
@@ -160,7 +175,9 @@ const Dashboard = () => {
         { data: agentsData, error: agentsError },
         { data: propsData, error: propsError },
       ] = await Promise.all([
-        activeLeadsQuery,
+        activeProprietariQuery,
+        activeAcquirentiQuery,
+        activeCollaboratoriQuery,
         todayAppCountQuery,
         pendingTasksCountQuery,
         supabase
@@ -191,11 +208,11 @@ const Dashboard = () => {
       ]);
 
       if (aborted) return;
-      if (activeLeadsError || todayAppCountError || pendingTasksCountError || appsError || tasksError || agentsError || propsError) {
+      if (activeProprietariError || activeAcquirentiError || activeCollaboratoriError || todayAppCountError || pendingTasksCountError || appsError || tasksError || agentsError || propsError) {
         showError('Errore nel caricamento dei dati della dashboard');
       }
       setStats({
-        activeLeads: activeLeadsCount ?? 0,
+        activeLeads: (activeProprietariCount ?? 0) + (activeAcquirentiCount ?? 0) + (activeCollaboratoriCount ?? 0),
         todayAppointments: todayAppCount ?? 0,
         pendingTasks: pendingTasksCount ?? 0,
       });

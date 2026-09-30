@@ -15,7 +15,7 @@ il codice diverge da quanto dichiarato nell'informativa già pubblicata.
 | **Google Apps Script** (Web App standalone) | Proxy verso Drive, chiamato da Edge Function `drive-documenti` con token condiviso | Metadati file (immobile, fase, nome documento) + contenuto file in base64 | Google infrastructure |
 | **OpenAI API** (`api.openai.com`) | Generazione valutazioni AI (Edge Function `generate-evaluation`) | Indirizzo, città, superficie, tipologia, comfort dell'immobile | **USA** |
 | **Resend** (`api.resend.com`) | Invio email transazionali (notifica nuovo lead) | Dati del lead appena creato | Dichiarato in Privacy Policy ITI2.0 |
-| **Nominatim / OpenStreetMap** | Geocoding indirizzo (`geocode-address`) | Indirizzo testuale | Infrastruttura OSM (EU-based, no-profit) |
+| **LocationIQ** (`us1.locationiq.com`) | Geocoding indirizzo (`geocode-address`, `generate-evaluation`) — sostituisce Nominatim diretto dal 2026-09-29 (Nominatim bloccava con 403 le richieste dall'IP delle Edge Function Supabase) | Indirizzo testuale | Dichiarato da LocationIQ, verificare regione nel loro account |
 | **Overpass API / OpenStreetMap** | Ricerca POI vicini a un immobile (`generate-evaluation`) | Coordinate lat/lng (non dati personali diretti) | Infrastruttura OSM |
 | **Sentry** (`@sentry/react`) | Error tracking + session replay | Errori applicativi; session replay con `maskAllText: true, blockAllMedia: true` (testo mascherato, media bloccati) | Da verificare regione org Sentry (US o EU a seconda del piano) |
 | **Cloudflare Workers** (`iltuoimmobiliare.it`, repo ITI2.0, `wrangler.jsonc`) | Hosting sito pubblico | Traffico HTTP, IP visitatori | Rete globale Cloudflare |
