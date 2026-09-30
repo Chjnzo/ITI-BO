@@ -276,8 +276,10 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
       await supabase.functions.invoke('drive-documenti', {
         body: { action: 'createFolder', immobileId: card.id },
       });
-    } catch (_) {
-      // Best-effort: Apps Script farà comunque lookup lazy al primo upload.
+    } catch (driveErr) {
+      // Diagnostica 2026-09-30: vedi commento in AvviaPraticaDialog.tsx —
+      // best-effort, ma logga per capire se fallisce prima del fetch.
+      console.error('drive-documenti invoke (ensureDriveFolder immobile) fallito:', driveErr);
     }
   };
 

@@ -324,8 +324,9 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
         body: { action: 'createFolder', entita: 'contatto', contattoId: pratica.proprietario_id },
       });
       queryClient.invalidateQueries({ queryKey: ['contatto-drive', pratica.proprietario_id] });
-    } catch (_) {
-      // best-effort
+    } catch (driveErr) {
+      // Diagnostica 2026-09-30: vedi commento in AvviaPraticaDialog.tsx.
+      console.error('drive-documenti invoke (ensureContattoFolder) fallito:', driveErr);
     }
   };
 
@@ -514,7 +515,10 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
           // critiche, la cartella si crea in background.
           supabase.functions.invoke('drive-documenti', {
             body: { action: 'createFolder', immobileId: targetImmobileId },
-          }).catch(() => { /* silenzioso */ });
+          }).catch((driveErr) => {
+            // Diagnostica 2026-09-30: vedi commento in AvviaPraticaDialog.tsx.
+            console.error('drive-documenti invoke (createFolder immobile) fallito:', driveErr);
+          });
         }
 
         await upsertFasePipeline(targetImmobileId!, 'In Vendita', 'Preparazione');

@@ -71,8 +71,11 @@ const AvviaPraticaDialog = ({ proprietario, onClose, onCreated }: AvviaPraticaDi
         await supabase.functions.invoke('drive-documenti', {
           body: { action: 'createFolder', entita: 'contatto', contattoId: proprietario.id },
         });
-      } catch (_) {
-        // volutamente ignorato
+      } catch (driveErr) {
+        // Diagnostica 2026-09-30: le richieste non arrivavano nemmeno ai log
+        // edge di Supabase, quindi l'eccezione va intercettata e resa visibile
+        // (prima era silenziosa) per capire se falliva prima ancora del fetch.
+        console.error('drive-documenti invoke (createFolder contatto) fallito:', driveErr);
       }
     },
     onSuccess: () => {

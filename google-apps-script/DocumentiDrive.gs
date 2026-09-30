@@ -33,7 +33,12 @@
  *     via link)
  */
 
-const FASI_VALIDE = ['In Vendita', 'Venduto'];
+// Unione delle fasi valide lato immobile (FASI_VALIDE_IMMOBILE) e lato
+// contatto/pratica proprietario (FASI_VALIDE_CONTATTO) in
+// supabase/functions/drive-documenti/index.ts — l'Edge Function valida già
+// la fase prima di chiamare questo script, questo è solo un controllo di
+// difesa in profondità e va tenuto sincronizzato con quell'elenco.
+const FASI_VALIDE = ['In Vendita', 'Venduto', 'Incontro/Sopralluogo', 'Rivalutazione', 'Presa in carico'];
 
 function doPost(e) {
   let payload;
