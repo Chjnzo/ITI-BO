@@ -11,6 +11,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
+// DEBUG TEMPORANEO 2026-09-30: espone il client in console per riprodurre
+// isolatamente la chiamata a drive-documenti fuori dal ciclo di vita React
+// (investigazione preflight-CORS-ok-ma-POST-mai-inviato). Da rimuovere a
+// investigazione conclusa.
+if (typeof window !== 'undefined') {
+  (window as unknown as { __supabase: typeof supabase }).__supabase = supabase;
+}
+
 export const setupSessionManagement = (callback: (session: Session | null) => void) => {
   const { data: { subscription } } = supabase.auth.onAuthStateChange(
     async (event, session) => {
