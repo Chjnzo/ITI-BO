@@ -1111,6 +1111,7 @@ const PraticaDetailSheet = ({ pratica, onClose }: PraticaDetailSheetProps) => {
               defaultContattoId={pratica.proprietario_id}
               defaultContattoName={pratica.proprietario_nome || undefined}
               defaultImmobileId={pratica.immobile_id ?? undefined}
+              defaultImmobileName={pratica.via || undefined}
               agents={agenti}
               properties={propertiesEvento}
               coloriMap={coloriMapEvento}

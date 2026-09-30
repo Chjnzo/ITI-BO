@@ -1131,6 +1131,7 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               defaultContattoId={proprietarioInfo?.id ?? undefined}
               defaultContattoName={card.proprietario_nome ?? undefined}
               defaultImmobileId={card.id}
+              defaultImmobileName={card.titolo}
               defaultTipologia={tipologiaAppuntamento ?? undefined}
               agents={agentiForEvent}
               properties={[{ id: card.id, titolo: card.titolo, copertina_url: card.copertina_url ?? null }]}

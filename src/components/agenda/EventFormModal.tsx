@@ -28,7 +28,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { FASI_PROPRIETARI } from '@/hooks/useProprietariPipeline';
 import { generaChecklistPraticaPerFase } from '@/lib/proprietariChecklist';
 import { generaChecklistPerFase, upsertFasePipeline } from '@/lib/pipelineChecklist';
-import type { FaseProprietario, Sottofase } from '@/types';
+import type { FaseProprietario, FasePipeline, Sottofase } from '@/types';
+import { SOTTOFASI_IN_VENDITA } from '@/types';
 
 // ── Shared Types ──────────────────────────────────────────────────────────────
 
@@ -213,8 +214,12 @@ interface EventFormModalProps {
   /** Generic contatto (acquirente/proprietario/collaboratore) link — takes over the lead combobox/search UI when set. */
   defaultContattoId?: string;
   defaultContattoName?: string;
-  /** Immobile pre-selezionato (es. modale aperta dal kanban Gestione). */
+  /** Immobile pre-selezionato (es. modale aperta dal kanban Gestione). Se
+   *  presente, il campo immobile viene bloccato (sola visualizzazione) così
+   *  l'automazione tipologia → sottofase ha sempre un immobile_id su cui
+   *  agire (vedi TIPOLOGIA_TO_SOTTOFASE_IMMOBILE). */
   defaultImmobileId?: string;
+  defaultImmobileName?: string;
   /** Tipologia pre-selezionata (es. modale aperta da un pulsante "Fissa appuntamento
    *  Rogito" o "Preliminare" in gestione). */
   defaultTipologia?: string;
@@ -229,11 +234,13 @@ const EventFormModal = ({
   defaultAgentId, defaultDate, defaultTimeStart,
   defaultLeadId, defaultLeadName,
   defaultContattoId, defaultContattoName,
-  defaultImmobileId, defaultTipologia,
+  defaultImmobileId, defaultImmobileName, defaultTipologia,
   agents, properties, coloriMap, tipologieList,
 }: EventFormModalProps) => {
   const isEdit = !!event;
   const isContattoLinked = !!(event ? event.contatto_id : defaultContattoId);
+  const isImmobileLinked = !!(event ? event.immobile_id : defaultImmobileId);
+  const linkedProperty = properties.find(p => p.id === (event?.immobile_id ?? defaultImmobileId));
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -661,8 +668,12 @@ const EventFormModal = ({
     'Valutazione Vendita': 'Valutazione',
     'Valutazione Affitto': 'Valutazione',
     'Rivalutazione': 'Rivalutazione',
+    'Incontro con proprietario': 'Presa in carico',
   };
   const TIPOLOGIA_TO_SOTTOFASE_IMMOBILE: Record<string, Sottofase> = {
+    'Prima visita': 'Pubblicato',
+    'Terza Visita': 'In trattativa',
+    'Firma proposta': 'In trattativa',
     'Preliminare': 'Preliminare',
     'Rogito': 'Rogito',
   };
@@ -692,10 +703,12 @@ const EventFormModal = ({
     queryClient.invalidateQueries({ queryKey: ['proprietari-pratica-documenti', pratica.id] });
   };
 
-  // Per l'immobile: solo Preliminare/Rogito (sottofasi di "Venduto") — porta
-  // la card in Venduto/<sottofase>. Non regressioni (se la card è già oltre
-  // la sottofase target, non la muoviamo indietro).
+  // Per l'immobile: la sottofase target può appartenere sia a "In Vendita"
+  // (Prima visita/Terza Visita/Firma proposta) sia a "Venduto"
+  // (Preliminare/Rogito). Non regressioni: se la card è già oltre la fase o
+  // la sottofase target, non la muoviamo indietro.
   const SOTTOFASI_VENDUTO_ORDER: Sottofase[] = ['Vincolo', 'Preliminare', 'Rogito', 'Archivio'];
+  const FASI_PIPELINE_ORDER: FasePipeline[] = ['In Vendita', 'Venduto'];
 
   const avanzaFaseImmobileSePossibile = async (immobileId: string, targetSottofase: Sottofase) => {
     const { data: stato } = await supabase
@@ -703,16 +716,24 @@ const EventFormModal = ({
       .select('fase, sottofase')
       .eq('immobile_id', immobileId)
       .maybeSingle();
-    // Se la card è ancora in "In Vendita" la spostiamo direttamente a Venduto/target.
-    // Se è già in Venduto ma su sottofase precedente, avanziamo. Altrimenti no-op.
     if (!stato) return;
-    if (stato.fase === 'Venduto') {
-      const currentIdx = SOTTOFASI_VENDUTO_ORDER.indexOf(stato.sottofase as Sottofase);
-      const targetIdx = SOTTOFASI_VENDUTO_ORDER.indexOf(targetSottofase);
+
+    const targetFase: FasePipeline = (SOTTOFASI_IN_VENDITA as string[]).includes(targetSottofase)
+      ? 'In Vendita'
+      : 'Venduto';
+    const currentFaseIdx = FASI_PIPELINE_ORDER.indexOf(stato.fase as FasePipeline);
+    const targetFaseIdx = FASI_PIPELINE_ORDER.indexOf(targetFase);
+    if (currentFaseIdx > targetFaseIdx) return;
+
+    if (currentFaseIdx === targetFaseIdx) {
+      const order = targetFase === 'In Vendita' ? SOTTOFASI_IN_VENDITA : SOTTOFASI_VENDUTO_ORDER;
+      const currentIdx = order.indexOf(stato.sottofase as never);
+      const targetIdx = order.indexOf(targetSottofase as never);
       if (currentIdx >= targetIdx) return;
     }
-    await upsertFasePipeline(immobileId, 'Venduto', targetSottofase);
-    await generaChecklistPerFase(immobileId, 'Venduto');
+
+    await upsertFasePipeline(immobileId, targetFase, targetSottofase);
+    await generaChecklistPerFase(immobileId, targetFase);
     queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
   };
 
@@ -1129,22 +1150,46 @@ const EventFormModal = ({
             </div>
           </div>
 
-          {/* Immobile (opzionale) */}
+          {/* Immobile (opzionale, bloccato se aperto dalla scheda immobile) */}
           <div className="space-y-2">
             <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
               Immobile <span className="normal-case font-normal text-gray-400">(opzionale)</span>
             </Label>
-            <Combobox
-              items={[
-                { id: 'none', label: 'Nessuno' },
-                ...properties.map(p => ({ id: p.id, label: p.titolo, image: p.copertina_url ?? undefined })),
-              ]}
-              value={immobileId}
-              onSelect={setImmobileId}
-              placeholder="Collega un immobile..."
-              searchPlaceholder="Cerca immobile..."
-              emptyMessage="Nessun immobile trovato."
-            />
+            {isImmobileLinked ? (
+              <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+                  <Home size={14} className="text-[#94b0ab] shrink-0" />
+                  <span className="truncate">
+                    {linkedProperty?.titolo || defaultImmobileName || 'Immobile selezionato'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = event?.immobile_id ?? defaultImmobileId;
+                    if (!id) return;
+                    onClose();
+                    navigate('/gestione', { state: { openImmobileId: id, gestioneTab: 'in-vendita' } });
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 bg-[#94b0ab] hover:bg-[#7a948f] text-white rounded-xl px-3 py-2 text-xs font-bold transition-colors"
+                >
+                  <Home size={13} />
+                  Apri scheda immobile
+                </button>
+              </div>
+            ) : (
+              <Combobox
+                items={[
+                  { id: 'none', label: 'Nessuno' },
+                  ...properties.map(p => ({ id: p.id, label: p.titolo, image: p.copertina_url ?? undefined })),
+                ]}
+                value={immobileId}
+                onSelect={setImmobileId}
+                placeholder="Collega un immobile..."
+                searchPlaceholder="Cerca immobile..."
+                emptyMessage="Nessun immobile trovato."
+              />
+            )}
           </div>
 
           {/* Avviso informativo: altri appuntamenti già fissati per lo stesso contatto/immobile/indirizzo */}
