@@ -678,7 +678,51 @@ const EventFormModal = ({
     'Rogito': 'Rogito',
   };
 
-  const avanzaFaseProprietarioSePossibile = async (contattoId: string, targetFase: FaseProprietario) => {
+  // Se il proprietario collegato non ha ancora nessuna pratica, fissare un
+  // appuntamento di valutazione/rivalutazione/presa in carico ne avvia una
+  // nuova direttamente nella fase target — così compare subito in Gestione
+  // invece di richiedere "Avvia pratica" a mano dalla scheda contatto
+  // (spec cliente 2026-10-05: "la valutazione fissata in agenda deve
+  // comparire in gestione"). Richiede un indirizzo (vincolo NOT NULL su
+  // proprietari_pratiche.via): usiamo l'indirizzo scritto sull'appuntamento,
+  // altrimenti quello già noto sulla scheda del proprietario; se manca
+  // entrambi non creiamo nulla (l'agente dovrà usare "Avvia pratica" a mano).
+  const creaPraticaProprietario = async (contattoId: string, targetFase: FaseProprietario, indirizzoAppuntamento: string | null) => {
+    const { data: proprietario } = await supabase
+      .from('proprietari')
+      .select('id, via_immobile, citta_immobile')
+      .eq('id', contattoId)
+      .maybeSingle();
+    if (!proprietario) return;
+
+    const via = indirizzoAppuntamento?.trim() || proprietario.via_immobile?.trim();
+    if (!via) return;
+
+    const { data: nuovaPratica, error } = await supabase
+      .from('proprietari_pratiche')
+      .insert({
+        proprietario_id: contattoId,
+        via,
+        citta: proprietario.citta_immobile ?? null,
+        fase: targetFase,
+      })
+      .select('id')
+      .single();
+    if (error || !nuovaPratica) return;
+
+    await generaChecklistPraticaPerFase(nuovaPratica.id, targetFase);
+    try {
+      await supabase.functions.invoke('drive-documenti', {
+        body: { action: 'createFolder', entita: 'contatto', contattoId },
+      });
+    } catch (driveErr) {
+      console.error('drive-documenti invoke (createFolder contatto) fallito:', driveErr);
+    }
+    queryClient.invalidateQueries({ queryKey: ['proprietari-pipeline'] });
+    showSuccess(`Pratica avviata in Gestione · fase "${targetFase}".`);
+  };
+
+  const avanzaFaseProprietarioSePossibile = async (contattoId: string, targetFase: FaseProprietario, indirizzoAppuntamento: string | null) => {
     const { data: pratica } = await supabase
       .from('proprietari_pratiche')
       .select('id, fase')
@@ -686,7 +730,10 @@ const EventFormModal = ({
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (!pratica) return;
+    if (!pratica) {
+      await creaPraticaProprietario(contattoId, targetFase, indirizzoAppuntamento);
+      return;
+    }
 
     const targetIdx = FASI_PROPRIETARI.indexOf(targetFase);
     const currentIdx = FASI_PROPRIETARI.indexOf(pratica.fase as FaseProprietario);
@@ -775,7 +822,7 @@ const EventFormModal = ({
       // Automazioni tipologia → fase pipeline (spec utente 2026-09-14).
       const faseTargetProprietario = TIPOLOGIA_TO_FASE_PROPRIETARIO[payload.tipologia];
       if (faseTargetProprietario && payload.contatto_id) {
-        await avanzaFaseProprietarioSePossibile(payload.contatto_id, faseTargetProprietario);
+        await avanzaFaseProprietarioSePossibile(payload.contatto_id, faseTargetProprietario, payload.indirizzo_appuntamento);
       }
       const sottofaseTargetImmobile = TIPOLOGIA_TO_SOTTOFASE_IMMOBILE[payload.tipologia];
       if (sottofaseTargetImmobile && payload.immobile_id) {

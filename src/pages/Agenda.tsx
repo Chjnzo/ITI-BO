@@ -14,6 +14,7 @@ import EventFormModal, {
   APPOINTMENT_CONTACT_SELECT,
 } from '@/components/agenda/EventFormModal';
 import CategorieSheet from '@/components/agenda/CategorieSheet';
+import AgendaSearch from '@/components/agenda/AgendaSearch';
 import WeeklyPlanningView from '@/components/agenda/WeeklyPlanningView';
 import AgentColumnsView from '@/components/agenda/AgentColumnsView';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -128,6 +129,12 @@ const Agenda = () => {
   const openEventEdit = (event: Appointment) => setFormModal({ open: true, event });
   const openSlotCreate = (date: string, time: string, agentId?: string) =>
     setFormModal({ open: true, defaultDate: date, defaultTimeStart: time, defaultAgentId: agentId });
+  // Risultato della ricerca (AgendaSearch): sposta la vista sulla data
+  // dell'appuntamento trovato e lo apre direttamente in modifica.
+  const openSearchResult = (event: Appointment) => {
+    setSelectedDate(event.data);
+    openEventEdit(event);
+  };
 
   const parsedDate = parseISO(selectedDate);
 
@@ -151,6 +158,8 @@ const Agenda = () => {
             <span className="text-sm font-semibold text-gray-400 capitalize truncate">{periodLabel}</span>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <AgendaSearch onSelect={openSearchResult} />
+
             {/* View mode toggle */}
             <div className="flex rounded-xl border border-gray-200 overflow-hidden">
               <button

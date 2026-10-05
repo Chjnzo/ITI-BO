@@ -868,56 +868,58 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
                   Passa a "{nextSottofase}"
                 </Button>
               )}
+              {(card.fase === 'Venduto' || (card.fase === 'In Vendita' && card.sottofase === 'In trattativa')) && (
+                /* Abbinamento acquirente (spec cliente 2026-09-28, esteso
+                   2026-10 su richiesta cliente): collegato in "In trattativa",
+                   resta visibile/modificabile per tutta la fase "Venduto"
+                   (Vincolo/Preliminare/Rogito/Archivio) per capire a colpo
+                   d'occhio chi è il compratore in ogni sottofase. */
+                <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-4 py-3 space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                    Acquirente collegato
+                  </Label>
+                  <Combobox
+                    items={acquirenteItems}
+                    value={acquirenteCorrente?.id ?? ''}
+                    onSelect={(id) => abbinaAcquirente.mutate(id || null)}
+                    onSearch={searchAcquirenti}
+                    placeholder="Cerca un acquirente..."
+                    searchPlaceholder="Nome, cognome, telefono..."
+                    emptyMessage="Nessun acquirente trovato."
+                    className="h-11 rounded-xl bg-white border-gray-100"
+                  />
+                  {acquirenteCorrente && (
+                    <button
+                      type="button"
+                      onClick={() => abbinaAcquirente.mutate(null)}
+                      className="text-[10px] font-semibold text-gray-400 hover:text-red-500 underline underline-offset-2"
+                    >
+                      Rimuovi abbinamento
+                    </button>
+                  )}
+                </div>
+              )}
               {card.fase === 'In Vendita' && card.sottofase === 'In trattativa' && (
-                <>
-                  {/* Abbinamento acquirente (spec cliente 2026-09-28): quando
-                      l'immobile è in trattativa, l'agente collega qui il
-                      compratore pescandolo dai Contatti/Acquirenti. */}
-                  <div className="rounded-2xl border border-gray-100 bg-gray-50/40 px-4 py-3 space-y-2">
-                    <Label className="text-xs font-bold uppercase tracking-widest text-gray-500">
-                      Acquirente collegato
-                    </Label>
-                    <Combobox
-                      items={acquirenteItems}
-                      value={acquirenteCorrente?.id ?? ''}
-                      onSelect={(id) => abbinaAcquirente.mutate(id || null)}
-                      onSearch={searchAcquirenti}
-                      placeholder="Cerca un acquirente..."
-                      searchPlaceholder="Nome, cognome, telefono..."
-                      emptyMessage="Nessun acquirente trovato."
-                      className="h-11 rounded-xl bg-white border-gray-100"
-                    />
-                    {acquirenteCorrente && (
-                      <button
-                        type="button"
-                        onClick={() => abbinaAcquirente.mutate(null)}
-                        className="text-[10px] font-semibold text-gray-400 hover:text-red-500 underline underline-offset-2"
-                      >
-                        Rimuovi abbinamento
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      type="button"
-                      onClick={() => passaAVenduto.mutate('Vincolo')}
-                      disabled={passaAVenduto.isPending}
-                      className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
-                    >
-                      <ArrowRight size={13} />
-                      Passa a Vincolo
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => passaAVenduto.mutate('Preliminare')}
-                      disabled={passaAVenduto.isPending}
-                      className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
-                    >
-                      <ArrowRight size={13} />
-                      Passa a Preliminare
-                    </Button>
-                  </div>
-                </>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => passaAVenduto.mutate('Vincolo')}
+                    disabled={passaAVenduto.isPending}
+                    className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
+                  >
+                    <ArrowRight size={13} />
+                    Passa a Vincolo
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => passaAVenduto.mutate('Preliminare')}
+                    disabled={passaAVenduto.isPending}
+                    className="rounded-xl font-bold text-xs h-10 bg-[#94b0ab] hover:bg-[#7a948f] text-white gap-1"
+                  >
+                    <ArrowRight size={13} />
+                    Passa a Preliminare
+                  </Button>
+                </div>
               )}
               {/* Manda in archivio: visibile solo da Rogito (fase finale
                   operativa). Sposta la card in Venduto/Archivio — sparisce
