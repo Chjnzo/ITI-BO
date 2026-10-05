@@ -238,8 +238,11 @@ const AgentColumnsView = ({
     const map = new Map<string, Appointment[]>();
     for (const e of events) {
       if (e.data !== selectedDate) continue;
-      if (!map.has(e.agente_id)) map.set(e.agente_id, []);
-      map.get(e.agente_id)!.push(e);
+      const agentIds = e.agenti_ids && e.agenti_ids.length > 0 ? e.agenti_ids : [e.agente_id];
+      for (const agentId of agentIds) {
+        if (!map.has(agentId)) map.set(agentId, []);
+        map.get(agentId)!.push(e);
+      }
     }
     return map;
   }, [events, selectedDate]);
