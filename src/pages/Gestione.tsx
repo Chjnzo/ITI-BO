@@ -94,7 +94,7 @@ const Gestione = () => {
             <div className="relative flex-1 max-w-xl group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#94b0ab] transition-colors" size={16} />
               <Input
-                placeholder={tab === 'proprietari' ? 'Cerca per via, città, tipologia...' : 'Cerca per titolo, indirizzo, città, proprietario...'}
+                placeholder={tab === 'proprietari' ? 'Cerca per via, città, tipologia...' : 'Cerca per via, proprietario, acquirente...'}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="h-10 pl-11 pr-4 rounded-xl border-gray-200 bg-white focus:ring-2 focus:ring-[#94b0ab]/20 focus:border-[#94b0ab] transition-all"

@@ -64,7 +64,7 @@ const KanbanBoard = ({ autoOpenId, onAutoOpened, fissaFase, externalSearch, agen
     const query = searchQuery.trim().toLowerCase();
     let filtered = query
       ? (cards ?? []).filter((card) =>
-          [card.titolo, card.indirizzo, card.citta, card.proprietario_nome]
+          [card.titolo, card.indirizzo, card.citta, card.proprietario_nome, card.acquirente_nome]
             .some((field) => field?.toLowerCase().includes(query)),
         )
       : (cards ?? []);

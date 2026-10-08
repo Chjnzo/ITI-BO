@@ -21,6 +21,7 @@ export interface PipelineCard {
   copertina_url?: string;
   drive_folder_url: string | null;
   proprietario_nome: string | null;
+  acquirente_nome: string | null;
   // Agente assegnato all'immobile via proprietario.contatti.agente_id.
   // Popolato quando l'immobile ha un proprietario collegato (creazione via
   // pratica) — vale null per immobili "sciolti" creati da PropertyWizard.
@@ -51,6 +52,7 @@ interface RawImmobileRow {
   data_atto: string | null;
   drive_folder_url: string | null;
   pubblicato_sito: boolean;
+  acquirente_id: string | null;
   proprietario_contatto: { agente_id: string | null; proprietari: { nome: string; cognome: string | null } | null } | null;
   pipeline: { fase: FasePipeline; sottofase: Sottofase | null } | null;
   documenti: { stato: 'Da fare' | 'Fatto'; fase: FasePipeline; sottofase: Sottofase | null }[] | null;
@@ -72,6 +74,7 @@ export const useImmobiliPipeline = () => {
         .select(`
           id, titolo, prezzo, citta, indirizzo, copertina_url,
           data_preliminare, data_atto, drive_folder_url, pubblicato_sito,
+          acquirente_id,
           proprietario_contatto:contatti!immobili_proprietario_id_fkey(agente_id, proprietari(nome, cognome)),
           pipeline:immobile_pipeline_stato(fase, sottofase),
           documenti:immobile_documenti(stato, fase, sottofase)
@@ -81,7 +84,25 @@ export const useImmobiliPipeline = () => {
 
       if (error) throw error;
 
-      return ((data ?? []) as unknown as RawImmobileRow[])
+      const rows = (data ?? []) as unknown as RawImmobileRow[];
+
+      // acquirente_id punta alla PK condivisa contatti/acquirenti (relazione
+      // 1:1), ma non esiste un vincolo FK diretto verso `acquirenti` utilizzabile
+      // per l'embed PostgREST: recuperiamo i nomi con una query bulk separata
+      // (stesso pattern usato in PipelineDetailSheet.tsx per il singolo immobile).
+      const acquirenteIds = [...new Set(rows.map((r) => r.acquirente_id).filter((id): id is string => !!id))];
+      const acquirenteNomiById = new Map<string, string>();
+      if (acquirenteIds.length > 0) {
+        const { data: acquirenti } = await supabase
+          .from('acquirenti')
+          .select('id, nome, cognome')
+          .in('id', acquirenteIds);
+        for (const acq of acquirenti ?? []) {
+          acquirenteNomiById.set(acq.id, `${acq.nome} ${acq.cognome ?? ''}`.trim());
+        }
+      }
+
+      return rows
         .filter((row) => row.pipeline?.fase != null)
         .map((row) => {
           const fase = row.pipeline!.fase;
@@ -102,6 +123,7 @@ export const useImmobiliPipeline = () => {
             proprietario_nome: row.proprietario_contatto?.proprietari
               ? `${row.proprietario_contatto.proprietari.nome} ${row.proprietario_contatto.proprietari.cognome ?? ''}`.trim()
               : null,
+            acquirente_nome: row.acquirente_id ? acquirenteNomiById.get(row.acquirente_id) ?? null : null,
             agente_id: row.proprietario_contatto?.agente_id ?? null,
             fase,
             sottofase,

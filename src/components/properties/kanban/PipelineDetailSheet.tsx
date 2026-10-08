@@ -141,6 +141,7 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
     onSuccess: () => {
       showSuccess('Acquirente aggiornato.');
       queryClient.invalidateQueries({ queryKey: ['immobile-acquirente', card?.id] });
+      queryClient.invalidateQueries({ queryKey: ['immobili-pipeline'] });
     },
     onError: () => showError('Aggiornamento non riuscito.'),
   });
@@ -524,6 +525,9 @@ const PipelineDetailSheet = ({ card, onClose }: PipelineDetailSheetProps) => {
               )}
               {card.proprietario_nome && (
                 <Badge variant="outline" className="font-semibold">Proprietario: {card.proprietario_nome}</Badge>
+              )}
+              {card.acquirente_nome && (
+                <Badge variant="outline" className="font-semibold">Acquirente: {card.acquirente_nome}</Badge>
               )}
             </div>
 
