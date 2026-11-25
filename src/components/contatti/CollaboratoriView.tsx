@@ -72,20 +72,31 @@ const CollaboratoriView = ({ openContattoId, onContattoOpened }: CollaboratoriVi
     setLoading(true);
     // Query da `contatti` (non da `collaboratori`): `created_at` vive solo su
     // `contatti` e .order(foreignTable) non ordina le righe di primo livello,
-    // vedi stesso fix in ProprietariList.tsx.
-    const { data, error } = await supabase
-      .from('contatti')
-      .select('created_at, collaboratori!inner(id, nome, cognome, email, telefono, cellulare, professione, note_interne)')
-      .eq('collaboratori.is_deleted', false)
-      .order('created_at', { ascending: false });
-    if (signal?.aborted) return;
-    if (error) {
-      showError('Errore nel caricamento collaboratori');
-    } else {
-      type Row = { created_at: string; collaboratori: Omit<CollaboratoreRecord, 'created_at'> };
-      const rows = ((data || []) as unknown as Row[]).map((r) => ({ ...r.collaboratori, created_at: r.created_at }));
-      setCollaboratori(rows);
+    // vedi stesso fix in ProprietariList.tsx. Paginazione in batch da 1000
+    // per lo stesso motivo: senza .range() PostgREST tronca a 1000 righe.
+    type Row = { created_at: string; collaboratori: Omit<CollaboratoreRecord, 'created_at'> };
+    const BATCH = 1000;
+    let allRows: Row[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('contatti')
+        .select('created_at, collaboratori!inner(id, nome, cognome, email, telefono, cellulare, professione, note_interne)')
+        .eq('collaboratori.is_deleted', false)
+        .order('created_at', { ascending: false })
+        .range(from, from + BATCH - 1);
+      if (signal?.aborted) return;
+      if (error) {
+        showError('Errore nel caricamento collaboratori');
+        setLoading(false);
+        return;
+      }
+      allRows = allRows.concat((data || []) as unknown as Row[]);
+      if (!data || data.length < BATCH) break;
+      from += BATCH;
     }
+    const rows = allRows.map((r) => ({ ...r.collaboratori, created_at: r.created_at }));
+    setCollaboratori(rows);
     setLoading(false);
   }, []);
 

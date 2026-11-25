@@ -96,29 +96,46 @@ const ProprietariList = ({ refreshSignal, headerActions, openContattoId, onConta
     // lì: un .order(foreignTable: 'contatti') applicato a `.from('proprietari')`
     // non ordina le righe di primo livello (PostgREST lo applica solo dentro la
     // relazione annidata), risultando in un ordine di fatto casuale/instabile.
-    const { data, error } = await supabase
-      .from('contatti')
-      .select(`
-        agente_id, created_at,
-        proprietari!inner(
-          id, nome, cognome, email, telefono, cellulare, professione, is_deleted, caldo,
-          via_immobile, citta_immobile, tipologia_immobile,
-          proprietari_pratiche(id, via, tipologia, citta, fase, updated_at, is_deleted)
-        )
-      `)
-      .eq('proprietari.is_deleted', false)
-      .order('created_at', { ascending: false });
-    if (signal?.aborted) return;
-    if (error) {
-      showError('Errore nel caricamento proprietari.');
-    } else {
-      type Row = { agente_id: string | null; created_at: string; proprietari: Omit<ProprietarioRow, 'contatti'> };
-      const rows = ((data ?? []) as unknown as Row[]).map((row) => ({
-        ...row.proprietari,
-        contatti: { agente_id: row.agente_id, created_at: row.created_at },
-      }));
-      setProprietari(rows as unknown as ProprietarioRow[]);
+    //
+    // PostgREST applica un limite di default di 1000 righe per risposta: senza
+    // paginazione esplicita, il conteggio mostrato restava bloccato a "1000
+    // proprietari" anche aggiungendone di nuovi (sembrava una cancellazione
+    // silenziosa, in realtà erano solo le righe oltre la mille troncate).
+    // Fix: pagina in batch da 1000 con .range() finché l'ultima pagina non
+    // torna più corta della page size.
+    type Row = { agente_id: string | null; created_at: string; proprietari: Omit<ProprietarioRow, 'contatti'> };
+    const BATCH = 1000;
+    let allRows: Row[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from('contatti')
+        .select(`
+          agente_id, created_at,
+          proprietari!inner(
+            id, nome, cognome, email, telefono, cellulare, professione, is_deleted, caldo,
+            via_immobile, citta_immobile, tipologia_immobile,
+            proprietari_pratiche(id, via, tipologia, citta, fase, updated_at, is_deleted)
+          )
+        `)
+        .eq('proprietari.is_deleted', false)
+        .order('created_at', { ascending: false })
+        .range(from, from + BATCH - 1);
+      if (signal?.aborted) return;
+      if (error) {
+        showError('Errore nel caricamento proprietari.');
+        setLoading(false);
+        return;
+      }
+      allRows = allRows.concat((data ?? []) as unknown as Row[]);
+      if (!data || data.length < BATCH) break;
+      from += BATCH;
     }
+    const rows = allRows.map((row) => ({
+      ...row.proprietari,
+      contatti: { agente_id: row.agente_id, created_at: row.created_at },
+    }));
+    setProprietari(rows as unknown as ProprietarioRow[]);
     setLoading(false);
   }, []);
 
