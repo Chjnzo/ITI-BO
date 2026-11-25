@@ -97,6 +97,10 @@ interface AcquirenteRecord {
   agente_id?: string | null;
   drive_folder_url?: string | null;
   acquirenti_immobili?: AcquirenteImmobileLink[];
+  // Presente quando lo stesso contatto ha anche una riga in `proprietari`
+  // (stesso id, PK condivisa) — segnala che deve vendere il proprio
+  // immobile prima di poter concludere l'acquisto. Richiesta cliente.
+  proprietari?: { id: string; is_deleted: boolean } | null;
 }
 
 interface AcquirenteTaskItem {
@@ -222,6 +226,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   const [filterZona, setFilterZona] = useState('');
   const [filterTipologia, setFilterTipologia] = useState('');
   const [filterStato, setFilterStato] = useState('');
+  const [filterDeveVendere, setFilterDeveVendere] = useState(false);
 
   // Notes tab
   const [acquirenteNotes, setAcquirenteNotes] = useState<AcquirenteNote[]>([]);
@@ -233,7 +238,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
   // batch dopo la INSERT di acquirenti. Reset al close/switch selectedAcquirente.
   const [pendingNotes, setPendingNotes] = useState<string[]>([]);
 
-  const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '';
+  const hasActiveFilters = filterBudgetMin !== null || filterBudgetMax !== null || filterZona.trim() !== '' || filterTipologia !== '' || filterStato !== '' || filterDeveVendere;
 
   // Slim query — only fields needed to render the list rows
   const fetchAcquirenti = useCallback(async (signal?: AbortSignal) => {
@@ -254,7 +259,8 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
             id, nome, cognome, stato, budget, tipologia_ricerca, tipo_contratto, zone_ricercate,
             note_interne, telefono, cellulare, email,
             acquirenti_immobili(immobili(titolo))
-          )
+          ),
+          proprietari(id, is_deleted)
         `)
         .eq('acquirenti.is_deleted', false)
         .order('created_at', { ascending: false });
@@ -283,11 +289,12 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       if (error) {
         showError("Errore nella ricerca");
       } else {
-        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id'> };
+        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id' | 'proprietari'>; proprietari: { id: string; is_deleted: boolean } | null };
         const sanitized = ((data || []) as unknown as Row[]).map((row) => ({
           ...row.acquirenti,
           created_at: row.created_at,
           agente_id: row.agente_id,
+          proprietari: row.proprietari,
         })) as unknown as AcquirenteRecord[];
         setAcquirenti(sanitized);
         setTotalCount(sanitized.length);
@@ -304,7 +311,8 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
           acquirenti!inner(
             id, nome, cognome, stato, telefono, cellulare, email,
             acquirenti_immobili(immobili(titolo))
-          )
+          ),
+          proprietari(id, is_deleted)
         `, { count: 'exact' })
         .eq('acquirenti.is_deleted', false)
         .order('created_at', { ascending: false })
@@ -314,11 +322,12 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       if (error) {
         showError("Errore nel caricamento contatti");
       } else {
-        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id'> };
+        type Row = { created_at: string; agente_id: string | null; acquirenti: Omit<AcquirenteRecord, 'created_at' | 'agente_id' | 'proprietari'>; proprietari: { id: string; is_deleted: boolean } | null };
         const rows = ((data || []) as unknown as Row[]).map((row) => ({
           ...row.acquirenti,
           created_at: row.created_at,
           agente_id: row.agente_id,
+          proprietari: row.proprietari,
         })) as unknown as AcquirenteRecord[];
         setAcquirenti(rows);
         setTotalCount(count ?? 0);
@@ -327,7 +336,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
 
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, searchQuery, hasActiveFilters, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
+  }, [page, searchQuery, hasActiveFilters, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDeveVendere]);
 
   // Full query — fired only when a acquirente dialog is opened
   const fetchAcquirenteDetail = useCallback(async (id: string) => {
@@ -337,7 +346,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       .select(`
         *,
         _version,
-        contatti(created_at, agente_id, drive_folder_url),
+        contatti(created_at, agente_id, drive_folder_url, proprietari(id, is_deleted)),
         acquirenti_immobili(
           id, stato_interesse, note, created_at,
           immobili(id, titolo, prezzo, copertina_url)
@@ -347,12 +356,13 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
       .single();
 
     if (!error && data) {
-      const row = data as unknown as AcquirenteRecord & { contatti?: { created_at?: string; agente_id?: string | null; drive_folder_url?: string | null } };
+      const row = data as unknown as AcquirenteRecord & { contatti?: { created_at?: string; agente_id?: string | null; drive_folder_url?: string | null; proprietari?: { id: string; is_deleted: boolean } | null } };
       const full: AcquirenteRecord = {
         ...row,
         created_at: row.contatti?.created_at,
         agente_id: row.contatti?.agente_id,
         drive_folder_url: row.contatti?.drive_folder_url,
+        proprietari: row.contatti?.proprietari ?? null,
       };
       setSelectedAcquirente((prev) => prev?.id === id ? full : prev);
     } else if (error) {
@@ -430,7 +440,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
     return () => controller.abort();
   }, [fetchAcquirenti]);
 
-  useEffect(() => { setPage(1); }, [searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
+  useEffect(() => { setPage(1); }, [searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDeveVendere]);
 
   // Load distinct zone names used across all acquirenti for autocomplete
   useEffect(() => {
@@ -494,10 +504,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
         if (!(c.tipologia_ricerca ?? []).includes(filterTipologia)) return false;
       }
       if (filterStato && c.stato !== filterStato) return false;
+      if (filterDeveVendere && !(c.proprietari && !c.proprietari.is_deleted)) return false;
 
       return true;
     });
-  }, [acquirenti, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato]);
+  }, [acquirenti, searchQuery, filterBudgetMin, filterBudgetMax, filterZona, filterTipologia, filterStato, filterDeveVendere]);
 
   const displayCount = isSearchOrFilterMode ? filteredAcquirenti.length : totalCount;
   const pagedAcquirenti = isSearchOrFilterMode
@@ -982,7 +993,7 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
             Filtri
             {hasActiveFilters && (
               <span className="ml-0.5 w-5 h-5 rounded-full bg-[#94b0ab] text-white text-[10px] font-black flex items-center justify-center">
-                {[filterBudgetMin !== null || filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterStato !== ''].filter(Boolean).length}
+                {[filterBudgetMin !== null || filterBudgetMax !== null, filterZona !== '', filterTipologia !== '', filterStato !== '', filterDeveVendere].filter(Boolean).length}
               </span>
             )}
           </Button>
@@ -1082,10 +1093,25 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
               </Select>
             </div>
 
+            <div className="space-y-1 min-w-[160px]">
+              <Label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Doppio ruolo</Label>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setFilterDeveVendere(v => !v)}
+                className={cn(
+                  "h-9 rounded-xl text-xs font-bold border-gray-200 w-full justify-start",
+                  filterDeveVendere && "bg-amber-50 border-amber-200 text-amber-700 hover:text-amber-700"
+                )}
+              >
+                Deve vendere prima
+              </Button>
+            </div>
+
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => { setFilterBudgetMin(null); setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterStato(''); }}
+                onClick={() => { setFilterBudgetMin(null); setFilterBudgetMax(null); setFilterZona(''); setFilterTipologia(''); setFilterStato(''); setFilterDeveVendere(false); }}
                 className="h-9 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors border border-red-100"
               >
                 <XIcon size={13} /> Reset filtri
@@ -1140,6 +1166,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                         <Phone size={10} className="text-gray-300 shrink-0" />
                         <span className="truncate">{formatTelefoni(c.telefono, c.cellulare)}</span>
                       </div>
+                      {c.proprietari && !c.proprietari.is_deleted && (
+                        <Badge variant="outline" className="mt-1.5 text-[9px] font-bold uppercase tracking-wide border-amber-200 text-amber-700 bg-amber-50">
+                          Deve vendere
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-8 py-5">
                       <DropdownMenu>
@@ -1299,6 +1330,11 @@ const AcquirentiView = ({ deepLinkLeadId, openContattoId, onContattoOpened }: Ac
                                 </div>
                               </PopoverContent>
                             </Popover>
+                          )}
+                          {!isCreate && selectedAcquirente.proprietari && !selectedAcquirente.proprietari.is_deleted && (
+                            <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest border-amber-200 text-amber-700 bg-amber-50">
+                              Deve vendere
+                            </Badge>
                           )}
                         </div>
                         <SheetDescription className="text-xs text-gray-400 font-medium mt-1 flex items-center gap-2">
