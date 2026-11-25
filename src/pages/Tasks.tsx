@@ -15,8 +15,11 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   Plus, Search, Check, CalendarIcon, User, StickyNote,
-  ChevronDown, ChevronRight, Phone, AlertTriangle, ExternalLink, Home,
+  ChevronDown, ChevronRight, Phone, AlertTriangle, ExternalLink, Home, ArrowUpDown,
 } from 'lucide-react';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import TaskModal from '@/components/TaskModal';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -280,6 +283,10 @@ const Tasks = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [hiddenAgents, setHiddenAgents] = useState<Set<string>>(new Set());
+  // Ordine cronologico delle colonne per data nella vista Generale (per
+  // agente). Richiesta cliente 2026-11-25: di default i più recenti prima,
+  // con selettore per tornare ai più vecchi prima.
+  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
   const taskDetailContattoId = taskDetail ? getContactInfo(taskDetail).targetId : null;
   const taskDetailContattoTipo = taskDetail ? getContactInfo(taskDetail).tipo : null;
@@ -590,6 +597,17 @@ const Tasks = () => {
                 </button>
               );
             })}
+
+            <Select value={dateSortOrder} onValueChange={(v) => setDateSortOrder(v as typeof dateSortOrder)}>
+              <SelectTrigger className="h-9 w-[200px] rounded-xl border-gray-200 bg-white text-xs font-bold ml-auto">
+                <ArrowUpDown size={13} className="text-gray-400 shrink-0" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">Più recenti prima</SelectItem>
+                <SelectItem value="asc">Più vecchie prima</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
 
@@ -739,7 +757,9 @@ const Tasks = () => {
                 const color = agent.colore_calendario ?? '#94b0ab';
                 const initials = (agent.nome_completo ?? agent.id).substring(0, 2).toUpperCase();
                 const byDate = groupByDate(agentTasks);
-                const dates = [...byDate.keys()].sort();
+                const dates = [...byDate.keys()].sort((a, b) =>
+                  dateSortOrder === 'asc' ? a.localeCompare(b) : b.localeCompare(a)
+                );
 
                 return (
                   <div key={agent.id} className="flex-1 min-w-[350px] flex flex-col gap-3 min-h-0">
